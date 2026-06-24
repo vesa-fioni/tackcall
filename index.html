@@ -73,7 +73,7 @@
   /* ---- main stack ---- */
   .stage{flex:1 1 auto; display:flex; flex-direction:column; align-items:center; justify-content:flex-start; min-height:0; padding:0 14px;}
 
-  .rosewrap{position:relative; width:min(40vh,78vw); aspect-ratio:1; margin-top:2px; flex:0 0 auto;}
+  .rosewrap{position:relative; width:min(38vh,78vw); aspect-ratio:1; margin-top:2px; flex:0 0 auto;}
   canvas#rose{width:100%; height:100%; display:block;}
   .hdg-center{position:absolute; inset:0; display:flex; flex-direction:column; align-items:center; justify-content:center; pointer-events:none;}
   .hdg-num{font-family:var(--display); font-weight:700; font-size:clamp(38px,10vh,72px); line-height:.9; letter-spacing:.01em; font-variant-numeric:tabular-nums;}
@@ -107,7 +107,7 @@
   .stat .v small{font-size:.6em; color:var(--ink-dim); font-weight:500;}
 
   /* ---- history graph ---- */
-  .graphwrap{width:100%; max-width:520px; margin-top:8px; background:var(--surface); border:1px solid var(--hair-soft); border-radius:12px; padding:8px 8px 4px; flex:1 1 auto; min-height:52px; max-height:150px; overflow:hidden; display:flex; flex-direction:column;}
+  .graphwrap{width:100%; max-width:520px; margin-top:8px; background:var(--surface); border:1px solid var(--hair-soft); border-radius:12px; padding:8px 8px 4px; flex:0 1 104px; min-height:64px; overflow:hidden; display:flex; flex-direction:column;}
   .graphwrap .ghead{display:flex; justify-content:space-between; align-items:center; padding:0 4px 4px;}
   .graphwrap .ghead .t{font-family:var(--mono); font-size:10px; letter-spacing:.14em; color:var(--ink-faint); text-transform:uppercase;}
   canvas#graph{width:100%; flex:1 1 0; min-height:0; display:block;}
@@ -595,10 +595,13 @@ function drawGraph(){
     gctx.fillStyle = last.v>S.settings.deadband?"#2FBF71":last.v<-S.settings.deadband?"#FF5A4D":"#F2C14E";
     gctx.beginPath(); gctx.arc(last.x,last.y,3.5*graphDpr,0,Math.PI*2); gctx.fill();
   }
-  // ylä/ala-label
-  gctx.font=`500 ${Math.round(9*graphDpr)}px 'IBM Plex Mono', monospace`;
-  gctx.fillStyle="#3FA66A"; gctx.textAlign="left"; gctx.fillText("LIFT", 4*graphDpr, 11*graphDpr);
-  gctx.fillStyle="#c4564c"; gctx.fillText("HEADER", 4*graphDpr, h-5*graphDpr);
+  // ylä/ala-label — vain jos korkeutta tarpeeksi, ettei mene päällekkäin
+  if(h/graphDpr >= 50){
+    gctx.font=`500 ${Math.round(9*graphDpr)}px 'IBM Plex Mono', monospace`;
+    gctx.textAlign="left"; gctx.textBaseline="alphabetic";
+    gctx.fillStyle="#3FA66A"; gctx.fillText("LIFT", 4*graphDpr, 11*graphDpr);
+    gctx.fillStyle="#c4564c"; gctx.fillText("HEADER", 4*graphDpr, h-5*graphDpr);
+  }
 }
 
 /* ---------- UI-päivitys ---------- */
@@ -798,7 +801,7 @@ document.querySelectorAll(".stepper").forEach(st=>{
 });
 
 /* ---------- init ---------- */
-const APP_VERSION="v7";
+const APP_VERSION="v8";
 (function(){
   const t=$("verTop"); if(t) t.textContent=APP_VERSION;
   const e=$("verEnable"); if(e) e.textContent=APP_VERSION+" · keltainen merkki kehän sisällä";
