@@ -26,6 +26,7 @@
     --lift:#2FBF71;         /* lift = good */
     --header:#FF5A4D;       /* header = tack */
     --groove:#F2C14E;       /* in the groove */
+    --tack:#2DD4E8;         /* käännä — erottuva syaani */
     --display:'Rajdhani', 'Saira Condensed', system-ui, sans-serif;
     --body:'Inter', system-ui, -apple-system, sans-serif;
     --mono:'IBM Plex Mono', ui-monospace, monospace;
@@ -85,7 +86,7 @@
     width:100%; max-width:520px; margin-top:8px; border-radius:14px;
     border:1px solid var(--hair); background:var(--surface);
     display:flex; align-items:center; justify-content:center; gap:14px;
-    padding:12px 16px; transition:border-color .25s, background .25s;
+    padding:12px 16px; min-height:84px; transition:border-color .25s, background .25s;
     flex:0 0 auto;
   }
   .band .dev{font-family:var(--display); font-weight:700; font-size:clamp(30px,7vh,46px); font-variant-numeric:tabular-nums; min-width:2.4em; text-align:right;}
@@ -95,6 +96,8 @@
   .band.lift .dev,.band.lift .state{color:var(--lift);}
   .band.header{border-color:var(--header); background:linear-gradient(180deg,rgba(255,90,77,.12),var(--surface));}
   .band.header .dev,.band.header .state{color:var(--header);}
+  .band.tack{border-color:var(--tack); background:linear-gradient(180deg,rgba(45,212,232,.16),var(--surface));}
+  .band.tack .dev,.band.tack .state{color:var(--tack);}
   .band.groove{border-color:var(--groove);}
   .band.groove .dev,.band.groove .state{color:var(--groove);}
   .band.nomean .dev,.band.nomean .state{color:var(--ink-faint);}
@@ -156,6 +159,14 @@
   .tog.on::after{left:25px; background:var(--lift);}
   .sheet .close{width:100%; background:var(--surface-2); border:1px solid var(--hair); border-radius:13px; padding:15px; font-size:16px; margin-top:18px; color:var(--ink);}
   .note{font-family:var(--mono); font-size:10.5px; color:var(--ink-faint); line-height:1.6; margin-top:14px;}
+  .helpsteps{margin:0 0 6px; padding-left:20px;}
+  .helpsteps li{font-size:14.5px; line-height:1.5; margin-bottom:10px; color:var(--ink);}
+  .helph{font-family:var(--mono); font-size:11px; letter-spacing:.16em; text-transform:uppercase; color:var(--ink-faint); margin:18px 0 8px;}
+  .helpp{font-size:14px; line-height:1.55; color:var(--ink-dim); margin:0;}
+  .legend{display:flex; flex-direction:column; gap:9px;}
+  .legend > div{display:flex; align-items:center; gap:10px; font-size:14px; color:var(--ink-dim);}
+  .legend b{color:var(--ink); margin-right:2px;}
+  .legend .sw{width:14px; height:14px; border-radius:4px; flex:0 0 auto;}
 
   @media (prefers-reduced-motion: reduce){ *{transition:none !important;} }
 </style>
@@ -185,7 +196,6 @@
       <div class="dev" id="devNum">––</div>
       <div>
         <div class="state" id="stateTxt">EI MEAN</div>
-        <div class="advice" id="advice">Aseta keskisuunta halssilla</div>
       </div>
     </div>
 
@@ -218,6 +228,7 @@
     <p>Tämä työkalu lukee puhelimesi kompassia (ja halutessasi GPS:ää). Salli liikeanturit jatkaaksesi.</p>
     <button class="big" id="btnEnable">Ota anturit käyttöön</button>
     <button class="ghost" id="btnDemo">Kokeile demolla (ilman antureita)</button>
+    <button class="ghost" id="btnHelp1">Näin käytät →</button>
     <div class="err hidden" id="errBox"></div>
     <div class="verbig" id="verEnable"></div>
   </div>
@@ -227,6 +238,7 @@
 <div class="sheet hidden" id="sheet">
   <div class="panel">
     <h2>Asetukset</h2>
+    <button class="close" id="btnHelp2" style="margin:0 0 14px;background:var(--surface-2);border:1px solid var(--hair)">Näin käytät</button>
     <div class="row">
       <div class="lab">Kuollut alue<small>Astetta keskellä = "groovessa"</small></div>
       <div class="stepper" data-key="deadband"><button data-d="-1">−</button><div class="val">3°</div><button data-d="1">+</button></div>
@@ -262,6 +274,37 @@
     <div class="note">Suunta on puhelimen magneettikompassin lukema. Lift/header lasketaan suhteessa asettamaasi keskisuuntaan, joten erannon vakio ei vaikuta. Resetoi keskisuunnat ennen lähtöä joka halssilla.<br><span id="verNote" style="color:var(--ink-faint)"></span></div>
     <button class="close" id="btnReset" style="margin-top:14px;background:transparent;border:1px solid var(--header);color:var(--header)">Nollaa keskisuunnat</button>
     <button class="close" id="btnCloseSheet">Valmis</button>
+  </div>
+</div>
+
+<!-- help sheet -->
+<div class="sheet hidden" id="help">
+  <div class="panel">
+    <h2>Näin käytät</h2>
+    <ol class="helpsteps">
+      <li>Aja hyvin halssilla — purjeet trimmissä ja suunta vakaa.</li>
+      <li>Paina <b>ASETA KESKISUUNTA</b>. Tee se molemmilla halsseilla (STB ja BB).</li>
+      <li>Seuraa palkkia (ja kuuntele ääniä). Se kertoo nostaako vai painaako, ja milloin kääntää.</li>
+    </ol>
+
+    <div class="helph">Palkin värit</div>
+    <div class="legend">
+      <div><span class="sw" style="background:var(--lift)"></span><b>LIFT</b> — tuuli nostaa, pidä halssi</div>
+      <div><span class="sw" style="background:var(--header)"></span><b>HEADER</b> — tuuli painaa</div>
+      <div><span class="sw" style="background:var(--groove)"></span><b>GROOVE</b> — olet keskisuunnassa</div>
+      <div><span class="sw" style="background:var(--tack)"></span><b>TACK</b> — käänny nyt</div>
+    </div>
+
+    <div class="helph">Kompassi</div>
+    <p class="helpp">Valkoinen kärki ylhäällä = nykysuunta. Keltainen merkki = asettamasi keskisuunta. Niiden väli kertoo silmäyksellä montako astetta olet liftattu tai headattu.</p>
+
+    <div class="helph">Äänet (valinnainen)</div>
+    <p class="helpp">Laita päälle asetuksista ja käytä yhtä korvanappia. Pehmeä piippaus = lift/header vaihtuu. Karhea toistuva hälytin = TACK, käänny. TACK-ääni vaatii ~4 s yhtäjaksoista headeria, ettei se laukea aallosta.</p>
+
+    <div class="helph">Vinkki</div>
+    <p class="helpp">Pidä näyttö hereillä (asetukset) ja telineessä. Jos suunta heittää, kalibroi kompassi heiluttamalla puhelinta kahdeksikkoa ilmassa.</p>
+
+    <button class="close" id="btnCloseHelp">Selvä</button>
   </div>
 </div>
 
@@ -618,20 +661,20 @@ function render(){
   // lift/header
   const {liftedDeg,status}=evalShift();
   const band=$("band");
-  band.className="band "+status;
+  let cls=status;
   if(status==='nomean'){
     $("devNum").textContent="––"; $("stateTxt").textContent="EI MEAN";
-    $("advice").textContent = S.tack? "Aseta keskisuunta tällä halssilla":"Valitse halssi ja aseta keskisuunta";
   }else{
     const sign=liftedDeg>0?"+":"";
     $("devNum").textContent = sign+Math.round(liftedDeg)+"°";
-    if(status==='lift'){ $("stateTxt").textContent="LIFT"; $("advice").textContent="Nostaa — pidä halssi"; }
+    if(status==='lift'){ $("stateTxt").textContent="LIFT"; }
     else if(status==='header'){
-      $("stateTxt").textContent="HEADER";
       const mag=Math.abs(liftedDeg);
-      $("advice").textContent = mag>=S.settings.tackThresh ? "Painaa "+Math.round(mag)+"° — harkitse kääntöä" : "Painaa hieman";
-    } else { $("stateTxt").textContent="GROOVE"; $("advice").textContent="Keskisuunnassa"; }
+      if(mag>=S.settings.tackThresh){ $("stateTxt").textContent="TACK"; cls='tack'; }
+      else $("stateTxt").textContent="HEADER";
+    } else { $("stateTxt").textContent="GROOVE"; }
   }
+  band.className="band "+cls;
 
   // tuuli
   const wind=estWind();
@@ -776,6 +819,10 @@ $("btnMean").addEventListener("click", ()=>{
 $("btnSettings").addEventListener("click", ()=>$("sheet").classList.remove("hidden"));
 $("btnCloseSheet").addEventListener("click", ()=>$("sheet").classList.add("hidden"));
 $("btnReset").addEventListener("click", ()=>{ S.meanStb=null; S.meanBb=null; S.hist=[]; });
+const openHelp=()=>$("help").classList.remove("hidden");
+$("btnHelp1").addEventListener("click", openHelp);
+$("btnHelp2").addEventListener("click", ()=>{ $("sheet").classList.add("hidden"); openHelp(); });
+$("btnCloseHelp").addEventListener("click", ()=>$("help").classList.add("hidden"));
 
 function syncToggles(){
   document.querySelectorAll(".tog").forEach(t=>{ t.classList.toggle("on", !!S.settings[t.dataset.key]); });
@@ -801,7 +848,7 @@ document.querySelectorAll(".stepper").forEach(st=>{
 });
 
 /* ---------- init ---------- */
-const APP_VERSION="v8";
+const APP_VERSION="v11";
 (function(){
   const t=$("verTop"); if(t) t.textContent=APP_VERSION;
   const e=$("verEnable"); if(e) e.textContent=APP_VERSION+" · keltainen merkki kehän sisällä";
