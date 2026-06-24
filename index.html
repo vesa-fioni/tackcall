@@ -36,8 +36,17 @@
     background:var(--bg); color:var(--ink); font-family:var(--body);
     overflow:hidden; user-select:none; -webkit-user-select:none;
     padding:env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
+    min-height:100vh; min-height:100dvh;
+    display:flex; justify-content:center; align-items:stretch;
   }
-  #app{height:100%; display:flex; flex-direction:column;}
+  #app{width:100%; max-width:480px; min-height:0; display:flex; flex-direction:column; position:relative;}
+  .vertop{position:absolute; top:16px; left:50%; transform:translateX(-50%); font-family:var(--mono); font-size:10px; letter-spacing:.18em; color:var(--ink-faint); pointer-events:none; z-index:5;}
+  .verbig{font-family:var(--mono); font-size:11px; letter-spacing:.22em; color:var(--ink-faint); margin-top:18px;}
+  /* isolla ruudulla: keskitetty puhelinkehys */
+  @media (min-width:520px) and (min-height:560px){
+    body{ background:#06101a; align-items:center; padding:20px; }
+    #app{ height:min(calc(100dvh - 40px), 900px); border:1px solid var(--hair-soft); border-radius:26px; overflow:hidden; box-shadow:0 24px 70px rgba(0,0,0,.55); }
+  }
 
   /* ---- top status bar ---- */
   .topbar{
@@ -161,6 +170,7 @@
       <div class="chip" id="chipAudio"><span class="led"></span>ÄÄNI</div>
     </div>
   </div>
+  <div class="vertop" id="verTop"></div>
 
   <div class="stage">
     <div class="rosewrap">
@@ -209,6 +219,7 @@
     <button class="big" id="btnEnable">Ota anturit käyttöön</button>
     <button class="ghost" id="btnDemo">Kokeile demolla (ilman antureita)</button>
     <div class="err hidden" id="errBox"></div>
+    <div class="verbig" id="verEnable"></div>
   </div>
 </div>
 
@@ -248,7 +259,7 @@
       <div class="lab">Tasoitus<small>Kompassin pehmennys (suurempi = vakaampi)</small></div>
       <div class="stepper" data-key="smooth"><button data-d="-1">−</button><div class="val">5</div><button data-d="1">+</button></div>
     </div>
-    <div class="note">Suunta on puhelimen magneettikompassin lukema. Lift/header lasketaan suhteessa asettamaasi keskisuuntaan, joten erannon vakio ei vaikuta. Resetoi keskisuunnat ennen lähtöä joka halssilla.</div>
+    <div class="note">Suunta on puhelimen magneettikompassin lukema. Lift/header lasketaan suhteessa asettamaasi keskisuuntaan, joten erannon vakio ei vaikuta. Resetoi keskisuunnat ennen lähtöä joka halssilla.<br><span id="verNote" style="color:var(--ink-faint)"></span></div>
     <button class="close" id="btnReset" style="margin-top:14px;background:transparent;border:1px solid var(--header);color:var(--header)">Nollaa keskisuunnat</button>
     <button class="close" id="btnCloseSheet">Valmis</button>
   </div>
@@ -324,13 +335,13 @@ const Audio = {
     const pick=()=>{ const vs=speechSynthesis.getVoices(); this.voice = vs.find(v=>/fi[-_]?FI/i.test(v.lang)) || vs.find(v=>/finnish|suomi/i.test(v.name)) || null; };
     pick(); if(!this.voice) speechSynthesis.onvoiceschanged=pick;
   },
-  notes(seq, vol){
+  notes(seq, vol, type){
     if(!this.enabled||!this.ctx) return;
     if(this.ctx.state!=='running'){ try{this.ctx.resume();}catch(e){} }
     let t=this.ctx.currentTime+0.01;
     seq.forEach(([f,d])=>{
       const osc=this.ctx.createOscillator(), g=this.ctx.createGain();
-      osc.type='triangle'; osc.frequency.value=f;
+      osc.type=type||'triangle'; osc.frequency.value=f;
       g.gain.setValueAtTime(0.0001,t);
       g.gain.linearRampToValueAtTime(vol||0.5, t+0.012);
       g.gain.exponentialRampToValueAtTime(0.0008, t+d);
@@ -338,17 +349,24 @@ const Audio = {
       osc.start(t); osc.stop(t+d+0.03); t+=d*0.92;
     });
   },
-  lift(){ this.notes([[660,0.10],[990,0.13]], 0.5); },     // nouseva
-  header(){ this.notes([[660,0.10],[440,0.16]], 0.5); },   // laskeva
+  lift(){ this.notes([[660,0.10],[990,0.13]], 0.5); },     // nouseva, pehmeä
+  header(){ this.notes([[660,0.10],[440,0.16]], 0.5); },   // laskeva, pehmeä
   confirm(){ this.notes([[523,0.09],[784,0.12]], 0.4); },
+  tack(){
+    // karhea, toistuva hälytinkuvio (nee-naw x4) — kategorisesti eri kuin piippaukset
+    const a=988, b=1319, d=0.135;
+    this.notes([[a,d],[b,d],[a,d],[b,d],[a,d],[b,d],[a,d],[b,d+0.10]], 0.72, 'sawtooth');
+  },
   say(text){
     if(!this.enabled||!('speechSynthesis' in window)) return;
     try{
-      speechSynthesis.cancel();
+      const synth=window.speechSynthesis;
+      if(synth.speaking || synth.pending) synth.cancel();
       const u=new SpeechSynthesisUtterance(text);
       u.lang='fi-FI'; if(this.voice) u.voice=this.voice;
       u.rate=1.0; u.pitch=1.0; u.volume=1.0;
-      speechSynthesis.speak(u);
+      // iOS: pieni viive cancelin jälkeen + resume parantaa luotettavuutta
+      setTimeout(()=>{ try{ synth.speak(u); if(synth.paused) synth.resume(); }catch(e){} }, 60);
     }catch(e){}
   }
 };
@@ -384,7 +402,8 @@ function handleAudio(status, lifted){
   if(worthy){
     if(S.audio.tackSince==null) S.audio.tackSince=now;
     if(now-S.audio.tackSince>=TACK_HOLD_MS && S.audio.tackArmed && now>=S.audio.tackLockUntil){
-      Audio.say("käännä");
+      Audio.tack();                 // erottuva hälytysääni — soi aina
+      Audio.say("käännä");          // puhe päälle jos TTS toimii
       S.audio.tackArmed=false; S.audio.tackLockUntil=now+TACK_LOCK_MS;
     }
   } else {
@@ -507,11 +526,16 @@ function drawRose(){
     rctx.fillStyle="#54707f";
     for(let a=30;a<360;a+=30){ if(a%90===0) continue; const rad=a*Math.PI/180, rr=R*0.77; const x=Math.sin(rad)*rr, y=-Math.cos(rad)*rr; rctx.save(); rctx.translate(x,y); rctx.rotate(hd*Math.PI/180); rctx.fillText(String(a/10),0,0); rctx.restore(); }
 
-    // keskisuunta-merkki (amber) ja tuuli-merkki
+    // keskisuunta-merkki (amber) — selvästi kehän sisäpuolella, osoittaa sisäänpäin
     const mean=currentMean();
-    if(mean!=null){ drawMarker(cx,cy,R, angDiff(mean,hd), "#F2C14E", roseDpr, true); }
-    const wind=estWind();
-    if(wind!=null){ drawWindMarker(cx,cy,R, angDiff(wind,hd), roseDpr); }
+    if(mean!=null){
+      const mr=mean*Math.PI/180, dpr=roseDpr, rim=R*0.95;
+      const mx=Math.sin(mr)*rim, my=-Math.cos(mr)*rim;
+      rctx.save(); rctx.translate(mx,my); rctx.rotate(mr);
+      rctx.fillStyle="#F2C14E";
+      rctx.beginPath(); rctx.moveTo(-8*dpr,0); rctx.lineTo(8*dpr,0); rctx.lineTo(0,18*dpr); rctx.closePath(); rctx.fill();
+      rctx.restore();
+    }
     rctx.restore();
   }
 
@@ -523,26 +547,7 @@ function drawRose(){
   rctx.lineTo(cx+7*roseDpr, cy-R+13*roseDpr);
   rctx.closePath(); rctx.fill();
 }
-function drawMarker(cx,cy,R,relAngle,color,dpr,tri){
-  const rad=relAngle*Math.PI/180;
-  rctx.save(); rctx.translate(cx,cy);
-  const x=Math.sin(rad)*R, y=-Math.cos(rad)*R;
-  rctx.translate(x,y); rctx.rotate(rad);
-  rctx.fillStyle=color;
-  rctx.beginPath(); rctx.moveTo(0,0); rctx.lineTo(-5*dpr,-12*dpr); rctx.lineTo(5*dpr,-12*dpr); rctx.closePath(); rctx.fill();
-  rctx.restore();
-}
-function drawWindMarker(cx,cy,R,relAngle,dpr){
-  const rad=relAngle*Math.PI/180;
-  rctx.save(); rctx.translate(cx,cy);
-  const x=Math.sin(rad)*(R-2*dpr), y=-Math.cos(rad)*(R-2*dpr);
-  rctx.translate(x,y); rctx.rotate(rad);
-  rctx.strokeStyle="#8FA6B4"; rctx.lineWidth=2*dpr;
-  rctx.beginPath(); rctx.moveTo(0,2*dpr); rctx.lineTo(0,-14*dpr); rctx.stroke();
-  rctx.beginPath(); rctx.moveTo(0,-14*dpr); rctx.lineTo(-4*dpr,-9*dpr); rctx.lineTo(4*dpr,-9*dpr); rctx.closePath();
-  rctx.fillStyle="#8FA6B4"; rctx.fill();
-  rctx.restore();
-}
+function drawWindMarker_unused(){}
 
 /* ---------- piirto: oskillaatiograafi ---------- */
 function drawGraph(){
@@ -793,6 +798,12 @@ document.querySelectorAll(".stepper").forEach(st=>{
 });
 
 /* ---------- init ---------- */
+const APP_VERSION="v7";
+(function(){
+  const t=$("verTop"); if(t) t.textContent=APP_VERSION;
+  const e=$("verEnable"); if(e) e.textContent=APP_VERSION+" · keltainen merkki kehän sisällä";
+  const n=$("verNote"); if(n) n.textContent="Versio "+APP_VERSION+" · keltainen merkki kehän sisällä";
+})();
 resize();
 loop();
 </script>
