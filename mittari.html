@@ -37,7 +37,8 @@ font-size:16px; font-weight:700;}
 width:42px; height:42px; font-size:18px; display:flex; align-items:center; justify-content:center;}
 /* näkymätön napautusalue keskinumeron yli (= aseta keskisuunta, bonus) */
 #btnMean{top:0; left:50%; transform:translateX(-50%); width:46%; height:26%;
-background:transparent; border:none; border-radius:0; cursor:pointer;}
+background:transparent; border:none; border-radius:0; cursor:pointer;
+backdrop-filter:none; -webkit-backdrop-filter:none;} /* invisible tap-alue: ei saa sumentaa takana olevaa MEAN-lukemaa */
 #btnMean:active{background:rgba(255,255,255,.05);}
 /* näkyvä keskisuunta-nappi alas keskelle (STB/BB-rivi) */
 #btnSetMean{bottom:max(10px,env(safe-area-inset-bottom)); left:50%; transform:translateX(-50%);
@@ -755,7 +756,7 @@ document.querySelectorAll(".stepper").forEach(st=>{
 });
 
 /* ---------- init ---------- */
-const APP_VERSION="mittari v0.27";
+const APP_VERSION="mittari v0.28";
 (function(){
   const e=$("verEnable"); if(e) e.textContent=APP_VERSION;
   const n=$("verNote"); if(n) n.textContent=APP_VERSION+" · shares engine with index.html";
