@@ -70,6 +70,10 @@ function fmtAge(ts){
   if(s<3600) return Math.round(s/60)+'min sitten';
   return (s/3600).toFixed(1)+'h sitten';
 }
+function fmtStab(v){
+  if(v==null) return '—';
+  return (v*100).toFixed(0)+'%';
+}
 
 function refresh(){
   // Means
@@ -80,9 +84,9 @@ function refresh(){
       const d=JSON.parse(raw);
       meansOut =
         'STB: '+(d.meanStb!=null?d.meanStb.toFixed(1)+'°':'—')+
-        '  (asetettu '+fmtAge(d.meanStbTs)+')\n'+
+        '  (asetettu '+fmtAge(d.meanStbTs)+', vakaus '+fmtStab(d.meanStbStability)+')\n'+
         'BB:  '+(d.meanBb!=null?d.meanBb.toFixed(1)+'°':'—')+
-        '  (asetettu '+fmtAge(d.meanBbTs)+')';
+        '  (asetettu '+fmtAge(d.meanBbTs)+', vakaus '+fmtStab(d.meanBbStability)+')';
     }
   }catch(e){ meansOut='VIRHE luettaessa: '+e.message; }
   document.getElementById('meansOut').textContent=meansOut;
