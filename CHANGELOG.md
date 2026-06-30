@@ -2,6 +2,39 @@
 
 Kaikki merkittävät muutokset Tackcalliin kirjataan tähän tiedostoon.
 
+## [mittari v0.30] — polar-dev-v1 — Polaari vaihe 1 (rajattu, ks. avoimet päätökset alla)
+
+Jatkaa vaihetta 0.5 samalla periaatteella: näkymätön taustakeruu, ei UI-muutoksia, ei
+jalostusta. Toteutettu polar-vaihe-1-ohjeet-luonnos.md:n päätösten mukaisesti — kolme
+neljästä avoimesta kohdasta rajattiin ulos tästä vaiheesta (ks. alla).
+
+### Lisätty
+- **Mean-vakaus (`meanStbStability`/`meanBbStability`):** lasketaan `setMean()`-hetkellä
+  `S.rangeBuf`:in viimeisen 10s ikkunan headingeista kiertosuureena (mean resultant
+  length, 0–1). Tallennetaan meanin yhteyteen `tackcall_polar_means_v1`-avaimeen,
+  aikaleiman rinnalle. **Arvo tallennetaan, mutta sitä ei käytetä mihinkään päätökseen
+  tässä vaiheessa** — kynnysarvot (mikä on "vakaa") vaativat kenttädataa (O4/O5).
+- **windAge-kirjanpito:** jokainen raakalokin piste sisältää nyt `windAge`-kentän
+  (sekunteja viimeisimmän mean-asetuksen jälkeen, kumpi tahansa halssi). Pelkkä
+  kirjanpito — ei kytketty mihinkään automatiikkaan.
+- Polar-debug.html päivitetty näyttämään mean-vakaus prosentteina.
+
+### Tietoisesti rajattu pois (ks. polar-vaihe-1-ohjeet-luonnos.md)
+- **TWA ei lisätty raakapisteeseen.** Raakaloki pidetään mahdollisimman raakana
+  (heading + meanit, kuten vaiheessa 0.5) — TWA lasketaan jatkossakin vasta
+  lukuvaiheessa/jalostuksessa `estWind()`:n avulla, ei tallenneta valmiiksi laskettuna.
+- **SOG-ristivalidointi siirretty vaiheeseen 2.** Vaatii P90-referenssin, jota ei ole
+  olemassa ennen kuin lukuvaiheen kvantiililaskenta on toteutettu.
+- **Automaattista, näkymätöntä meanin päivittämistä (luku 4.5) ei toteutettu.**
+  windAge on vasta kirjanpitoa sille — itse automatiikka on oma, erillinen päätös,
+  joka vaatii oman ohjeensa ennen koodausta (white paperin nimeämä "vaarallisin
+  yksittäinen virhelähde").
+
+### Ei muutettu
+- setMean():n perustoiminta, evalShift(), estWind(), piirtologiikka, audio — ennallaan.
+- 1 Hz keräysväli pidetty tarkoituksella ennallaan tässä kehitysvaiheessa (tiedostettu
+  kapasiteettirajoite koko kesän osalta — ei korjattu, päätetty erikseen myöhemmin).
+
 ## [mittari v0.29] — polar-dev-v1 — Polaari vaihe 0.5 (näkymätön taustakeruu)
 
 Ei vaikuta UI:hin eikä olemassa olevaan logiikkaan (setMean, evalShift, estWind, piirto).

@@ -217,6 +217,7 @@ const S = {
   headingRaw:null, heading:null,
   smooth:{sx:1, sy:0, k:0.78},
   tack:null, meanStb:null, meanBb:null, meanStbTs:null, meanBbTs:null,
+  meanStbStability:null, meanBbStability:null,
   rangeBuf:[],
   gps:{cog:null, sog:null, on:false, watch:null},
   wakeLock:null,
@@ -229,11 +230,12 @@ const HIST_MS = 4*60*1000;
 const AUDIO_DWELL_MS=800, TACK_HOLD_MS=4000, TACK_LOCK_MS=12000;
 
 /* ============================================================
-   POLAARI — VAIHE 0.5 (näkymätön taustakeruu, ei UI:ta)
+   POLAARI — VAIHE 0.5 + VAIHE 1 (näkymätön taustakeruu, ei UI:ta)
    Lisätty additiivisena kerroksena, ei kosketa yllä olevaa
-   logiikkaa. Ks. polar-vaihe-0_5-ohjeet.md ja white paper.
-   - Osa A: meanit + aikaleima pysyviksi (localStorage)
-   - Osa B: append-only raakahavaintoloki (localStorage)
+   logiikkaa. Ks. polar-vaihe-0_5-ohjeet.md, polar-vaihe-1-ohjeet.md
+   ja white paper.
+   - Osa A: meanit + aikaleima + mean-vakaus pysyviksi (localStorage)
+   - Osa B: append-only raakahavaintoloki + windAge-kirjanpito
    ============================================================ */
 const Polar = (function(){
   const MEANS_KEY = 'tackcall_polar_means_v1';
@@ -242,6 +244,9 @@ const Polar = (function(){
   // raja: tuore mean on luultavasti vielä validi, eilisen tuuli ei ole.
   const MEAN_MAX_AGE_MS = 3*60*60*1000; // 3h
   const LOG_INTERVAL_MS = 1000; // kerää 1×/s, ei joka piirtoruudulla
+  // Vaihe 1: mean-vakauden arviointi-ikkuna. Lähtöarvo 10s — ei lukittu,
+  // tarkennettavissa kenttädatan perusteella (ks. O4/O5 white paperissa).
+  const STABILITY_WINDOW_MS = 10*1000;
   let log = [];
 
   function loadLog(){
@@ -256,12 +261,12 @@ const Polar = (function(){
     catch(e){ /* storage täynnä tai estetty — ei kaadeta sovellusta */ }
   }
 
-  // Osa A — meanit + aikaleima
+  // Osa A — meanit + aikaleima + vakaus
   function saveMeans(){
     try{
       localStorage.setItem(MEANS_KEY, JSON.stringify({
-        meanStb:S.meanStb, meanStbTs:S.meanStbTs,
-        meanBb:S.meanBb,   meanBbTs:S.meanBbTs
+        meanStb:S.meanStb, meanStbTs:S.meanStbTs, meanStbStability:S.meanStbStability,
+        meanBb:S.meanBb,   meanBbTs:S.meanBbTs,   meanBbStability:S.meanBbStability
       }));
     }catch(e){ /* ei kaadeta */ }
   }
@@ -274,14 +279,39 @@ const Polar = (function(){
       // vanhaa meaniä ei ladata hiljaa aktiiviseksi — vain riittävän tuore kelpaa
       if(d.meanStb!=null && d.meanStbTs!=null && (now-d.meanStbTs)<=MEAN_MAX_AGE_MS){
         S.meanStb = d.meanStb; S.meanStbTs = d.meanStbTs;
+        S.meanStbStability = (d.meanStbStability!=null) ? d.meanStbStability : null;
       }
       if(d.meanBb!=null && d.meanBbTs!=null && (now-d.meanBbTs)<=MEAN_MAX_AGE_MS){
         S.meanBb = d.meanBb; S.meanBbTs = d.meanBbTs;
+        S.meanBbStability = (d.meanBbStability!=null) ? d.meanBbStability : null;
       }
     }catch(e){ /* korruptoitunut tallenne — jätetään mean tyhjäksi */ }
   }
   function clearMeans(){
     try{ localStorage.removeItem(MEANS_KEY); }catch(e){}
+  }
+
+  // Vaihe 1 — mean-vakaus: kiertosuure (mean resultant length) S.rangeBuf:n
+  // viimeisen STABILITY_WINDOW_MS:n headingeista. 1 = täysin vakaa, 0 = hajalla.
+  // Lasketaan setMean()-hetkellä, EI käytetä mihinkään päätökseen tässä vaiheessa
+  // — tallennetaan vain talteen myöhempää kynnyspäätöstä varten (ks. O4/O5).
+  function computeStability(){
+    const now = Date.now();
+    const recent = S.rangeBuf.filter(p => now - p.t <= STABILITY_WINDOW_MS);
+    if(recent.length < 3) return null; // liian vähän dataa luotettavaan arvioon
+    let sx=0, sy=0;
+    recent.forEach(p=>{ const r=p.hdg*Math.PI/180; sx+=Math.cos(r); sy+=Math.sin(r); });
+    sx/=recent.length; sy/=recent.length;
+    return Math.sqrt(sx*sx+sy*sy);
+  }
+
+  // Vaihe 1 — windAge-kirjanpito: sekunteja viimeisimmän mean-asetuksen jälkeen
+  // (kumpi tahansa halssi, koska estWind() tarvitsee molempia). Pelkkä kirjanpito,
+  // ei vielä kytketty mihinkään näkymättömään automatiikkaan.
+  function windAgeSec(){
+    const ts = Math.max(S.meanStbTs||0, S.meanBbTs||0);
+    if(!ts) return null;
+    return Math.round((Date.now()-ts)/1000);
   }
 
   // Osa B — append-only raakahavaintoloki
@@ -296,15 +326,26 @@ const Polar = (function(){
       meanStb: S.meanStb,
       meanBb: S.meanBb,
       tack: S.tack,
-      sog: Math.round(S.gps.sog*100)/100 // 2 desimaalia tallennukseen (näyttö pyöristää 1:een)
+      sog: Math.round(S.gps.sog*100)/100, // 2 desimaalia tallennukseen (näyttö pyöristää 1:een)
+      windAge: windAgeSec() // vaihe 1: sekunteja viimeisimmästä mean-asetuksesta, pelkkä kirjanpito
     });
     saveLog();
   }
 
   return {
     init(){ loadMeans(); loadLog(); setInterval(collectPoint, LOG_INTERVAL_MS); },
-    onMeanSet(){ saveMeans(); },
-    onReset(){ S.meanStbTs=null; S.meanBbTs=null; clearMeans(); },
+    onMeanSet(){
+      // Vaihe 1: lasketaan vakaus juuri ennen tallennusta — kuvaa kuinka
+      // tasainen heading oli viimeisten STABILITY_WINDOW_MS millisekunnin ajan.
+      if(S.tack==='stb') S.meanStbStability = computeStability();
+      else if(S.tack==='bb') S.meanBbStability = computeStability();
+      saveMeans();
+    },
+    onReset(){
+      S.meanStbTs=null; S.meanBbTs=null;
+      S.meanStbStability=null; S.meanBbStability=null;
+      clearMeans();
+    },
     logLength(){ return log.length; }
   };
 })();
@@ -839,7 +880,7 @@ document.querySelectorAll(".stepper").forEach(st=>{
 });
 
 /* ---------- init ---------- */
-const APP_VERSION="mittari v0.29";
+const APP_VERSION="mittari v0.30";
 (function(){
   const e=$("verEnable"); if(e) e.textContent=APP_VERSION;
   const n=$("verNote"); if(n) n.textContent=APP_VERSION+" · shares engine with index.html";
