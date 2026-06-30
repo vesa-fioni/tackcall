@@ -48,7 +48,17 @@
 </div>
 
 <div class="card">
-  <button onclick="refresh()">↻ Päivitä</button>
+  <div class="label">Polaari — P90-kernel (vaihe 2a, vain debug)</div>
+  <div class="row">
+    <div class="stat"><div class="n" id="polValid">—</div><div class="l">hyväksyttyä pistettä</div></div>
+    <div class="stat"><div class="n" id="polTotal">—</div><div class="l">lokissa yhteensä</div></div>
+  </div>
+  <div id="polCurrent" style="margin:8px 0;font-size:13px;color:#fff;"></div>
+  <div class="label" style="margin-top:8px;">TWA-taulukko (P90 / massa / σ / gradientti)</div>
+  <pre id="polTable">—</pre>
+</div>
+
+
   <button class="secondary" onclick="autoToggle()" id="autoBtn">▶ Auto-päivitys (3s)</button>
   <br>
   <button class="secondary" onclick="exportLog()">Näytä koko loki tekstina</button>
@@ -73,6 +83,165 @@ function fmtAge(ts){
 function fmtStab(v){
   if(v==null) return '—';
   return (v*100).toFixed(0)+'%';
+}
+
+// ============================================================
+// POLAARI — VAIHE 2a: P90-laskenta kaksivaiheisella
+// gradienttisidotulla Gaussian-kernelillä.
+// Kaikki laskenta tässä tiedostossa — mittari.html koskematta.
+// Nimetyt konstantit: säädettävissä kenttädatan jälkeen.
+// ============================================================
+const SOG_MIN_KN          = 0.5;  // alle tämän paino=0 (GPS-kohina)
+const SOG_MAX_KN          = 2.0;  // tästä ylöspäin täysi paino 1
+const KERNEL_SIGMA_SMOOTH = 20;   // 1. vaiheen kiinteä leveys (°), sileytyspassi
+const KERNEL_SIGMA_BASE   = 15;   // 2. vaiheen perusleveys ennen gradienttikorjausta (°)
+const KERNEL_K            = 0.3;  // gradienttiherkkyysvakio — säädettävä kenttädatalla
+const POLAR_STEP_DEG      = 5;    // laskentapisteiden väli TWA-akselilla (°)
+const TWA_MIN             = 15;   // no-go-vyöhyke: alle tämän hylätään
+const TWA_MAX             = 175;  // yli tämän hylätään
+
+// Kahden kulman kiertosuure-keskiarvo (asteet → asteet)
+function circMean2(a, b){
+  const ar=a*Math.PI/180, br=b*Math.PI/180;
+  return Math.atan2((Math.sin(ar)+Math.sin(br))/2,
+                    (Math.cos(ar)+Math.cos(br))/2)*180/Math.PI;
+}
+// Normalisoi kulma -180..180-välille
+function normAngle(d){
+  let r=d%360; if(r>180) r-=360; if(r<-180) r+=360; return r;
+}
+// SOG-paino: lineaarinen rampi [SOG_MIN, SOG_MAX]
+function sogW(sog){
+  if(sog<=SOG_MIN_KN) return 0;
+  if(sog>=SOG_MAX_KN) return 1;
+  return (sog-SOG_MIN_KN)/(SOG_MAX_KN-SOG_MIN_KN);
+}
+// Gaussian-kernel
+function gauss(delta, sigma){
+  return Math.exp(-0.5*(delta/sigma)**2);
+}
+// TWA yhteen lokipisteeseen (null jos meanit puuttuu tai tulos out-of-range)
+function pointTWA(p){
+  if(p.meanStb==null||p.meanBb==null) return null;
+  const wd=circMean2(p.meanStb, p.meanBb);
+  const twa=Math.abs(normAngle(p.heading-wd));
+  return (twa>=TWA_MIN&&twa<=TWA_MAX) ? twa : null;
+}
+// Laskentapisteet TWA-akselilla
+function makeQueries(){
+  const q=[];
+  for(let t=TWA_MIN;t<=TWA_MAX;t+=POLAR_STEP_DEG) q.push(t);
+  return q;
+}
+
+// Pääfunktio: laske polaari koko lokista
+function computePolar(log){
+  // Johda TWA ja SOG-paino per piste
+  const pts=[];
+  for(const p of log){
+    const twa=pointTWA(p);
+    if(twa==null) continue;
+    pts.push({twa, sog:p.sog, w:sogW(p.sog)});
+  }
+  if(pts.length<5) return null; // liian vähän dataa, ei kaadeta
+
+  const queries=makeQueries();
+
+  // VAIHE 1: sileä SOG-käyrä kiinteällä kernelillä (pohja gradientin laskentaan)
+  const smooth=queries.map(q=>{
+    let wSum=0, wsog=0;
+    for(const p of pts){
+      const kw=p.w*gauss(q-p.twa, KERNEL_SIGMA_SMOOTH);
+      wSum+=kw; wsog+=kw*p.sog;
+    }
+    return wSum>0 ? wsog/wSum : null;
+  });
+
+  // Gradientin estimointi sileästä käyrästä (ei raakadatasta — vakaa myös harvalla datalla)
+  const grads=queries.map((q,i)=>{
+    const n=queries.length;
+    if(smooth[i]==null) return 0;
+    if(i===0)   return smooth[1]!=null  ? (smooth[1]-smooth[0])/POLAR_STEP_DEG          : 0;
+    if(i===n-1) return smooth[n-2]!=null? (smooth[n-1]-smooth[n-2])/POLAR_STEP_DEG      : 0;
+    if(smooth[i-1]==null||smooth[i+1]==null) return 0;
+    return (smooth[i+1]-smooth[i-1])/(2*POLAR_STEP_DEG);
+  });
+
+  // VAIHE 2: adaptiivinen kernel-P90
+  const results=queries.map((q,i)=>{
+    const sigma=KERNEL_SIGMA_BASE/(1+KERNEL_K*Math.abs(grads[i]));
+    // Kernel-painot per piste
+    const wp=pts.map(p=>({sog:p.sog, kw:p.w*gauss(q-p.twa,sigma)}));
+    const mass=wp.reduce((s,x)=>s+x.kw,0);
+    if(mass<0.5) return {p90:null, mass, sigma, grad:grads[i]};
+    // Painotettu P90: järjestä SOG kasvavaan järjestykseen, etsi 90%-raja
+    wp.sort((a,b)=>a.sog-b.sog);
+    const thr=0.9*mass;
+    let cum=0, p90=null;
+    for(const x of wp){ cum+=x.kw; if(cum>=thr){p90=x.sog;break;} }
+    return {p90, mass, sigma, grad:grads[i]};
+  });
+
+  return {queries, results, nPts:pts.length, nTotal:log.length};
+}
+
+// Laske suorituskyky-% yhdelle TWA-arvolle valmiin polaarin pohjalta
+function perfAtTWA(polar, twa, sog){
+  if(!polar||twa==null||sog==null) return null;
+  // Etsi lähin kyselypiste
+  let best=null, bestDist=Infinity;
+  polar.queries.forEach((q,i)=>{
+    const d=Math.abs(q-twa);
+    if(d<bestDist&&polar.results[i].p90!=null){bestDist=d;best=i;}
+  });
+  if(best==null||bestDist>POLAR_STEP_DEG*1.5) return null;
+  const p90=polar.results[best].p90;
+  return p90>0 ? Math.round((sog/p90)*100) : null;
+}
+
+function refreshPolar(log){
+  let polar=null;
+  try{ polar=computePolar(log); }catch(e){}
+
+  document.getElementById('polTotal').textContent=log.length;
+  if(!polar){
+    document.getElementById('polValid').textContent='—';
+    document.getElementById('polCurrent').textContent=
+      '(liian vähän hyväksyttyjä pisteitä — tarvitaan min. 5 TWA-suodatuksen jälkeen)';
+    document.getElementById('polTable').textContent='—';
+    return;
+  }
+  document.getElementById('polValid').textContent=polar.nPts;
+
+  // Nykyinen suorituskyky viimeisimmän lokipisteen perusteella
+  let curText='(ei viimeistä lokipistettä)';
+  if(log.length){
+    const last=log[log.length-1];
+    const twa=pointTWA(last);
+    const perf=perfAtTWA(polar, twa, last.sog);
+    if(twa!=null){
+      curText='Viimeisin piste → TWA: '+twa.toFixed(1)+'°'+
+              '  SOG: '+last.sog.toFixed(2)+' kn'+
+              (perf!=null ? '  Suorituskyky: '+perf+'%' : '  (ei P90-arviota tälle kulmalle)');
+    } else {
+      curText='Viimeisin piste: TWA ei laskettavissa (meanit puuttuu tai out-of-range)';
+    }
+  }
+  document.getElementById('polCurrent').textContent=curText;
+
+  // TWA-taulukko
+  const header='TWA°  | P90(kn) | Massa | σ(°)  | Grad';
+  const sep=  '------+---------+-------+-------+------';
+  const rows=polar.queries.map((q,i)=>{
+    const r=polar.results[i];
+    const p90=r.p90!=null ? r.p90.toFixed(2).padStart(7) : '     —';
+    const mass=r.mass.toFixed(1).padStart(5);
+    const sig=r.sigma.toFixed(1).padStart(5);
+    const grad=(r.grad>=0?'+':'')+r.grad.toFixed(3);
+    return String(q).padStart(3)+'°  |'+p90+'  |'+mass+'  |'+sig+'  | '+grad;
+  });
+  document.getElementById('polTable').textContent=
+    [header,sep,...rows].join('\n');
 }
 
 function refresh(){
@@ -115,6 +284,9 @@ function refresh(){
   document.getElementById('logOut').textContent = last5.length
     ? last5.map(p=>JSON.stringify(p)).join('\n')
     : '(ei pisteitä — varmista että GPS on päällä mittarissa ja SOG saatavilla)';
+
+  // Polaari
+  refreshPolar(log);
 }
 
 function exportLog(){

@@ -2,7 +2,38 @@
 
 Kaikki merkittävät muutokset Tackcalliin kirjataan tähän tiedostoon.
 
-## [mittari v0.30] — polar-dev-v1 — Polaari vaihe 1 (rajattu, ks. avoimet päätökset alla)
+## [polar-debug v2a] — polar-dev-v1 — Polaari vaihe 2a (laskenta, vain debug-näyttö)
+
+mittari.html pysyy koskemattomana (v0.30). Kaikki uusi koodi polar-debug.html:ssä.
+Ks. polar-vaihe-2a-ohjeet.md päätöksistä.
+
+### Lisätty (polar-debug.html)
+- **computePolar(log):** kaksivaiheinen gradienttisidottu kernel-P90-laskenta koko
+  raakalokista. Ei inkrementaalista välimuistia — lasketaan aina pyynnöstä.
+- **Vaihe 1 (sileytyspassi):** painotettu SOG-keskiarvo kiinteällä Gaussian-kernelillä
+  (σ=20°) jokaiselle 5° TWA-kyselypisteelle. Pohja gradientin estimoinnille.
+- **Gradientin estimointi:** numerinen derivaatta sileästä käyrästä (ei raakadatasta
+  — vakaa myös harvalla datalla).
+- **Vaihe 2 (adaptiivinen kernel, P90):** σ(TWA) = KERNEL_SIGMA_BASE / (1 + KERNEL_K
+  × |grad|) — kapea jyrkillä alueilla (no-go), leveä loivilla (myötätuuli). Painotettu
+  P90 per kyselypiste (sortattu SOG-jakauma, 90% kumulatiivinen paino).
+- **SOG-pohjainen paino:** lineaarinen rampi [SOG_MIN_KN=0.5, SOG_MAX_KN=2.0].
+- **TWA-johdannainen lukuvaiheessa:** `circMean2(meanStb,meanBb)` → windDir,
+  `abs(norm(heading-windDir))` → TWA. Ei tallenneta raakalokiin (vaihe 1 -päätös).
+- **Efektiivinen massa** per kyselypiste — luotettavuusarvio myöhempää kynnystä varten.
+- **Nykyinen suorituskyky:** viimeisimmän lokipisteen TWA + SOG → P90-haku → %.
+- **TWA-taulukko debug-sivulla:** TWA° | P90(kn) | Massa | σ(°) | Gradientti.
+- Kaikki nimettyinä konstantteina: SOG_MIN_KN, SOG_MAX_KN, KERNEL_SIGMA_SMOOTH,
+  KERNEL_SIGMA_BASE, KERNEL_K, POLAR_STEP_DEG — helposti säädettävissä kenttädatan
+  jälkeen ilman muutoksia rakenteeseen.
+
+### Tietoisesti rajattu pois (ks. polar-vaihe-2a-ohjeet.md)
+- **SOG-ristivalidointi lykätty vaiheeseen 2b** — vaatisi laskennan mittari.html:ään,
+  2a validoi logiikan ensin debug-sivulla.
+- Symmetria-peilaus, windAge-paino, P90/P95-valinta, confidence — myöhemmät vaiheet.
+- **Ei mitään muutoksia mittari.html:ään** — piirto, audio, meanit, evalShift ennallaan.
+
+ — polar-dev-v1 — Polaari vaihe 1 (rajattu, ks. avoimet päätökset alla)
 
 Jatkaa vaihetta 0.5 samalla periaatteella: näkymätön taustakeruu, ei UI-muutoksia, ei
 jalostusta. Toteutettu polar-vaihe-1-ohjeet-luonnos.md:n päätösten mukaisesti — kolme
