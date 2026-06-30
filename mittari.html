@@ -216,7 +216,7 @@ function circMeanPush(state, deg){
 const S = {
   headingRaw:null, heading:null,
   smooth:{sx:1, sy:0, k:0.78},
-  tack:null, meanStb:null, meanBb:null,
+  tack:null, meanStb:null, meanBb:null, meanStbTs:null, meanBbTs:null,
   rangeBuf:[],
   gps:{cog:null, sog:null, on:false, watch:null},
   wakeLock:null,
@@ -227,6 +227,87 @@ const S = {
 };
 const HIST_MS = 4*60*1000;
 const AUDIO_DWELL_MS=800, TACK_HOLD_MS=4000, TACK_LOCK_MS=12000;
+
+/* ============================================================
+   POLAARI — VAIHE 0.5 (näkymätön taustakeruu, ei UI:ta)
+   Lisätty additiivisena kerroksena, ei kosketa yllä olevaa
+   logiikkaa. Ks. polar-vaihe-0_5-ohjeet.md ja white paper.
+   - Osa A: meanit + aikaleima pysyviksi (localStorage)
+   - Osa B: append-only raakahavaintoloki (localStorage)
+   ============================================================ */
+const Polar = (function(){
+  const MEANS_KEY = 'tackcall_polar_means_v1';
+  const LOG_KEY   = 'tackcall_polar_log_v1';
+  // "Vanhaa meaniä ei saa ladata hiljaa aktiiviseksi" — muutaman tunnin
+  // raja: tuore mean on luultavasti vielä validi, eilisen tuuli ei ole.
+  const MEAN_MAX_AGE_MS = 3*60*60*1000; // 3h
+  const LOG_INTERVAL_MS = 1000; // kerää 1×/s, ei joka piirtoruudulla
+  let log = [];
+
+  function loadLog(){
+    try{
+      const raw = localStorage.getItem(LOG_KEY);
+      log = raw ? JSON.parse(raw) : [];
+      if(!Array.isArray(log)) log = [];
+    }catch(e){ log = []; }
+  }
+  function saveLog(){
+    try{ localStorage.setItem(LOG_KEY, JSON.stringify(log)); }
+    catch(e){ /* storage täynnä tai estetty — ei kaadeta sovellusta */ }
+  }
+
+  // Osa A — meanit + aikaleima
+  function saveMeans(){
+    try{
+      localStorage.setItem(MEANS_KEY, JSON.stringify({
+        meanStb:S.meanStb, meanStbTs:S.meanStbTs,
+        meanBb:S.meanBb,   meanBbTs:S.meanBbTs
+      }));
+    }catch(e){ /* ei kaadeta */ }
+  }
+  function loadMeans(){
+    try{
+      const raw = localStorage.getItem(MEANS_KEY);
+      if(!raw) return;
+      const d = JSON.parse(raw);
+      const now = Date.now();
+      // vanhaa meaniä ei ladata hiljaa aktiiviseksi — vain riittävän tuore kelpaa
+      if(d.meanStb!=null && d.meanStbTs!=null && (now-d.meanStbTs)<=MEAN_MAX_AGE_MS){
+        S.meanStb = d.meanStb; S.meanStbTs = d.meanStbTs;
+      }
+      if(d.meanBb!=null && d.meanBbTs!=null && (now-d.meanBbTs)<=MEAN_MAX_AGE_MS){
+        S.meanBb = d.meanBb; S.meanBbTs = d.meanBbTs;
+      }
+    }catch(e){ /* korruptoitunut tallenne — jätetään mean tyhjäksi */ }
+  }
+  function clearMeans(){
+    try{ localStorage.removeItem(MEANS_KEY); }catch(e){}
+  }
+
+  // Osa B — append-only raakahavaintoloki
+  // Kerätään vain kun GPS on päällä ja SOG saatavilla: heading-piste yksinään
+  // ei palvele polaaria, joten ilman SOG:ta piste jätetään väliin (yksinkertaisinta).
+  function collectPoint(){
+    if(S.heading==null) return;
+    if(!S.settings.gps || S.gps.sog==null) return;
+    log.push({
+      ts: Date.now(),
+      heading: S.heading,
+      meanStb: S.meanStb,
+      meanBb: S.meanBb,
+      tack: S.tack,
+      sog: Math.round(S.gps.sog*100)/100 // 2 desimaalia tallennukseen (näyttö pyöristää 1:een)
+    });
+    saveLog();
+  }
+
+  return {
+    init(){ loadMeans(); loadLog(); setInterval(collectPoint, LOG_INTERVAL_MS); },
+    onMeanSet(){ saveMeans(); },
+    onReset(){ S.meanStbTs=null; S.meanBbTs=null; clearMeans(); },
+    logLength(){ return log.length; }
+  };
+})();
 
 /* ---------- ääni: merkkiäänet (Web Audio) ---------- */
 const Audio = {
@@ -718,7 +799,9 @@ $("btnBb").addEventListener("click", ()=>{ if(S.tack!=='bb'){ S.tack='bb'; reset
 function setMean(){
   if(S.heading==null) return;
   if(!S.tack) S.tack='stb';
-  if(S.tack==='stb') S.meanStb=norm(S.heading); else S.meanBb=norm(S.heading);
+  if(S.tack==='stb'){ S.meanStb=norm(S.heading); S.meanStbTs=Date.now(); }
+  else { S.meanBb=norm(S.heading); S.meanBbTs=Date.now(); }
+  Polar.onMeanSet();
   meanFlash=1.0;
   const b=$("btnSetMean"); b.classList.add("flash"); setTimeout(()=>b.classList.remove("flash"),700);
   syncToggles();
@@ -731,7 +814,7 @@ $("btnGear").addEventListener("click", ()=>$("sheet").classList.remove("hidden")
 $("btnCloseSheet").addEventListener("click", ()=>$("sheet").classList.add("hidden"));
 $("btnHelp").addEventListener("click", ()=>$("help").classList.remove("hidden"));
 $("btnCloseHelp").addEventListener("click", ()=>$("help").classList.add("hidden"));
-$("btnReset").addEventListener("click", ()=>{ S.meanStb=null; S.meanBb=null; });
+$("btnReset").addEventListener("click", ()=>{ S.meanStb=null; S.meanBb=null; Polar.onReset(); });
 function syncToggles(){
   document.querySelectorAll(".tog").forEach(t=>{ t.classList.toggle("on", !!S.settings[t.dataset.key]); });
 }
@@ -756,11 +839,12 @@ document.querySelectorAll(".stepper").forEach(st=>{
 });
 
 /* ---------- init ---------- */
-const APP_VERSION="mittari v0.28";
+const APP_VERSION="mittari v0.29";
 (function(){
   const e=$("verEnable"); if(e) e.textContent=APP_VERSION;
   const n=$("verNote"); if(n) n.textContent=APP_VERSION+" · shares engine with index.html";
 })();
+Polar.init();
 window.addEventListener("resize", resize);
 window.addEventListener("orientationchange", ()=>{ checkOrientation(); setTimeout(resize,250); setTimeout(resize,600); });
 if(screen.orientation && screen.orientation.addEventListener){ screen.orientation.addEventListener("change", ()=>{ checkOrientation(); setTimeout(resize,200); }); }

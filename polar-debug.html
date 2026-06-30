@@ -1,0 +1,145 @@
+<!DOCTYPE html>
+<html lang="fi">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Tackcall — Polar debug</title>
+<style>
+  body{background:#0a0a0a;color:#d8ffe0;font-family:-apple-system,system-ui,monospace;
+       padding:14px;line-height:1.4;font-size:14px;}
+  h1{font-size:16px;color:#19e26a;margin:0 0 4px;}
+  .sub{color:#666;font-size:12px;margin-bottom:16px;}
+  .card{background:#141414;border:1px solid #2a2a2a;border-radius:8px;padding:12px;margin-bottom:14px;}
+  .label{color:#19e0e0;font-size:12px;text-transform:uppercase;letter-spacing:.05em;margin-bottom:6px;}
+  .big{font-size:28px;font-weight:bold;color:#fff;}
+  pre{white-space:pre-wrap;word-break:break-all;color:#bbb;font-size:12px;margin:0;
+      max-height:300px;overflow:auto;}
+  button{background:#19e26a;color:#000;border:none;border-radius:6px;padding:10px 14px;
+         font-size:14px;font-weight:bold;margin-right:8px;margin-bottom:8px;}
+  button.secondary{background:#222;color:#19e0e0;border:1px solid #19e0e0;}
+  button.danger{background:#3a1010;color:#ff6a6a;border:1px solid #ff6a6a;}
+  .row{display:flex;gap:10px;flex-wrap:wrap;margin-bottom:6px;}
+  .stat{flex:1;min-width:120px;background:#101010;border-radius:6px;padding:8px;text-align:center;}
+  .stat .n{font-size:20px;color:#fff;}
+  .stat .l{font-size:11px;color:#888;}
+  .warn{color:#ffb347;font-size:12px;margin-top:6px;}
+  textarea{width:100%;height:80px;background:#0a0a0a;color:#9f9;border:1px solid #2a2a2a;
+           border-radius:6px;font-size:11px;padding:6px;}
+</style>
+</head>
+<body>
+<h1>Tackcall — Polar debug</h1>
+<div class="sub">Lukee samat localStorage-avaimet kuin mittari.html (sama origin vaaditaan).</div>
+
+<div class="card">
+  <div class="label">Means (tackcall_polar_means_v1)</div>
+  <pre id="meansOut">—</pre>
+</div>
+
+<div class="card">
+  <div class="label">Raakaloki (tackcall_polar_log_v1)</div>
+  <div class="row">
+    <div class="stat"><div class="n" id="logCount">0</div><div class="l">pistettä</div></div>
+    <div class="stat"><div class="n" id="logSize">0 KB</div><div class="l">koko</div></div>
+    <div class="stat"><div class="n" id="logSpan">—</div><div class="l">aikaväli</div></div>
+  </div>
+  <div class="label" style="margin-top:10px;">Viimeisimmät 5 pistettä</div>
+  <pre id="logOut">—</pre>
+</div>
+
+<div class="card">
+  <button onclick="refresh()">↻ Päivitä</button>
+  <button class="secondary" onclick="autoToggle()" id="autoBtn">▶ Auto-päivitys (3s)</button>
+  <br>
+  <button class="secondary" onclick="exportLog()">Näytä koko loki tekstina</button>
+  <button class="danger" onclick="clearAll()">Tyhjennä polar-data</button>
+  <div id="exportArea" style="display:none;margin-top:10px;">
+    <textarea id="exportText" readonly></textarea>
+  </div>
+  <div class="warn">"Tyhjennä" poistaa pysyvästi meanit + aikaleimat + koko raakalokin tältä laitteelta. Ei vaikuta mittarin muuhun toimintaan.</div>
+</div>
+
+<script>
+const MEANS_KEY='tackcall_polar_means_v1', LOG_KEY='tackcall_polar_log_v1';
+let autoTimer=null;
+
+function fmtAge(ts){
+  if(ts==null) return '—';
+  const s=Math.round((Date.now()-ts)/1000);
+  if(s<60) return s+'s sitten';
+  if(s<3600) return Math.round(s/60)+'min sitten';
+  return (s/3600).toFixed(1)+'h sitten';
+}
+
+function refresh(){
+  // Means
+  let meansOut='(ei tallennettua mean-dataa)';
+  try{
+    const raw=localStorage.getItem(MEANS_KEY);
+    if(raw){
+      const d=JSON.parse(raw);
+      meansOut =
+        'STB: '+(d.meanStb!=null?d.meanStb.toFixed(1)+'°':'—')+
+        '  (asetettu '+fmtAge(d.meanStbTs)+')\n'+
+        'BB:  '+(d.meanBb!=null?d.meanBb.toFixed(1)+'°':'—')+
+        '  (asetettu '+fmtAge(d.meanBbTs)+')';
+    }
+  }catch(e){ meansOut='VIRHE luettaessa: '+e.message; }
+  document.getElementById('meansOut').textContent=meansOut;
+
+  // Log
+  let log=[];
+  try{
+    const raw=localStorage.getItem(LOG_KEY);
+    log = raw ? JSON.parse(raw) : [];
+    if(!Array.isArray(log)) log=[];
+  }catch(e){ log=[]; }
+
+  document.getElementById('logCount').textContent=log.length;
+  const sizeKB = log.length ? (JSON.stringify(log).length/1024).toFixed(1)+' KB' : '0 KB';
+  document.getElementById('logSize').textContent=sizeKB;
+
+  if(log.length){
+    const span=(log[log.length-1].ts - log[0].ts)/1000;
+    document.getElementById('logSpan').textContent =
+      span<60 ? Math.round(span)+'s' : Math.round(span/60)+'min';
+  } else {
+    document.getElementById('logSpan').textContent='—';
+  }
+
+  const last5 = log.slice(-5).reverse();
+  document.getElementById('logOut').textContent = last5.length
+    ? last5.map(p=>JSON.stringify(p)).join('\n')
+    : '(ei pisteitä — varmista että GPS on päällä mittarissa ja SOG saatavilla)';
+}
+
+function exportLog(){
+  let log=[];
+  try{ log=JSON.parse(localStorage.getItem(LOG_KEY)||'[]'); }catch(e){}
+  const area=document.getElementById('exportArea');
+  document.getElementById('exportText').value = JSON.stringify(log);
+  area.style.display='block';
+}
+
+function clearAll(){
+  if(!confirm('Poistetaanko meanit + raakaloki pysyvästi tästä selaimesta?')) return;
+  try{ localStorage.removeItem(MEANS_KEY); }catch(e){}
+  try{ localStorage.removeItem(LOG_KEY); }catch(e){}
+  refresh();
+}
+
+function autoToggle(){
+  const btn=document.getElementById('autoBtn');
+  if(autoTimer){
+    clearInterval(autoTimer); autoTimer=null;
+    btn.textContent='▶ Auto-päivitys (3s)';
+  } else {
+    autoTimer=setInterval(refresh,3000);
+    btn.textContent='⏸ Pysäytä auto-päivitys';
+  }
+}
+
+refresh();
+</script>
+</body>
+</html>
