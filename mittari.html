@@ -913,24 +913,25 @@ function render(){
     ctx.font=`800 ${small*0.06}px ${getCSS('--mono')}`; ctx.textAlign='center'; ctx.textBaseline='middle';
     ctx.fillText('✓', W/2, yVal); ctx.restore(); meanFlash-=0.03; }
 
-  // --- keski: SOG (2b — siirretty oikealta, aina näkyvissä) ---
-  const sogStr = (S.gps.on && S.gps.sog!=null) ? S.gps.sog.toFixed(1) : '--';
-  const sogCol = (S.gps.on && S.gps.sog!=null) ? '#ff7a7a' : '#3a3a3a';
-  label('SOG', W*0.50, yEy, Math.max(10,small*0.024*sScale), '#6a6a6a','center');
-  drawNumber(sogStr, W*0.50, yVal, small*0.062*sScale, sogCol, false);
-  if(S.gps.on && S.gps.sog!=null) { /* kn-label poistettu — menee heading-luvun päälle HEADING-tilassa */ }
-
-  // --- oikea: PERF (2b — laskettu P90-polaarista, kolmiportainen kirkkaus) ---
+  // --- keski: PERF (2b — laskettu P90-polaarista, kolmiportainen kirkkaus) ---
+  // PERF on keskellä koska se on toissijainen — tulee näkyviin vasta kun polaari on oppinut.
+  // SOG on oikealla koska se on ensisijaista jatkuvaa dataa.
   const _wind=estWind();
   const _twaNow=(_wind!=null&&S.heading!=null)?Math.abs(angDiff(_wind,S.heading)):null;
   const _sogNow=(S.gps.on&&S.gps.sog!=null)?S.gps.sog:null;
   const _pd=Polar.perf(_twaNow,_sogNow);
   let perfStr,perfCol;
-  if(!_pd||_pd.state==='none'){ perfStr='--'; perfCol='#3a3a3a'; }      // ei dataa
-  else if(_pd.state==='dim'){   perfStr=_pd.pct+'%'; perfCol='#7a4040'; } // oppii
-  else {                        perfStr=_pd.pct+'%'; perfCol='#ff7a7a'; } // luotettava
-  label('PERF', W*0.84, yEy, Math.max(10,small*0.024*sScale), '#6a6a6a','center');
-  drawNumber(perfStr, W*0.84, yVal, small*0.062*sScale, perfCol, false);
+  if(!_pd||_pd.state==='none'){ perfStr='--'; perfCol='#3a3a3a'; }
+  else if(_pd.state==='dim'){   perfStr=_pd.pct+'%'; perfCol='#7a4040'; }
+  else {                        perfStr=_pd.pct+'%'; perfCol='#ff7a7a'; }
+  label('PERF', W*0.50, yEy, Math.max(10,small*0.024*sScale), '#6a6a6a','center');
+  drawNumber(perfStr, W*0.50, yVal, small*0.092*sScale, perfCol, false);
+
+  // --- oikea: SOG (ensisijainen — saatavilla heti GPS:n kanssa) ---
+  const sogStr = (S.gps.on && S.gps.sog!=null) ? S.gps.sog.toFixed(1) : '--';
+  const sogCol = (S.gps.on && S.gps.sog!=null) ? '#ff7a7a' : '#3a3a3a';
+  label('SOG', W*0.84, yEy, Math.max(10,small*0.024*sScale), '#6a6a6a','center');
+  drawNumber(sogStr, W*0.84, yVal, small*0.092*sScale, sogCol, false);
 
   // --- kaaripalkki tai onboarding-ohje ---
   // Kun nykyisen halssin mean puuttuu (eikä olla downwindillä/no-go-vyöhykkeellä),
