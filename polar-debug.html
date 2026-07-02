@@ -1,0 +1,515 @@
+<!DOCTYPE html>
+<html lang="fi">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Tackcall — Polar debug</title>
+<style>
+  body{background:#0a0a0a;color:#d8ffe0;font-family:-apple-system,system-ui,monospace;
+       padding:14px;line-height:1.4;font-size:14px;}
+  h1{font-size:16px;color:#19e26a;margin:0 0 4px;}
+  .sub{color:#666;font-size:12px;margin-bottom:16px;}
+  .card{background:#141414;border:1px solid #2a2a2a;border-radius:8px;padding:12px;margin-bottom:14px;}
+  .label{color:#19e0e0;font-size:12px;text-transform:uppercase;letter-spacing:.05em;margin-bottom:6px;}
+  .big{font-size:28px;font-weight:bold;color:#fff;}
+  pre{white-space:pre-wrap;word-break:break-all;color:#bbb;font-size:12px;margin:0;
+      max-height:300px;overflow:auto;}
+  button{background:#19e26a;color:#000;border:none;border-radius:6px;padding:10px 14px;
+         font-size:14px;font-weight:bold;margin-right:8px;margin-bottom:8px;}
+  button.secondary{background:#222;color:#19e0e0;border:1px solid #19e0e0;}
+  button.danger{background:#3a1010;color:#ff6a6a;border:1px solid #ff6a6a;}
+  .row{display:flex;gap:10px;flex-wrap:wrap;margin-bottom:6px;}
+  .stat{flex:1;min-width:120px;background:#101010;border-radius:6px;padding:8px;text-align:center;}
+  .stat .n{font-size:20px;color:#fff;}
+  .stat .l{font-size:11px;color:#888;}
+  .warn{color:#ffb347;font-size:12px;margin-top:6px;}
+  textarea{width:100%;height:80px;background:#0a0a0a;color:#9f9;border:1px solid #2a2a2a;
+           border-radius:6px;font-size:11px;padding:6px;}
+  #polarCanvas{display:block;margin:8px auto 0;}
+</style>
+</head>
+<body>
+<h1>Tackcall — Polar debug</h1>
+<div class="sub">Lukee samat localStorage-avaimet kuin mittari.html (sama origin vaaditaan).</div>
+
+<div class="card">
+  <div class="label">Means (tackcall_polar_means_v1)</div>
+  <pre id="meansOut">—</pre>
+</div>
+
+<div class="card">
+  <div class="label">Raakaloki (tackcall_polar_log_v1)</div>
+  <div class="row">
+    <div class="stat"><div class="n" id="logCount">0</div><div class="l">pistettä</div></div>
+    <div class="stat"><div class="n" id="logSize">0 KB</div><div class="l">koko</div></div>
+    <div class="stat"><div class="n" id="logSpan">—</div><div class="l">aikaväli</div></div>
+  </div>
+  <div class="label" style="margin-top:10px;">Viimeisimmät 5 pistettä</div>
+  <pre id="logOut">—</pre>
+</div>
+
+<div class="card">
+  <div class="label">Polaari — P90-kernel (vaihe 2a, vain debug)</div>
+  <div class="row">
+    <div class="stat"><div class="n" id="polValid">—</div><div class="l">hyväksyttyä pistettä</div></div>
+    <div class="stat"><div class="n" id="polTotal">—</div><div class="l">lokissa yhteensä</div></div>
+  </div>
+  <div id="polCurrent" style="margin:8px 0;font-size:13px;color:#fff;"></div>
+  <div class="label" style="margin-top:8px;">TWA-taulukko (P90 / massa / σ / gradientti)</div>
+  <pre id="polTable">—</pre>
+</div>
+
+<div class="card">
+  <div class="label">Polaari — napakaavio</div>
+  <canvas id="polarCanvas"></canvas>
+  <div id="polarCanvasMsg" style="color:#666;font-size:12px;text-align:center;margin-top:6px;"></div>
+</div>
+
+  <button class="secondary" onclick="autoToggle()" id="autoBtn">▶ Auto-päivitys (3s)</button>
+  <br>
+  <button class="secondary" onclick="exportLog()">Näytä koko loki tekstina</button>
+  <button class="danger" onclick="clearAll()">Tyhjennä polar-data</button>
+  <div id="exportArea" style="display:none;margin-top:10px;">
+    <textarea id="exportText" readonly></textarea>
+  </div>
+  <div class="warn">"Tyhjennä" poistaa pysyvästi meanit + aikaleimat + koko raakalokin tältä laitteelta. Ei vaikuta mittarin muuhun toimintaan.</div>
+</div>
+
+<script>
+const MEANS_KEY='tackcall_polar_means_v1', LOG_KEY='tackcall_polar_log_v1';
+let autoTimer=null;
+
+function fmtAge(ts){
+  if(ts==null) return '—';
+  const s=Math.round((Date.now()-ts)/1000);
+  if(s<60) return s+'s sitten';
+  if(s<3600) return Math.round(s/60)+'min sitten';
+  return (s/3600).toFixed(1)+'h sitten';
+}
+function fmtStab(v){
+  if(v==null) return '—';
+  return (v*100).toFixed(0)+'%';
+}
+
+// ============================================================
+// POLAARI — VAIHE 2a: P90-laskenta kaksivaiheisella
+// gradienttisidotulla Gaussian-kernelillä.
+// ============================================================
+const SOG_MIN_KN          = 0.5;
+const SOG_MAX_KN          = 2.0;
+const KERNEL_SIGMA_SMOOTH = 20;
+const KERNEL_SIGMA_BASE   = 15;
+const KERNEL_K            = 0.3;
+const POLAR_STEP_DEG      = 5;
+const TWA_MIN             = 15;
+const TWA_MAX             = 175;
+
+function circMean2(a, b){
+  const ar=a*Math.PI/180, br=b*Math.PI/180;
+  return Math.atan2((Math.sin(ar)+Math.sin(br))/2,
+                    (Math.cos(ar)+Math.cos(br))/2)*180/Math.PI;
+}
+function normAngle(d){
+  let r=d%360; if(r>180) r-=360; if(r<-180) r+=360; return r;
+}
+function sogW(sog){
+  if(sog<=SOG_MIN_KN) return 0;
+  if(sog>=SOG_MAX_KN) return 1;
+  return (sog-SOG_MIN_KN)/(SOG_MAX_KN-SOG_MIN_KN);
+}
+function gauss(delta, sigma){
+  return Math.exp(-0.5*(delta/sigma)**2);
+}
+function pointTWA(p){
+  if(p.meanStb==null||p.meanBb==null) return null;
+  const wd=circMean2(p.meanStb, p.meanBb);
+  const twa=Math.abs(normAngle(p.heading-wd));
+  return (twa>=TWA_MIN&&twa<=TWA_MAX) ? twa : null;
+}
+function makeQueries(){
+  const q=[];
+  for(let t=TWA_MIN;t<=TWA_MAX;t+=POLAR_STEP_DEG) q.push(t);
+  return q;
+}
+
+function computePolar(log){
+  const pts=[];
+  for(const p of log){
+    const twa=pointTWA(p);
+    if(twa==null) continue;
+    pts.push({twa, sog:p.sog, w:sogW(p.sog)});
+  }
+  if(pts.length<5) return null;
+
+  const queries=makeQueries();
+
+  const smooth=queries.map(q=>{
+    let wSum=0, wsog=0;
+    for(const p of pts){
+      const kw=p.w*gauss(q-p.twa, KERNEL_SIGMA_SMOOTH);
+      wSum+=kw; wsog+=kw*p.sog;
+    }
+    return wSum>0 ? wsog/wSum : null;
+  });
+
+  const grads=queries.map((q,i)=>{
+    const n=queries.length;
+    if(smooth[i]==null) return 0;
+    if(i===0)   return smooth[1]!=null  ? (smooth[1]-smooth[0])/POLAR_STEP_DEG          : 0;
+    if(i===n-1) return smooth[n-2]!=null? (smooth[n-1]-smooth[n-2])/POLAR_STEP_DEG      : 0;
+    if(smooth[i-1]==null||smooth[i+1]==null) return 0;
+    return (smooth[i+1]-smooth[i-1])/(2*POLAR_STEP_DEG);
+  });
+
+  const results=queries.map((q,i)=>{
+    const sigma=KERNEL_SIGMA_BASE/(1+KERNEL_K*Math.abs(grads[i]));
+    const wp=pts.map(p=>({sog:p.sog, kw:p.w*gauss(q-p.twa,sigma)}));
+    const mass=wp.reduce((s,x)=>s+x.kw,0);
+    if(mass<0.5) return {p90:null, mass, sigma, grad:grads[i]};
+    wp.sort((a,b)=>a.sog-b.sog);
+    const thr=0.9*mass;
+    let cum=0, p90=null;
+    for(const x of wp){ cum+=x.kw; if(cum>=thr){p90=x.sog;break;} }
+    return {p90, mass, sigma, grad:grads[i]};
+  });
+
+  return {queries, results, nPts:pts.length, nTotal:log.length};
+}
+
+function perfAtTWA(polar, twa, sog){
+  if(!polar||twa==null||sog==null) return null;
+  let best=null, bestDist=Infinity;
+  polar.queries.forEach((q,i)=>{
+    const d=Math.abs(q-twa);
+    if(d<bestDist&&polar.results[i].p90!=null){bestDist=d;best=i;}
+  });
+  if(best==null||bestDist>POLAR_STEP_DEG*1.5) return null;
+  const p90=polar.results[best].p90;
+  return p90>0 ? Math.round((sog/p90)*100) : null;
+}
+
+// ============================================================
+// NAPAKAAVIO — Canvas-piirto karteesisilla koordinaateilla
+// ============================================================
+function coolwarm(t) {
+  // t: 0..1, sininen (hidas) → valkoinen → punainen (nopea)
+  // Yksinkertainen kolmivaiheinen interpolointi
+  let r, g, b;
+  if (t < 0.5) {
+    const s = t * 2; // 0..1
+    r = Math.round(59  + s * (220 - 59));
+    g = Math.round(76  + s * (220 - 76));
+    b = Math.round(192 + s * (220 - 192));
+  } else {
+    const s = (t - 0.5) * 2; // 0..1
+    r = Math.round(220 + s * (180 - 220));
+    g = Math.round(220 - s * 220);
+    b = Math.round(220 - s * 220);
+  }
+  return `rgb(${r},${g},${b})`;
+}
+
+function drawPolarCanvas(polar, rawPts) {
+  const canvas = document.getElementById('polarCanvas');
+  const msg    = document.getElementById('polarCanvasMsg');
+  const card   = canvas.parentElement;
+
+  if (!polar) {
+    canvas.style.display = 'none';
+    msg.textContent = '(ei riittävästi dataa)';
+    return;
+  }
+  canvas.style.display = 'block';
+  msg.textContent = '';
+
+  // Koko: neliö, max 400px, rajoitettuna kortin leveyteen
+  const dpr  = Math.min(window.devicePixelRatio || 1, 2);
+  const size = Math.min(card.clientWidth - 24, 400);
+  canvas.width  = size * dpr;
+  canvas.height = size * dpr;
+  canvas.style.width  = size + 'px';
+  canvas.style.height = size + 'px';
+
+  const ctx = canvas.getContext('2d');
+  ctx.scale(dpr, dpr);
+
+  const cx = size / 2;
+  const cy = size / 2;
+  // Piirtoalueen säde: 38% leveydestä jotta labelit mahtuvat
+  const maxR = size * 0.38;
+
+  // P90-arvojen max skaalauksen laskemiseen
+  const p90vals = polar.results.map(r => r.p90).filter(v => v != null);
+  if (p90vals.length === 0) {
+    canvas.style.display = 'none';
+    msg.textContent = '(ei P90-arvoja laskettavissa)';
+    return;
+  }
+  const maxP90 = Math.max(...p90vals);
+  const minP90 = Math.min(...p90vals);
+
+  // Napakoordinaatit → canvas-koordinaatit
+  // STB: x negatiivinen (vasen), BB: x positiivinen (oikea)
+  // Tuuli ylhäältä: y positiivinen = ylös → canvas_y = cy - y
+  function toCanvas(twaDeg, r, stb) {
+    const t = twaDeg * Math.PI / 180;
+    const sign = stb ? -1 : 1;
+    return [
+      cx + sign * r * Math.sin(t),
+      cy - r * Math.cos(t)
+    ];
+  }
+
+  // --- 1. Nopearenkaat ---
+  const ringSteps = [0.5, 1.0, 1.5, 2.0, 2.5];
+  ringSteps.forEach(spd => {
+    const rr = (spd / maxP90) * maxR;
+    if (rr > maxR * 1.05) return;
+    ctx.beginPath();
+    // Puoliympyrä ylhäältä alas molemmille puolille
+    for (let deg = 0; deg <= 180; deg += 2) {
+      const [x1, y1] = toCanvas(deg, rr, true);
+      const [x2, y2] = toCanvas(deg, rr, false);
+      if (deg === 0) { ctx.moveTo(x1, y1); } else { ctx.lineTo(x1, y1); }
+    }
+    for (let deg = 180; deg >= 0; deg -= 2) {
+      const [x, y] = toCanvas(deg, rr, false);
+      ctx.lineTo(x, y);
+    }
+    ctx.strokeStyle = '#1e1e1e';
+    ctx.lineWidth = 0.8;
+    ctx.stroke();
+    // Labeli oikeaan reunaan (BB-puoli, 90°)
+    const [lx, ly] = toCanvas(92, rr, false);
+    ctx.fillStyle = '#444';
+    ctx.font = '10px monospace';
+    ctx.textAlign = 'left';
+    ctx.fillText(spd.toFixed(1), lx + 2, ly + 4);
+  });
+
+  // --- 2. Sektoriviivat vain STB-puolelle ---
+  [30, 60, 90, 120, 150].forEach(deg => {
+    const [x, y] = toCanvas(deg, maxR * 1.10, true);
+    ctx.beginPath();
+    ctx.moveTo(cx, cy);
+    ctx.lineTo(x, y);
+    ctx.strokeStyle = '#2a2a2a';
+    ctx.lineWidth = 0.8;
+    ctx.stroke();
+    // Labeli
+    const [lx, ly] = toCanvas(deg, maxR * 1.20, true);
+    ctx.fillStyle = '#444';
+    ctx.font = '10px monospace';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(deg + '°', lx, ly);
+  });
+
+  // 0° ja 180° labelit
+  ctx.fillStyle = '#444';
+  ctx.font = '10px monospace';
+  ctx.textAlign = 'center';
+  ctx.fillText('0°',   cx, cy - maxR * 1.20);
+  ctx.fillText('180°', cx, cy + maxR * 1.20);
+
+  // --- 3. Raakapisteet ---
+  rawPts.forEach(p => {
+    const r = (p.sog / maxP90) * maxR;
+    const [xs, ys] = toCanvas(p.twa, r, true);
+    const [xb, yb] = toCanvas(p.twa, r, false);
+    ctx.globalAlpha = 0.30;
+    ctx.fillStyle = '#ffcc00';
+    ctx.beginPath(); ctx.arc(xs, ys, 2.5, 0, Math.PI*2); ctx.fill();
+    ctx.beginPath(); ctx.arc(xb, yb, 2.5, 0, Math.PI*2); ctx.fill();
+  });
+  ctx.globalAlpha = 1.0;
+
+  // Kerää P90-pisteet piirtoa varten
+  const p90pts = polar.queries.map((twa, i) => {
+    const p90 = polar.results[i].p90;
+    if (p90 == null) return null;
+    return { twa, p90 };
+  }).filter(v => v != null);
+
+  // --- 4. P90-täyttö ---
+  ctx.beginPath();
+  p90pts.forEach((pt, i) => {
+    const r = (pt.p90 / maxP90) * maxR;
+    const [x, y] = toCanvas(pt.twa, r, true);
+    i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
+  });
+  [...p90pts].reverse().forEach(pt => {
+    const r = (pt.p90 / maxP90) * maxR;
+    const [x, y] = toCanvas(pt.twa, r, false);
+    ctx.lineTo(x, y);
+  });
+  ctx.closePath();
+  ctx.fillStyle = 'rgba(150,150,150,0.06)';
+  ctx.fill();
+
+  // --- 5. P90-viiva gradientilla ---
+  function drawGradientSide(stb) {
+    for (let i = 0; i < p90pts.length - 1; i++) {
+      const a = p90pts[i], b = p90pts[i + 1];
+      const ra = (a.p90 / maxP90) * maxR;
+      const rb = (b.p90 / maxP90) * maxR;
+      const [x1, y1] = toCanvas(a.twa, ra, stb);
+      const [x2, y2] = toCanvas(b.twa, rb, stb);
+      const midP90 = (a.p90 + b.p90) / 2;
+      const t = (midP90 - minP90) / (maxP90 - minP90 + 1e-9);
+      ctx.beginPath();
+      ctx.moveTo(x1, y1);
+      ctx.lineTo(x2, y2);
+      ctx.strokeStyle = coolwarm(t);
+      ctx.lineWidth = 2.5;
+      ctx.lineJoin = 'round';
+      ctx.stroke();
+    }
+  }
+  drawGradientSide(true);  // STB
+  drawGradientSide(false); // BB
+
+  // --- 6. Labelit ---
+  ctx.font = 'bold 13px -apple-system,system-ui,monospace';
+  ctx.textBaseline = 'middle';
+
+  const [stbLx, stbLy] = toCanvas(58, maxR * 0.72, true);
+  ctx.fillStyle = '#aaa';
+  ctx.textAlign = 'center';
+  ctx.fillText('STB', stbLx, stbLy);
+
+  const [bbLx, bbLy] = toCanvas(58, maxR * 0.72, false);
+  ctx.fillText('BB', bbLx, bbLy);
+
+  const [p90lx, p90ly] = toCanvas(100, maxR * 1.07, true);
+  ctx.font = '10px monospace';
+  ctx.fillStyle = '#aaa';
+  ctx.fillText('P90', p90lx, p90ly);
+}
+
+function refreshPolar(log){
+  let polar=null;
+  try{ polar=computePolar(log); }catch(e){}
+
+  document.getElementById('polTotal').textContent=log.length;
+  if(!polar){
+    document.getElementById('polValid').textContent='—';
+    document.getElementById('polCurrent').textContent=
+      '(liian vähän hyväksyttyjä pisteitä — tarvitaan min. 5 TWA-suodatuksen jälkeen)';
+    document.getElementById('polTable').textContent='—';
+    drawPolarCanvas(null, []);
+    return;
+  }
+  document.getElementById('polValid').textContent=polar.nPts;
+
+  let curText='(ei viimeistä lokipistettä)';
+  if(log.length){
+    const last=log[log.length-1];
+    const twa=pointTWA(last);
+    const perf=perfAtTWA(polar, twa, last.sog);
+    if(twa!=null){
+      curText='Viimeisin piste → TWA: '+twa.toFixed(1)+'°'+
+              '  SOG: '+last.sog.toFixed(2)+' kn'+
+              (perf!=null ? '  Suorituskyky: '+perf+'%' : '  (ei P90-arviota tälle kulmalle)');
+    } else {
+      curText='Viimeisin piste: TWA ei laskettavissa (meanit puuttuu tai out-of-range)';
+    }
+  }
+  document.getElementById('polCurrent').textContent=curText;
+
+  const header='TWA°  | P90(kn) | Massa | σ(°)  | Grad';
+  const sep=  '------+---------+-------+-------+------';
+  const rows=polar.queries.map((q,i)=>{
+    const r=polar.results[i];
+    const p90=r.p90!=null ? r.p90.toFixed(2).padStart(7) : '     —';
+    const mass=r.mass.toFixed(1).padStart(5);
+    const sig=r.sigma.toFixed(1).padStart(5);
+    const grad=(r.grad>=0?'+':'')+r.grad.toFixed(3);
+    return String(q).padStart(3)+'°  |'+p90+'  |'+mass+'  |'+sig+'  | '+grad;
+  });
+  document.getElementById('polTable').textContent=
+    [header,sep,...rows].join('\n');
+
+  // Raakapisteet canvasta varten
+  const rawPts = [];
+  for(const p of log){
+    const twa = pointTWA(p);
+    if(twa==null) continue;
+    if(sogW(p.sog)===0) continue;
+    rawPts.push({twa, sog:p.sog});
+  }
+  drawPolarCanvas(polar, rawPts);
+}
+
+function refresh(){
+  let meansOut='(ei tallennettua mean-dataa)';
+  try{
+    const raw=localStorage.getItem(MEANS_KEY);
+    if(raw){
+      const d=JSON.parse(raw);
+      meansOut =
+        'STB: '+(d.meanStb!=null?d.meanStb.toFixed(1)+'°':'—')+
+        '  (asetettu '+fmtAge(d.meanStbTs)+', vakaus '+fmtStab(d.meanStbStability)+')\n'+
+        'BB:  '+(d.meanBb!=null?d.meanBb.toFixed(1)+'°':'—')+
+        '  (asetettu '+fmtAge(d.meanBbTs)+', vakaus '+fmtStab(d.meanBbStability)+')';
+    }
+  }catch(e){ meansOut='VIRHE luettaessa: '+e.message; }
+  document.getElementById('meansOut').textContent=meansOut;
+
+  let log=[];
+  try{
+    const raw=localStorage.getItem(LOG_KEY);
+    log = raw ? JSON.parse(raw) : [];
+    if(!Array.isArray(log)) log=[];
+  }catch(e){ log=[]; }
+
+  document.getElementById('logCount').textContent=log.length;
+  const sizeKB = log.length ? (JSON.stringify(log).length/1024).toFixed(1)+' KB' : '0 KB';
+  document.getElementById('logSize').textContent=sizeKB;
+
+  if(log.length){
+    const span=(log[log.length-1].ts - log[0].ts)/1000;
+    document.getElementById('logSpan').textContent =
+      span<60 ? Math.round(span)+'s' : Math.round(span/60)+'min';
+  } else {
+    document.getElementById('logSpan').textContent='—';
+  }
+
+  const last5 = log.slice(-5).reverse();
+  document.getElementById('logOut').textContent = last5.length
+    ? last5.map(p=>JSON.stringify(p)).join('\n')
+    : '(ei pisteitä — varmista että GPS on päällä mittarissa ja SOG saatavilla)';
+
+  refreshPolar(log);
+}
+
+function exportLog(){
+  let log=[];
+  try{ log=JSON.parse(localStorage.getItem(LOG_KEY)||'[]'); }catch(e){}
+  const area=document.getElementById('exportArea');
+  document.getElementById('exportText').value = JSON.stringify(log);
+  area.style.display='block';
+}
+
+function clearAll(){
+  if(!confirm('Poistetaanko meanit + raakaloki pysyvästi tästä selaimesta?')) return;
+  try{ localStorage.removeItem(MEANS_KEY); }catch(e){}
+  try{ localStorage.removeItem(LOG_KEY); }catch(e){}
+  refresh();
+}
+
+function autoToggle(){
+  const btn=document.getElementById('autoBtn');
+  if(autoTimer){
+    clearInterval(autoTimer); autoTimer=null;
+    btn.textContent='▶ Auto-päivitys (3s)';
+  } else {
+    autoTimer=setInterval(refresh,3000);
+    btn.textContent='⏸ Pysäytä auto-päivitys';
+  }
+}
+
+refresh();
+</script>
+</body>
+</html>
