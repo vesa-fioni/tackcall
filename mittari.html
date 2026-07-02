@@ -925,13 +925,13 @@ function render(){
   else if(_pd.state==='dim'){   perfStr=_pd.pct+'%'; perfCol='#7a4040'; }
   else {                        perfStr=_pd.pct+'%'; perfCol='#ff7a7a'; }
   label('PERF', W*0.50, yEy, Math.max(10,small*0.024*sScale), '#6a6a6a','center');
-  drawNumber(perfStr, W*0.50, yVal, small*0.072*sScale, perfCol, false);
+  drawNumber(perfStr, W*0.50, yVal, small*0.092*sScale, perfCol, false);
 
   // --- oikea: SOG (ensisijainen — saatavilla heti GPS:n kanssa) ---
   const sogStr = (S.gps.on && S.gps.sog!=null) ? S.gps.sog.toFixed(1) : '--';
   const sogCol = (S.gps.on && S.gps.sog!=null) ? '#ff7a7a' : '#3a3a3a';
   label('SOG', W*0.84, yEy, Math.max(10,small*0.024*sScale), '#6a6a6a','center');
-  drawNumber(sogStr, W*0.84, yVal, small*0.072*sScale, sogCol, false);
+  drawNumber(sogStr, W*0.84, yVal, small*0.092*sScale, sogCol, false);
 
   // --- kaaripalkki tai onboarding-ohje ---
   // Kun nykyisen halssin mean puuttuu (eikä olla downwindillä/no-go-vyöhykkeellä),
