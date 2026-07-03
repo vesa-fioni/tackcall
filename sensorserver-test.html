@@ -1,0 +1,190 @@
+<!DOCTYPE html>
+<html lang="fi">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Sensor Server -testityökalu</title>
+<style>
+  :root{ color-scheme: dark; }
+  body{ font-family: -apple-system, system-ui, sans-serif; background:#111; color:#eee; margin:0; padding:12px; }
+  h1{ font-size:1.1rem; margin:0 0 12px; }
+  .row{ display:flex; gap:8px; margin-bottom:10px; flex-wrap:wrap; }
+  input{ background:#222; border:1px solid #444; color:#eee; padding:8px; border-radius:6px; font-size:1rem; width:110px; }
+  button{ background:#2a6; border:none; color:#fff; padding:10px 14px; border-radius:6px; font-size:0.95rem; }
+  button.stop{ background:#a33; }
+  button.secondary{ background:#345; }
+  button:disabled{ background:#333; color:#777; }
+  .sensors{ display:grid; grid-template-columns:1fr; gap:8px; margin:14px 0; }
+  .card{ background:#1b1b1b; border:1px solid #333; border-radius:8px; padding:10px; }
+  .card h2{ font-size:0.85rem; margin:0 0 6px; color:#9c9; }
+  .card.disconnected h2{ color:#c66; }
+  .vals{ font-family: ui-monospace, monospace; font-size:0.95rem; white-space:pre; }
+  .meta{ font-size:0.75rem; color:#888; margin-top:4px; }
+  .status{ font-size:0.8rem; color:#aaa; margin-bottom:10px; }
+  .footer{ margin-top:16px; display:flex; gap:8px; flex-wrap:wrap; }
+  #log{ font-size:0.75rem; color:#888; margin-top:10px; max-height:120px; overflow:auto; }
+</style>
+</head>
+<body>
+
+<h1>Sensor Server -testityökalu</h1>
+
+<div class="row">
+  <input id="ip" placeholder="IP esim 192.168.1.5" value="">
+  <input id="port" placeholder="portti" value="8080">
+</div>
+<div class="row">
+  <button id="btnConnect">Yhdistä kaikki</button>
+  <button id="btnDisconnect" class="stop" disabled>Katkaise</button>
+</div>
+<div class="status" id="status">Ei yhdistetty.</div>
+
+<div class="sensors">
+  <div class="card disconnected" id="card-mag">
+    <h2>magnetic_field</h2>
+    <div class="vals" id="vals-mag">–</div>
+    <div class="meta" id="meta-mag">0 näytettä</div>
+  </div>
+  <div class="card disconnected" id="card-acc">
+    <h2>accelerometer</h2>
+    <div class="vals" id="vals-acc">–</div>
+    <div class="meta" id="meta-acc">0 näytettä</div>
+  </div>
+  <div class="card disconnected" id="card-gyro">
+    <h2>gyroscope</h2>
+    <div class="vals" id="vals-gyro">–</div>
+    <div class="meta" id="meta-gyro">0 näytettä</div>
+  </div>
+</div>
+
+<div class="footer">
+  <button id="btnRecord" class="secondary">Aloita tallennus</button>
+  <button id="btnSave" class="secondary" disabled>Tallenna JSON</button>
+  <button id="btnClear" class="secondary">Tyhjennä</button>
+</div>
+<div class="meta" id="recStatus">Tallennus ei käynnissä. 0 riviä puskurissa.</div>
+
+<div id="log"></div>
+
+<script>
+const SENSORS = {
+  mag:  'android.sensor.magnetic_field',
+  acc:  'android.sensor.accelerometer',
+  gyro: 'android.sensor.gyroscope'
+};
+
+let sockets = {};   // key -> WebSocket
+let counts  = { mag:0, acc:0, gyro:0 };
+let recording = false;
+let buffer = [];    // {t, sensor, sensorTs, accuracy, values}
+
+const $ = id => document.getElementById(id);
+
+function logLine(msg){
+  const d = document.createElement('div');
+  d.textContent = new Date().toLocaleTimeString() + '  ' + msg;
+  $('log').prepend(d);
+}
+
+function setCardState(key, connected){
+  $('card-' + key).classList.toggle('disconnected', !connected);
+}
+
+function connectAll(){
+  const ip = $('ip').value.trim();
+  const port = $('port').value.trim() || '8080';
+  if(!ip){ alert('Anna Android-laitteen IP-osoite'); return; }
+
+  Object.entries(SENSORS).forEach(([key, type]) => {
+    const url = `ws://${ip}:${port}/sensor/connect?type=${type}`;
+    let ws;
+    try{ ws = new WebSocket(url); }
+    catch(err){ logLine(`${key}: virhe yhteyden avaamisessa (${err})`); return; }
+
+    ws.onopen = () => { setCardState(key, true); logLine(`${key}: yhdistetty`); };
+    ws.onerror = () => logLine(`${key}: virhe`);
+    ws.onclose = () => { setCardState(key, false); logLine(`${key}: yhteys katkesi`); };
+
+    ws.onmessage = (e) => {
+      let msg;
+      try{ msg = JSON.parse(e.data); } catch(_) { return; }
+      counts[key]++;
+      const v = msg.values || [];
+      $('vals-' + key).textContent =
+        v.map(n => n.toFixed(4)).join('\n');
+      $('meta-' + key).textContent =
+        `${counts[key]} näytettä  ·  accuracy=${msg.accuracy ?? '–'}`;
+
+      if(recording){
+        buffer.push({
+          t: Date.now(),
+          sensor: key,
+          sensorTs: msg.timestamp ?? null,
+          accuracy: msg.accuracy ?? null,
+          values: v
+        });
+        $('recStatus').textContent = `Tallennus käynnissä. ${buffer.length} riviä puskurissa.`;
+      }
+    };
+    sockets[key] = ws;
+  });
+
+  $('status').textContent = `Yhdistetään ${ip}:${port} ...`;
+  $('btnConnect').disabled = true;
+  $('btnDisconnect').disabled = false;
+}
+
+function disconnectAll(){
+  Object.values(sockets).forEach(ws => { try{ ws.close(); }catch(_){}} );
+  sockets = {};
+  $('status').textContent = 'Ei yhdistetty.';
+  $('btnConnect').disabled = false;
+  $('btnDisconnect').disabled = true;
+}
+
+function toggleRecord(){
+  recording = !recording;
+  $('btnRecord').textContent = recording ? 'Lopeta tallennus' : 'Aloita tallennus';
+  $('btnRecord').classList.toggle('stop', recording);
+  $('btnSave').disabled = buffer.length === 0;
+  if(!recording) $('btnSave').disabled = buffer.length === 0;
+  logLine(recording ? 'Tallennus aloitettu' : 'Tallennus pysäytetty');
+}
+
+function clearBuffer(){
+  buffer = [];
+  counts = { mag:0, acc:0, gyro:0 };
+  $('recStatus').textContent = 'Tallennus ei käynnissä. 0 riviä puskurissa.';
+  $('btnSave').disabled = true;
+  ['mag','acc','gyro'].forEach(k => {
+    $('vals-' + k).textContent = '–';
+    $('meta-' + k).textContent = '0 näytettä';
+  });
+  logLine('Puskuri tyhjennetty');
+}
+
+function saveJson(){
+  const blob = new Blob([JSON.stringify(buffer, null, 2)], {type:'application/json'});
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  const stamp = new Date().toISOString().replace(/[:.]/g,'-');
+  a.href = url;
+  a.download = `sensorserver_${stamp}.json`;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+  logLine(`Tallennettu ${buffer.length} riviä tiedostoon`);
+}
+
+$('btnConnect').addEventListener('click', connectAll);
+$('btnDisconnect').addEventListener('click', disconnectAll);
+$('btnRecord').addEventListener('click', toggleRecord);
+$('btnSave').addEventListener('click', saveJson);
+$('btnClear').addEventListener('click', clearBuffer);
+
+// Päivitä "Tallenna"-napin tila kun puskuri kasvaa tallennuksen aikana
+setInterval(() => { $('btnSave').disabled = buffer.length === 0; }, 500);
+</script>
+</body>
+</html>
