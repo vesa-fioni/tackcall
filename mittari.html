@@ -939,15 +939,21 @@ function drawDigit(d,x,y,w,h,t){
   if(s[6]) hSeg(x+w/2,yM,hlen,t);  // g (keski)
 }
 // piirrä numerojono keskitettynä pisteeseen (cx,cy)
+function charW(ch,digitW){ return ch==='-'?digitW*0.7 : ch==='.'?digitW*0.3 : digitW; }
 function drawNumber(str,cx,cy,digitH,color,glow){
   const t=Math.max(2,digitH*0.16);
   const digitW=digitH*0.62, gap=digitH*0.18;
-  // laske leveys (miinus/numero levyiset, väli niukempi)
-  let total=0; for(const ch of str){ total += (ch==='-'? digitW*0.7 : digitW) + gap; } total-=gap;
+  // laske leveys (miinus/piste/numero omanlevyiset, väli niukempi)
+  let total=0; for(const ch of str){ total += charW(ch,digitW) + gap; } total-=gap;
   let x=cx-total/2; const y=cy-digitH/2;
   ctx.save(); ctx.fillStyle=color;
   if(glow){ ctx.shadowColor=color; ctx.shadowBlur=digitH*0.18; }
-  for(const ch of str){ const dw=(ch==='-'? digitW*0.7 : digitW); drawDigit(ch,x,y,dw,digitH,t); x+=dw+gap; }
+  for(const ch of str){
+    const dw=charW(ch,digitW);
+    if(ch==='.'){ const r=t*0.55; ctx.beginPath(); ctx.arc(x+dw/2,y+digitH-r,r,0,Math.PI*2); ctx.fill(); }
+    else drawDigit(ch,x,y,dw,digitH,t);
+    x+=dw+gap;
+  }
   ctx.restore();
   return total;
 }
