@@ -625,15 +625,9 @@ function mfStopTiltSampling(){ if(MF.tiltTimer){ clearInterval(MF.tiltTimer); MF
 function mfMaxError(){ const vals=Object.values(MF.tiltBins); return vals.length?Math.max(...vals):0; }
 
 function mfStartHold(){
-  MF.step='selftest-hold'; mfRender();
-  let n=2;
-  const tick=()=>{
-    n--;
-    const e=document.getElementById('mfCountdown'); if(e) e.textContent=String(Math.max(n,0));
-    if(n<=0){ MF.h0=S.heading; MF.step='selftest-turn'; mfRender(); return; }
-    setTimeout(tick,1000);
-  };
-  setTimeout(tick,1000);
+  // Ei enää erillistä "Hold still" -näyttöä — riittää lyhyt sisäinen viive, jotta smoothattu
+  // heading ehtii tasoittua ennen h0:n tallennusta. Käyttäjä ei tarvitse omaa odotusruutua tähän.
+  setTimeout(()=>{ MF.h0=S.heading; MF.step='selftest-turn'; mfRender(); }, 400);
 }
 function mfCaptureTurn(){
   const h1=S.heading;
@@ -692,16 +686,12 @@ function mfRender(){
   let html='';
   if(MF.step==='selftest-intro'){
     html=`<h2>Quick test</h2>
-      <p class="helpp">Checks how your phone's compass behaves when turned. Put it flat on a table.</p>
+      <p class="helpp">Checks whether rotating your phone changes its compass reading. Hold it up like you're about to look at it — not flat on a table.</p>
       <button class="close" id="mfHoldStart">Start</button>
       <button class="close" id="mfSkipTest">Skip test</button>`;
-  } else if(MF.step==='selftest-hold'){
-    html=`<h2>Hold still</h2>
-      <p class="helpp">Don't move the phone.</p>
-      <div style="font-family:var(--mono);font-size:48px;color:var(--led);text-align:center;margin:20px 0;" id="mfCountdown">2</div>`;
   } else if(MF.step==='selftest-turn'){
     html=`<h2>Now turn it 90°</h2>
-      <p class="helpp">Keep it flat on the table. Turn it until the screen switches to landscape. (If it doesn't switch, turn off rotation lock in Control Center.)</p>
+      <p class="helpp">Rotate it 90°, like turning a steering wheel, until the screen switches to landscape. (If it doesn't switch, turn off rotation lock in Control Center.)</p>
       <svg width="180" height="80" viewBox="0 0 180 80" style="display:block;margin:6px auto 4px;">
         <defs><marker id="mfArrow" markerWidth="8" markerHeight="8" refX="4" refY="4" orient="auto"><path d="M0,0 L8,4 L0,8 Z" fill="#9a9a9a"/></marker></defs>
         <rect x="20" y="14" width="34" height="54" rx="6" fill="none" stroke="#9a9a9a" stroke-width="2"/>
@@ -1246,7 +1236,7 @@ document.querySelectorAll(".stepper").forEach(st=>{
 });
 
 /* ---------- init ---------- */
-const APP_VERSION="mittari v0.41";
+const APP_VERSION="mittari v0.42";
 (function(){
   const e=$("verEnable"); if(e) e.textContent=APP_VERSION;
   const n=$("verNote"); if(n) n.textContent=APP_VERSION+" · shares engine with index.html";
