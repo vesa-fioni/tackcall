@@ -845,19 +845,21 @@ document.addEventListener("visibilitychange", ()=>{ if(document.visibilityState=
    UUSI VISUALISOINTI — seitsenosainen LED-mittari + kaaripalkki
    ============================================================ */
 const cv=$("inst"), ctx=cv.getContext("2d");
-let W=0,H=0,DPR=1,SAFE_BOTTOM=0;
+let W=0,H=0,DPR=1,SAFE_BOTTOM=0,SAFE_TOP=0;
 let meanFlash=0; // ✓-välähdys keskisuuntaa asetettaessa
 
-// Mittaa todellinen safe-area-inset-bottom samalla env()-arvolla jota #btnStb/#btnBb
-// käyttävät CSS-sijoittelussaan (bottom:max(4px,env(safe-area-inset-bottom))). Ilman tätä
-// gauge varasi kiinteän 62px-kaistan, joka riitti vain kun turva-aluetta ei ollut (esim.
-// Safarin oma työkalupalkki näkyvissä) — kotikuvake-täysnäytössä nappirivi työntyi ylemmäs
-// eikä canvas tiennyt siitä, jolloin asteikko/palkit piirtyivät nappien alle.
+// Mittaa todelliset safe-area-insetit samoilla env()-arvoilla joita #btnGear (top) ja
+// #btnStb/#btnBb (bottom) käyttävät CSS-sijoittelussaan. Ilman tätä ylärivin LIFT/GROOVE/HEADER-
+// teksti piirrettiin kiinteänä H:n osuutena eikä tiennyt gear-napin todellisesta alareunasta —
+// täysnäytöllä/kotinäytöltä-tilassa turva-alue (esim. Dynamic Island) työntää gear-napin
+// alemmas, jolloin se peittää tekstin ensimmäiset kirjaimet.
 function updateSafeArea(){
   const probe=document.createElement('div');
-  probe.style.cssText='position:fixed; bottom:0; height:0; padding-bottom:env(safe-area-inset-bottom); visibility:hidden; pointer-events:none;';
+  probe.style.cssText='position:fixed; left:0; right:0; top:0; bottom:0; height:0; padding-top:env(safe-area-inset-top); padding-bottom:env(safe-area-inset-bottom); visibility:hidden; pointer-events:none;';
   document.body.appendChild(probe);
-  SAFE_BOTTOM=parseFloat(getComputedStyle(probe).paddingBottom)||0;
+  const cs=getComputedStyle(probe);
+  SAFE_TOP=parseFloat(cs.paddingTop)||0;
+  SAFE_BOTTOM=parseFloat(cs.paddingBottom)||0;
   document.body.removeChild(probe);
 }
 
@@ -1174,7 +1176,12 @@ function render(){
   drawNumber(headStr, W/2, heroY, heroSize, '#ff2b2b', true);
 
   // ===== yläriviruudukko (2b-layout): vasen=shift, keski=SOG, oikea=PERF =====
-  const yEy=H*0.085, yVal=H*0.155;
+  // yEy ei saa nousta gear-napin (#btnGear, top:max(10,safe-top), korkeus 42px) alapuolelle —
+  // muuten teksti piirtyy napin taakse. Kotinäyttö/täysnäyttö-tilassa turva-alue työntää
+  // gear-napin alemmas kuin normaalissa Safari-selauksessa, joten kiinteä H*0.085 ei enää riitä.
+  const GEAR_H=42, GEAR_GAP=8;
+  const topReserved = Math.max(10,SAFE_TOP) + GEAR_H + GEAR_GAP;
+  const yEy=Math.max(H*0.085, topReserved), yVal=yEy+H*0.07;
 
   // --- vasen: LIFT/HEADER/GROOVE/TACK (ennallaan, himmennetään myötätuulella) ---
   ctx.save();
@@ -1322,7 +1329,7 @@ document.querySelectorAll(".stepper").forEach(st=>{
 });
 
 /* ---------- init ---------- */
-const APP_VERSION="mittari v0.49";
+const APP_VERSION="mittari v0.50";
 (function(){
   const e=$("verEnable"); if(e) e.textContent=APP_VERSION;
   const n=$("verNote"); if(n) n.textContent=APP_VERSION+" · shares engine with index.html";
