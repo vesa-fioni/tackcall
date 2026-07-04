@@ -21,6 +21,22 @@
 html,body{margin:0; height:100%; background:var(--bg); color:#fff; font-family:var(--sans);
 overflow:hidden; overscroll-behavior:none; user-select:none; -webkit-user-select:none;}
 #stage{position:fixed; inset:0;}
+/* ---- orientaatiolukitus (Portrait/Landscape/Automatic) ----
+   iOS Safari ei tue screen.orientation.lock():ia, joten "lukitus" toteutetaan
+   visuaalisesti kiertämällä koko #stage 90° kun fyysinen laite ei vastaa haluttua
+   tilaa. resize() lukee canvasin koon clientWidth/Height:lla (ei getBoundingClientRect,
+   joka heijastaisi kierretyn elementin näyttöavaruuden mittoja transformin JÄLKEEN) —
+   näin canvasin sisäinen piirto saa oikean, kiertoa edeltävän loogisen koon. */
+#stage.force-landscape{
+  position:fixed; inset:auto; top:100%; left:0;
+  width:100vh; height:100vw;
+  transform-origin:0 0; transform:rotate(-90deg);
+}
+#stage.force-portrait{
+  position:fixed; inset:auto; top:0; left:100%;
+  width:100vh; height:100vw;
+  transform-origin:0 0; transform:rotate(90deg);
+}
 canvas#inst{position:absolute; inset:0; width:100%; height:100%; display:block;}
 /* ---- läpinäkyvät säätöpainikkeet kankaan päällä ---- */
 .ctl{position:absolute; z-index:5; font-family:var(--mono); letter-spacing:.06em;
@@ -110,6 +126,10 @@ background:#777; transition:transform .15s, background .15s;}
 .stepper button{width:34px; height:34px; border-radius:9px; background:#1c1c1c; color:#fff;
 border:1px solid #2a2a2a; font-size:18px; font-weight:700; cursor:pointer;}
 .stepper .val{min-width:54px; text-align:center; font-family:var(--mono); font-size:15px; color:#fff;}
+.seg{display:flex; gap:6px; margin:0 0 11px;}
+.seg button{flex:1; padding:9px 0; border-radius:9px; background:#1c1c1c; color:#9a9a9a;
+border:1px solid #2a2a2a; font-size:13px; font-weight:700; cursor:pointer;}
+.seg button.active{background:#2a2a2a; color:#fff; border-color:#555;}
 .panel .close{display:block; width:100%; margin-top:14px; padding:13px; border-radius:12px;
 border:none; font-weight:700; font-size:15px; cursor:pointer; background:#1a1a1a; color:#fff;}
 .panel .reset{background:transparent; border:1px solid #5a1f1f; color:#ff9b9b;}
@@ -182,6 +202,12 @@ body.portrait #btnMean{top:22%; height:22%;}
 <div class="stepper" data-key="tackAngle"><button data-d="-2">–</button><span class="val"></span><button data-d="2">+</button></div></div>
 <div class="row"><div class="lbl">Heading offset<small>Corrects for physical mounting rotation</small></div>
 <div class="stepper" data-key="headingOffset"><button data-d="-5">–</button><span class="val"></span><button data-d="5">+</button></div></div>
+<div class="row"><div class="lbl">Screen orientation<small>Automatic follows device rotation</small></div></div>
+<div class="seg" data-key="orientationLock">
+<button data-val="portrait">Portrait</button>
+<button data-val="landscape">Landscape</button>
+<button data-val="auto">Automatic</button>
+</div>
 <button class="close" id="btnPolarUpdate">Update polar</button>
 <button class="close reset" id="btnReset">Reset means</button>
 <a class="link" href="index.html">Switch to classic view →</a>
@@ -252,7 +278,7 @@ const S = {
   gps:{cog:null, sog:null, on:false, watch:null},
   wakeLock:null,
   demo:false, demoT:0,
-  settings:{ deadband:3, tackThresh:20, tackAngle:90, gps:true, wake:false, smooth:5, audio:false, gaugeScale:20, headingFocus:false, headingOffset:0 }, // tackThresh oletus = skaalan max, käyttäjä kiristää itse; headingOffset = asennuskorjaus, ks. valmistusohjeet
+  settings:{ deadband:3, tackThresh:20, tackAngle:90, gps:true, wake:false, smooth:5, audio:false, gaugeScale:20, headingFocus:false, headingOffset:0, orientationLock:'auto' }, // tackThresh oletus = skaalan max, käyttäjä kiristää itse; headingOffset = asennuskorjaus, orientationLock = Portrait/Landscape/Automatic, ks. valmistusohjeet
   source:null, compassOk:false, liveSince:0,
   audio:{ state:'nomean', cand:'nomean', candSince:0, tackSince:null, tackArmed:true, tackLockUntil:0 },
 };
@@ -261,7 +287,7 @@ const AUDIO_DWELL_MS=800, TACK_HOLD_MS=4000, TACK_LOCK_MS=12000;
 // Käännöksen visuaalinen vaimennus: kun heading on tämän verran tuulesta, gauge himmenee.
 // Toimii vain kun molemmat meanit asetettu (estWind() palauttaa null muuten → ei vaimennusta).
 // Säädettävissä kenttädatan perusteella — tyypillinen no-go-vyöhyke ~25–40°.
-const NO_GO_DEG = 30;
+const NO_GO_DEG = 10;
 
 /* ============================================================
    POLAARI — VAIHE 0.5 + VAIHE 1 (näkymätön taustakeruu, ei UI:ta)
@@ -835,22 +861,35 @@ function resize(){
   // joka pehmensi isoa numeroa). resize ajetaan myös visualViewport-muutoksissa,
   // jotta Safarin työkalupalkin piiloutuminen ei venytä vanhaa puskuria sumeaksi.
   DPR=Math.min(window.devicePixelRatio||1, 3);
-  const r=cv.getBoundingClientRect();
-  W=r.width; H=r.height;
+  // checkOrientation() ENNEN mittausta: se asettaa/poistaa #stage:n force-rotate-luokat,
+  // jotka muuttavat sen CSS-kokoa (100vh/100vw). clientWidth/Height (ei getBoundingClientRect,
+  // joka antaisi kierretyn elementin NÄYTTÖAVARUUDEN mitat) lukee canvasin loogisen,
+  // kiertoa edeltävän koon — juuri sen minkä sisäinen piirto tarvitsee. Ks. orientationLock.
+  checkOrientation();
+  W=cv.clientWidth; H=cv.clientHeight;
   cv.width=Math.round(W*DPR); cv.height=Math.round(H*DPR);
   ctx.setTransform(DPR,0,0,DPR,0,0);
-  checkOrientation();
 }
 // pystyssä: ensisijaisesti matchMedia (luotettava webviewissä), varalla viewportin mitat
 function isPortrait(){
   try{ if(window.matchMedia){ const m=window.matchMedia("(orientation: portrait)"); if(typeof m.matches==='boolean') return m.matches; } }catch(e){}
   return window.innerHeight > window.innerWidth * 1.02;
 }
+// haluttu (lukittu) orientaatio asetuksen mukaan; 'auto' seuraa fyysistä laitetta sellaisenaan
+function effectivePortrait(){
+  if(S.settings.orientationLock==='landscape') return false;
+  if(S.settings.orientationLock==='portrait') return true;
+  return isPortrait();
+}
 function checkOrientation(){
   // Pystytila (portrait) on nyt tuettu mittarinäkymässä — render() piirtää eri koordinaatein.
   // body-luokka mahdollistaa pienet CSS-poikkeukset (esim. btnMean-napautusalue) samalla
-  // isPortrait()-logiikalla kuin canvas-piirto käyttää, ilman erillistä @media-kyselyä.
-  document.body.classList.toggle('portrait', isPortrait());
+  // effectivePortrait()-logiikalla kuin canvas-piirto käyttää, ilman erillistä @media-kyselyä.
+  const want = effectivePortrait(), actual = isPortrait();
+  document.body.classList.toggle('portrait', want);
+  // orientationLock: jos haluttu tila ei vastaa fyysistä laitetta, kierretään #stage visuaalisesti
+  $("stage").classList.toggle('force-landscape', !want && actual);
+  $("stage").classList.toggle('force-portrait', want && !actual);
 }
 
 /* --- seitsenosaisten numeroiden piirto --- */
@@ -919,7 +958,7 @@ function drawGauge(lifted,status,dim){
   const scale=S.settings.gaugeScale;
   const nBars=12; // palkkeja per puoli
   const cx=W/2;
-  const P=isPortrait();
+  const P=effectivePortrait();
   const CTRL_H=62; // alanapeille varattu kaista
   const fs=Math.max(11,W*0.015), labelH=fs+10;
   const baselineY=H-CTRL_H-labelH; // yhteinen alalinja kaikille palkeille
@@ -1080,7 +1119,7 @@ function render(){
 
   // --- iso suunta (hero, aina LED-punainen, ei himmennetä) ---
   // 2b: heading zoom -skaalaus (HEADING vs INSTRUMENTS tilassa)
-  const P = isPortrait();
+  const P = effectivePortrait();
   const headStr = S.heading==null ? '---' : pad3(S.heading);
   const hScale = S.settings.headingFocus ? 1.0 : 1.38; // Instruments: selvästi isompi heading, Heading: normaali
   // Portrait: molemmat display-tilat (Heading/Instruments) saavat oman kertoimen, koska pystyssä
@@ -1221,6 +1260,15 @@ document.querySelectorAll(".tog").forEach(t=>{
     if(k==='audio'){ if(S.settings.audio) enableAudio(); else disableAudio(); }
   });
 });
+document.querySelectorAll(".seg").forEach(seg=>{
+  const k=seg.dataset.key;
+  const sync=()=> seg.querySelectorAll("button").forEach(b=> b.classList.toggle("active", b.dataset.val===S.settings[k]));
+  seg.querySelectorAll("button").forEach(b=> b.addEventListener("click", ()=>{
+    S.settings[k]=b.dataset.val; sync();
+    if(k==='orientationLock'){ checkOrientation(); resize(); } // sovelletaan heti, ks. valmistusohjeet
+  }));
+  sync();
+});
 const stepRanges={deadband:[0,15],tackThresh:[1,20],tackAngle:[60,140],smooth:[1,9],gaugeScale:[10,40],headingOffset:[-180,180]};
 document.querySelectorAll(".stepper").forEach(st=>{
   const k=st.dataset.key, val=st.querySelector(".val");
@@ -1236,7 +1284,7 @@ document.querySelectorAll(".stepper").forEach(st=>{
 });
 
 /* ---------- init ---------- */
-const APP_VERSION="mittari v0.42";
+const APP_VERSION="mittari v0.44";
 (function(){
   const e=$("verEnable"); if(e) e.textContent=APP_VERSION;
   const n=$("verNote"); if(n) n.textContent=APP_VERSION+" · shares engine with index.html";
