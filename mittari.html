@@ -682,16 +682,16 @@ function mfRender(){
   let html='';
   if(MF.step==='selftest-intro'){
     html=`<h2>Quick test</h2>
-      <p class="helpp">A short test checks how this device behaves when rotated. First, hold the device still, pointing in one direction.</p>
-      <button class="close" id="mfHoldStart">Start — hold still</button>
+      <p class="helpp">Checks how your phone's compass behaves when turned. Put it flat on a table.</p>
+      <button class="close" id="mfHoldStart">Start</button>
       <button class="close" id="mfSkipTest">Skip test</button>`;
   } else if(MF.step==='selftest-hold'){
-    html=`<h2>Hold still…</h2>
-      <p class="helpp">Don't move the device.</p>
+    html=`<h2>Hold still</h2>
+      <p class="helpp">Don't move the phone.</p>
       <div style="font-family:var(--mono);font-size:48px;color:var(--led);text-align:center;margin:20px 0;" id="mfCountdown">2</div>`;
   } else if(MF.step==='selftest-turn'){
-    html=`<h2>Turn 90°</h2>
-      <p class="helpp">Put the phone down flat on a table, then turn it 90° in place — like spinning a steering wheel — so a different edge now faces forward.</p>
+    html=`<h2>Now turn it 90°</h2>
+      <p class="helpp">Keep it flat on the table. Turn it 90°, like spinning a steering wheel.</p>
       <svg width="180" height="80" viewBox="0 0 180 80" style="display:block;margin:6px auto 4px;">
         <defs><marker id="mfArrow" markerWidth="8" markerHeight="8" refX="4" refY="4" orient="auto"><path d="M0,0 L8,4 L0,8 Z" fill="#9a9a9a"/></marker></defs>
         <rect x="20" y="14" width="34" height="54" rx="6" fill="none" stroke="#9a9a9a" stroke-width="2"/>
@@ -700,15 +700,15 @@ function mfRender(){
         <rect x="126" y="27" width="54" height="34" rx="6" fill="none" stroke="#9a9a9a" stroke-width="2"/>
         <circle cx="175" cy="44" r="3" fill="#ff2b2b"/>
       </svg>
-      <p class="note" style="text-align:center;">Same phone, same table — just spun 90° in place. The red dot marks the same physical edge before/after.</p>
-      <button class="close" id="mfTurnDone">Done, I turned it</button>`;
+      <p class="note" style="text-align:center;">Same phone, same spot on the table.</p>
+      <button class="close" id="mfTurnDone">Done</button>`;
   } else if(MF.step==='selftest-result'){
     const raw=Math.abs(MF.turnDiff)>60;
     html=`<h2>Result</h2>
       <p class="helpp">${raw
-        ? 'This device follows its physical rotation directly, like iOS does (observed change '+Math.round(Math.abs(MF.turnDiff))+'°). A heading offset will likely be needed.'
-        : 'This device already compensates for rotation on its own (observed change only '+Math.round(Math.abs(MF.turnDiff))+'°). A large offset is unlikely to be needed, but fine-tuning by eye is still worth doing.'}</p>
-      <button class="close" id="mfToOffset">Continue to mounting setup</button>`;
+        ? "Your phone's compass follows its own rotation directly. A heading offset will help."
+        : "Your phone already compensates for rotation. You likely won't need a big offset."}</p>
+      <button class="close" id="mfToOffset">Continue</button>`;
   } else if(MF.step==='mount-gate'){
     html=`<h2>Mounting position</h2>
       <p class="helpp">Are you holding the device right now in the position you're planning to mount it?</p>
@@ -720,7 +720,7 @@ function mfRender(){
       <button class="close" id="mfFinish">Finish</button>`;
   } else if(MF.step==='offset'){
     html=`<h2>Heading offset</h2>
-      <p class="helpp">Adjust below until the big number matches a direction you know to be correct (e.g. compare with the boat's fixed compass, or the phone's own Compass app, before mounting).</p>
+      <p class="helpp">Adjust below until the big number matches a direction you know to be correct — compare with the boat's fixed compass.</p>
       <div style="font-family:var(--mono);font-size:34px;color:var(--led);letter-spacing:.04em;text-align:center;margin:10px 0;" id="mfLiveHeading">---°</div>
       <div class="row"><div class="lbl">Offset<small>Added to every reading</small></div>
       <div class="stepper" data-key="headingOffset"><button data-d="-5">–</button><span class="val"></span><button data-d="5">+</button></div></div>
@@ -1236,7 +1236,7 @@ document.querySelectorAll(".stepper").forEach(st=>{
 });
 
 /* ---------- init ---------- */
-const APP_VERSION="mittari v0.39";
+const APP_VERSION="mittari v0.40";
 (function(){
   const e=$("verEnable"); if(e) e.textContent=APP_VERSION;
   const n=$("verNote"); if(n) n.textContent=APP_VERSION+" · shares engine with index.html";
