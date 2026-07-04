@@ -575,7 +575,7 @@ function hideOverlay(){ $("overlay").classList.add("hidden"); S.liveSince=Date.n
    heading-offset / kallistustesti. Ks. valmistusohjeet v2.
    v1: yksi asento (ei moniasento-vertailua vielä).
    ============================================================ */
-const MF = { step:null, h0:null, turnDiff:null, tiltRef:null, tiltBins:{}, tiltTimer:null, liveTimer:null, liveTilt:0 };
+const MF = { step:null, h0:null, turnDiff:null, tiltRef:null, tiltBins:{}, tiltTimer:null, liveTimer:null, orientTimer:null, liveTilt:0 };
 
 function applyOffsetDelta(d){
   let v=S.settings.headingOffset+d; v=Math.max(-180,Math.min(180,v));
@@ -599,6 +599,15 @@ function mfStartLiveHeading(){
   },200);
 }
 function mfStopLiveHeading(){ if(MF.liveTimer){ clearInterval(MF.liveTimer); MF.liveTimer=null; } }
+function mfStartOrientWatch(){
+  mfStopOrientWatch();
+  MF.orientTimer=setInterval(()=>{
+    const el=document.getElementById('mfOrientStatus');
+    if(!el){ mfStopOrientWatch(); return; }
+    el.textContent='Screen: '+(isPortrait()?'portrait':'landscape');
+  },300);
+}
+function mfStopOrientWatch(){ if(MF.orientTimer){ clearInterval(MF.orientTimer); MF.orientTimer=null; } }
 
 function mfTiltAngle(beta,gamma){
   if(beta==null||gamma==null) return 0;
@@ -676,6 +685,7 @@ function mfBind(){
   on('mfTiltDone', mfFinishTiltSweep);
   on('mfFinish', finishMountFlow);
   if(MF.step==='offset'){ mfWireOffsetStepper(); mfStartLiveHeading(); }
+  if(MF.step==='selftest-turn'){ mfStartOrientWatch(); } else { mfStopOrientWatch(); }
 }
 function mfRender(){
   const p=$("mountFlowPanel");
@@ -691,7 +701,7 @@ function mfRender(){
       <div style="font-family:var(--mono);font-size:48px;color:var(--led);text-align:center;margin:20px 0;" id="mfCountdown">2</div>`;
   } else if(MF.step==='selftest-turn'){
     html=`<h2>Now turn it 90°</h2>
-      <p class="helpp">Keep it flat on the table. Turn it 90°, like spinning a steering wheel.</p>
+      <p class="helpp">Keep it flat on the table. Turn it until the screen switches to landscape. (If it doesn't switch, turn off rotation lock in Control Center.)</p>
       <svg width="180" height="80" viewBox="0 0 180 80" style="display:block;margin:6px auto 4px;">
         <defs><marker id="mfArrow" markerWidth="8" markerHeight="8" refX="4" refY="4" orient="auto"><path d="M0,0 L8,4 L0,8 Z" fill="#9a9a9a"/></marker></defs>
         <rect x="20" y="14" width="34" height="54" rx="6" fill="none" stroke="#9a9a9a" stroke-width="2"/>
@@ -700,7 +710,7 @@ function mfRender(){
         <rect x="126" y="27" width="54" height="34" rx="6" fill="none" stroke="#9a9a9a" stroke-width="2"/>
         <circle cx="175" cy="44" r="3" fill="#ff2b2b"/>
       </svg>
-      <p class="note" style="text-align:center;">Same phone, same spot on the table.</p>
+      <div id="mfOrientStatus" style="text-align:center;font-family:var(--mono);font-size:13px;color:#7a7a7a;margin-top:6px;">Screen: —</div>
       <button class="close" id="mfTurnDone">Done</button>`;
   } else if(MF.step==='selftest-result'){
     const raw=Math.abs(MF.turnDiff)>60;
@@ -761,7 +771,7 @@ function mfShow(){ $("mountFlow").classList.remove("hidden"); }
 function mfHide(){ $("mountFlow").classList.add("hidden"); }
 function startMountFlow(){ MF.step='selftest-intro'; mfRender(); mfShow(); }
 function finishMountFlow(){
-  mfStopTiltSampling(); mfStopLiveHeading(); mfHide();
+  mfStopTiltSampling(); mfStopLiveHeading(); mfStopOrientWatch(); mfHide();
   if(!$("overlay").classList.contains("hidden")) hideOverlay();
 }
 $("btnMountFlow").addEventListener("click", ()=>{ $("help").classList.add("hidden"); startMountFlow(); });
@@ -1236,7 +1246,7 @@ document.querySelectorAll(".stepper").forEach(st=>{
 });
 
 /* ---------- init ---------- */
-const APP_VERSION="mittari v0.40";
+const APP_VERSION="mittari v0.41";
 (function(){
   const e=$("verEnable"); if(e) e.textContent=APP_VERSION;
   const n=$("verNote"); if(n) n.textContent=APP_VERSION+" · shares engine with index.html";
