@@ -180,6 +180,8 @@ body.portrait #btnMean{top:22%; height:22%;}
 <div class="stepper" data-key="smooth"><button data-d="-1">–</button><span class="val"></span><button data-d="1">+</button></div></div>
 <div class="row"><div class="lbl">Tack angle<small>STB↔BB, used for wind estimate</small></div>
 <div class="stepper" data-key="tackAngle"><button data-d="-2">–</button><span class="val"></span><button data-d="2">+</button></div></div>
+<div class="row"><div class="lbl">Heading offset<small>Corrects for physical mounting rotation</small></div>
+<div class="stepper" data-key="headingOffset"><button data-d="-5">–</button><span class="val"></span><button data-d="5">+</button></div></div>
 <button class="close" id="btnPolarUpdate">Update polar</button>
 <button class="close reset" id="btnReset">Reset means</button>
 <a class="link" href="index.html">Switch to classic view →</a>
@@ -210,8 +212,14 @@ body.portrait #btnMean{top:22%; height:22%;}
 <p class="helpp">Audio alerts play distinct tones for lift, header and tack. Turn them on or off in Settings.</p>
 <div class="helph">Tip</div>
 <p class="helpp">Re-set the mean whenever the average wind direction shifts, or use "Reset means" in Settings to start over.</p>
+<button class="close" id="btnMountFlow">Testaa asennus</button>
 <button class="close" id="btnCloseHelp">Got it</button>
 </div>
+</div>
+
+<!-- asennusohjaus (Edellytys / A: offset / B: kallistustesti — ks. valmistusohjeet v2) -->
+<div class="sheet hidden" id="mountFlow">
+<div class="panel" id="mountFlowPanel"></div>
 </div>
 
 <script>
@@ -244,7 +252,7 @@ const S = {
   gps:{cog:null, sog:null, on:false, watch:null},
   wakeLock:null,
   demo:false, demoT:0,
-  settings:{ deadband:3, tackThresh:20, tackAngle:90, gps:true, wake:false, smooth:5, audio:false, gaugeScale:20, headingFocus:false }, // tackThresh oletus = skaalan max, käyttäjä kiristää itse
+  settings:{ deadband:3, tackThresh:20, tackAngle:90, gps:true, wake:false, smooth:5, audio:false, gaugeScale:20, headingFocus:false, headingOffset:0 }, // tackThresh oletus = skaalan max, käyttäjä kiristää itse; headingOffset = asennuskorjaus, ks. valmistusohjeet
   source:null, compassOk:false, liveSince:0,
   audio:{ state:'nomean', cand:'nomean', candSince:0, tackSince:null, tackArmed:true, tackLockUntil:0 },
 };
@@ -481,7 +489,10 @@ function handleAudio(status, lifted){
 /* ---------- suunta & halssi ---------- */
 function setHeading(raw){
   if(raw==null || isNaN(raw)) return;
-  S.headingRaw = norm(raw);
+  // Asennuskorjaus lisätään heti raakalukemaan — yksi totuuden lähde, näkyy kauttaaltaan
+  // (iso numero, STB/BB-meanit). Ei riko polaaria/LIFT-HEADERia, koska ne laskevat aina
+  // erotuksia (heading - mean), johon vakio-offset ei vaikuta. Ks. valmistusohjeet 4.4.
+  S.headingRaw = norm(raw + S.settings.headingOffset);
   S.smooth.k = 0.5 + S.settings.smooth*0.045;
   S.heading = circMeanPush(S.smooth, S.headingRaw);
   S.compassOk = true;
@@ -554,10 +565,199 @@ async function enableSensors(){
   }catch(err){ granted=false; }
   if(!granted){ showError("Motion sensor permission denied. Open the page in the phone browser and allow Motion & Orientation, or try the demo."); return; }
   setTimeout(()=>{ if(!S.compassOk) showError("No compass data. Works best opened directly in the phone browser. You can try the demo."); }, 1800);
-  hideOverlay();
+  startMountFlow();
 }
 function showError(msg){ const e=$("errBox"); e.textContent=msg; e.classList.remove("hidden"); }
 function hideOverlay(){ $("overlay").classList.add("hidden"); S.liveSince=Date.now(); applyWake(); applyGps(); checkOrientation(); resize(); }
+
+/* ============================================================
+   ASENNUSOHJAUS (mount flow) — Edellytys / offset-itsetesti /
+   heading-offset / kallistustesti. Ks. valmistusohjeet v2.
+   v1: yksi asento (ei moniasento-vertailua vielä).
+   ============================================================ */
+const MF = { step:null, h0:null, turnDiff:null, tiltRef:null, tiltBins:{}, tiltTimer:null, liveTimer:null, liveTilt:0 };
+
+function applyOffsetDelta(d){
+  let v=S.settings.headingOffset+d; v=Math.max(-180,Math.min(180,v));
+  S.settings.headingOffset=v;
+  // Pakotettu meanien nollaus — vanha mean+offset-pari ei enää täsmää uuden offsetin kanssa (ks. 4.5)
+  S.meanStb=null; S.meanBb=null; Polar.onReset();
+  document.querySelectorAll('.stepper[data-key="headingOffset"] .val').forEach(el=> el.textContent=v+'°');
+}
+function mfWireOffsetStepper(){
+  const st = document.querySelector('#mountFlowPanel .stepper[data-key="headingOffset"]');
+  if(!st) return;
+  st.querySelector('.val').textContent = S.settings.headingOffset+'°';
+  st.querySelectorAll('button').forEach(b=> b.addEventListener('click', ()=> applyOffsetDelta(parseInt(b.dataset.d,10))));
+}
+function mfStartLiveHeading(){
+  mfStopLiveHeading();
+  MF.liveTimer=setInterval(()=>{
+    const el=document.getElementById('mfLiveHeading');
+    if(!el){ mfStopLiveHeading(); return; }
+    el.textContent=(S.heading==null?'---':pad3(S.heading))+'°';
+  },200);
+}
+function mfStopLiveHeading(){ if(MF.liveTimer){ clearInterval(MF.liveTimer); MF.liveTimer=null; } }
+
+function mfTiltAngle(beta,gamma){
+  if(beta==null||gamma==null) return 0;
+  const br=beta*Math.PI/180, gr=gamma*Math.PI/180;
+  const c=Math.max(-1,Math.min(1, Math.cos(br)*Math.cos(gr)));
+  return Math.acos(c)*180/Math.PI;
+}
+let _mfTiltHandler=null;
+function mfAttachTiltSensor(){
+  _mfTiltHandler = e=>{ MF.liveTilt = mfTiltAngle(e.beta,e.gamma); };
+  window.addEventListener('deviceorientation', _mfTiltHandler, true);
+}
+function mfDetachTiltSensor(){ if(_mfTiltHandler){ window.removeEventListener('deviceorientation', _mfTiltHandler, true); _mfTiltHandler=null; } }
+function mfStopTiltSampling(){ if(MF.tiltTimer){ clearInterval(MF.tiltTimer); MF.tiltTimer=null; } mfDetachTiltSensor(); }
+function mfMaxError(){ const vals=Object.values(MF.tiltBins); return vals.length?Math.max(...vals):0; }
+
+function mfStartHold(){
+  MF.step='selftest-hold'; mfRender();
+  let n=2;
+  const tick=()=>{
+    n--;
+    const e=document.getElementById('mfCountdown'); if(e) e.textContent=String(Math.max(n,0));
+    if(n<=0){ MF.h0=S.heading; MF.step='selftest-turn'; mfRender(); return; }
+    setTimeout(tick,1000);
+  };
+  setTimeout(tick,1000);
+}
+function mfCaptureTurn(){
+  const h1=S.heading;
+  MF.turnDiff = (h1==null||MF.h0==null) ? 0 : angDiff(h1, MF.h0);
+  MF.step='selftest-result'; mfRender();
+}
+function mfStartTiltHold(){
+  MF.step='tilt-hold'; mfRender();
+  mfAttachTiltSensor();
+  let n=2;
+  const tick=()=>{
+    n--;
+    const e=document.getElementById('mfCountdown'); if(e) e.textContent=String(Math.max(n,0));
+    if(n<=0){
+      MF.tiltRef=S.heading; MF.tiltBins={};
+      MF.step='tilt-sweep'; mfRender(); mfStartTiltSampling();
+      return;
+    }
+    setTimeout(tick,1000);
+  };
+  setTimeout(tick,1000);
+}
+function mfStartTiltSampling(){
+  mfStopTiltSampling(); mfAttachTiltSensor();
+  MF.tiltTimer=setInterval(()=>{
+    if(S.heading==null || MF.tiltRef==null) return;
+    const tiltDeg=MF.liveTilt||0;
+    const err=Math.abs(angDiff(S.heading, MF.tiltRef));
+    const bin=Math.round(tiltDeg/5)*5;
+    if(!(bin in MF.tiltBins) || MF.tiltBins[bin]<err) MF.tiltBins[bin]=err;
+    const tEl=document.getElementById('mfTiltNow'), eEl=document.getElementById('mfErrNow');
+    if(tEl) tEl.textContent=Math.round(tiltDeg)+'°';
+    if(eEl) eEl.textContent=Math.round(err)+'°';
+  },200); // 5 Hz, ks. valmistusohjeet 7.6
+}
+function mfFinishTiltSweep(){ mfStopTiltSampling(); MF.step='tilt-result'; mfRender(); }
+
+function mfBind(){
+  const on=(id,fn)=>{ const el=document.getElementById(id); if(el) el.addEventListener('click',fn); };
+  on('mfYes', ()=>{ MF.step='selftest-intro'; mfRender(); });
+  on('mfNo', ()=>{ MF.step='handheld'; mfRender(); });
+  on('mfDone', finishMountFlow);
+  on('mfSkipTest', ()=>{ MF.step='offset'; mfRender(); });
+  on('mfHoldStart', mfStartHold);
+  on('mfTurnDone', mfCaptureTurn);
+  on('mfToOffset', ()=>{ MF.step='offset'; mfRender(); });
+  on('mfToTiltIntro', ()=>{ mfStopLiveHeading(); MF.step='tilt-intro'; mfRender(); });
+  on('mfTiltStart', mfStartTiltHold);
+  on('mfTiltDone', mfFinishTiltSweep);
+  on('mfFinish', finishMountFlow);
+  if(MF.step==='offset'){ mfWireOffsetStepper(); mfStartLiveHeading(); }
+}
+function mfRender(){
+  const p=$("mountFlowPanel");
+  let html='';
+  if(MF.step==='gate'){
+    html=`<h2>Asennus</h2>
+      <p class="helpp">Onko laite jo kiinnitetty paikalleen veneeseen?</p>
+      <button class="close" id="mfYes">Kyllä, laite on kiinnitetty</button>
+      <button class="close" id="mfNo">Ei, pidän kädessä</button>`;
+  } else if(MF.step==='handheld'){
+    html=`<h2>Selvä</h2>
+      <p class="helpp">Kompassi toimii kyllä kädessä pidettynä — LIFT/HEADER perustuu itse asetettuun keskisuuntaan eikä välitä laitteen asennosta.</p>
+      <p class="helpp">Odota kuitenkin enemmän kohinaa käden liikkeestä. Asennusohjaus ja kallistustesti eivät sovi tähän käyttötapaan — voit ajaa ne myöhemmin Help-paneelista kun laite on kiinnitetty.</p>
+      <button class="close" id="mfDone">Jatka</button>`;
+  } else if(MF.step==='selftest-intro'){
+    html=`<h2>Pikatesti</h2>
+      <p class="helpp">Lyhyt testi selvittää miten juuri tämä laite käyttäytyy kierrettäessä. Pidä laite ensin paikallaan yhteen suuntaan.</p>
+      <button class="close" id="mfHoldStart">Aloita — pidä paikallaan</button>
+      <button class="close" id="mfSkipTest">Ohita testi</button>`;
+  } else if(MF.step==='selftest-hold'){
+    html=`<h2>Pidä paikallaan…</h2>
+      <p class="helpp">Älä liikuta laitetta.</p>
+      <div style="font-family:var(--mono);font-size:48px;color:var(--led);text-align:center;margin:20px 0;" id="mfCountdown">2</div>`;
+  } else if(MF.step==='selftest-turn'){
+    html=`<h2>Käännä 90°</h2>
+      <p class="helpp">Käännä laitetta fyysisesti 90° pitäen se koko ajan samaan todelliseen suuntaan kuin äsken.</p>
+      <button class="close" id="mfTurnDone">Valmis, käänsin</button>`;
+  } else if(MF.step==='selftest-result'){
+    const raw=Math.abs(MF.turnDiff)>60;
+    html=`<h2>Tulos</h2>
+      <p class="helpp">${raw
+        ? 'Laite näyttää käyttäytyvän kuten iOS: heading seuraa laitteen fyysistä kiertoa suoraan (havaittu muutos '+Math.round(Math.abs(MF.turnDiff))+'°). Heading-offset-asetus on tarpeen.'
+        : 'Laite näyttää kompensoivan kierron jo itse (havaittu muutos vain '+Math.round(Math.abs(MF.turnDiff))+'°). Suurta offsetia tuskin tarvitaan, mutta hienosäätö kannattaa silti tehdä silmämääräisesti.'}</p>
+      <button class="close" id="mfToOffset">Jatka offsetin säätöön</button>`;
+  } else if(MF.step==='offset'){
+    html=`<h2>Heading-offset</h2>
+      <p class="helpp">Säädä alla kunnes iso numero täsmää tuttuun suuntaan (esim. veneen kiinteä kompassi tai puhelimen oma Compass-appi ennen asennusta).</p>
+      <div style="font-family:var(--mono);font-size:34px;color:var(--led);letter-spacing:.04em;text-align:center;margin:10px 0;" id="mfLiveHeading">---°</div>
+      <div class="row"><div class="lbl">Offset<small>Lisätään jokaiseen lukemaan</small></div>
+      <div class="stepper" data-key="headingOffset"><button data-d="-5">–</button><span class="val"></span><button data-d="5">+</button></div></div>
+      <button class="close" id="mfToTiltIntro">Valmis</button>`;
+  } else if(MF.step==='tilt-intro'){
+    html=`<h2>Kallistustesti (valinnainen)</h2>
+      <p class="helpp">Mittaa kuinka paljon veneen heeli vääristää kompassia tässä asennossa. Kestää n. 30 sekuntia.</p>
+      <button class="close" id="mfTiltStart">Testaa nyt</button>
+      <button class="close" id="mfFinish">Ohita, tee myöhemmin Helpistä</button>`;
+  } else if(MF.step==='tilt-hold'){
+    html=`<h2>Pidä laite tasaisena…</h2>
+      <p class="helpp">Asennossa jossa se tulee olemaan, älä kallista vielä.</p>
+      <div style="font-family:var(--mono);font-size:48px;color:var(--led);text-align:center;margin:20px 0;" id="mfCountdown">2</div>`;
+  } else if(MF.step==='tilt-sweep'){
+    html=`<h2>Kallista hitaasti</h2>
+      <p class="helpp">Kallista laitetta kuin vene kallistuisi, 0°→40°→takaisin 0°, suunnan pysyessä samana. Paina Valmis kun olet käynyt liikkeen läpi.</p>
+      <div style="display:flex; gap:18px; margin:14px 0;">
+        <div><div style="font-size:12px;color:#8a8a8a;">KALLISTUS</div><div id="mfTiltNow" style="font-family:var(--mono);font-size:30px;color:#fff;">0°</div></div>
+        <div><div style="font-size:12px;color:#8a8a8a;">POIKKEAMA</div><div id="mfErrNow" style="font-family:var(--mono);font-size:30px;color:var(--led);">0°</div></div>
+      </div>
+      <button class="close" id="mfTiltDone">Valmis</button>`;
+  } else if(MF.step==='tilt-result'){
+    const maxErr=mfMaxError();
+    let verdict,msg;
+    if(maxErr<S.settings.deadband){ verdict='🟢 Hyvä'; msg='Asennus toimii hyvin — kompassi pysyy vakaana myös kallistuksessa.'; }
+    else if(maxErr<S.settings.tackThresh){ verdict='🟡 Kohtalainen'; msg='Pieniä poikkeamia kovilla kallistuskulmilla. Ei vielä sekoita LIFT/HEADER-tulkintaa, mutta tasaisempi asento parantaisi tarkkuutta.'; }
+    else { verdict='🔴 Merkittävä'; msg='Tässä asennossa pelkkä kallistus voi näyttää virheellistä HEADERia/LIFTiä. Kokeile toista asentoa tai käsittele lukemia varauksella kovassa kallistuksessa.'; }
+    const rows=Object.keys(MF.tiltBins).map(Number).sort((a,b)=>a-b).map(k=>k+'°→'+Math.round(MF.tiltBins[k])+'°').join(' · ');
+    html=`<h2>${verdict}</h2>
+      <p class="helpp">${msg}</p>
+      <p class="note">${rows||'(ei tarpeeksi dataa)'}</p>
+      <button class="close" id="mfFinish">Valmis</button>`;
+  }
+  p.innerHTML=html;
+  mfBind();
+}
+function mfShow(){ $("mountFlow").classList.remove("hidden"); }
+function mfHide(){ $("mountFlow").classList.add("hidden"); }
+function startMountFlow(){ MF.step='gate'; mfRender(); mfShow(); }
+function finishMountFlow(){
+  mfStopTiltSampling(); mfStopLiveHeading(); mfHide();
+  if(!$("overlay").classList.contains("hidden")) hideOverlay();
+}
+$("btnMountFlow").addEventListener("click", ()=>{ $("help").classList.add("hidden"); startMountFlow(); });
+
 
 /* ---------- demo ---------- */
 function startDemo(){
@@ -1013,12 +1213,14 @@ document.querySelectorAll(".tog").forEach(t=>{
     if(k==='audio'){ if(S.settings.audio) enableAudio(); else disableAudio(); }
   });
 });
-const stepRanges={deadband:[0,15],tackThresh:[1,20],tackAngle:[60,140],smooth:[1,9],gaugeScale:[10,40]};
+const stepRanges={deadband:[0,15],tackThresh:[1,20],tackAngle:[60,140],smooth:[1,9],gaugeScale:[10,40],headingOffset:[-180,180]};
 document.querySelectorAll(".stepper").forEach(st=>{
   const k=st.dataset.key, val=st.querySelector(".val");
   const unit = k==='smooth' ? "" : "°";
   st.querySelectorAll("button").forEach(b=> b.addEventListener("click", ()=>{
-    const d=parseInt(b.dataset.d,10); let v=S.settings[k]+d;
+    const d=parseInt(b.dataset.d,10);
+    if(k==='headingOffset'){ applyOffsetDelta(d); return; } // ks. valmistusohjeet 4.5: pakottaa meanien nollauksen
+    let v=S.settings[k]+d;
     const [lo,hi]=stepRanges[k]; v=Math.max(lo,Math.min(hi,v));
     S.settings[k]=v; val.textContent=v+unit;
   }));
@@ -1026,7 +1228,7 @@ document.querySelectorAll(".stepper").forEach(st=>{
 });
 
 /* ---------- init ---------- */
-const APP_VERSION="mittari v0.35";
+const APP_VERSION="mittari v0.36";
 (function(){
   const e=$("verEnable"); if(e) e.textContent=APP_VERSION;
   const n=$("verNote"); if(n) n.textContent=APP_VERSION+" · shares engine with index.html";
