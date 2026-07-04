@@ -128,16 +128,10 @@ display:flex; align-items:center; justify-content:center;}
 .legend .li{display:flex; align-items:center; gap:10px; font-size:13.5px; color:#cfcfcf;}
 .legend .sw{flex:0 0 auto; width:18px; height:18px; border-radius:5px;}
 .legend .li b{font-family:var(--mono); letter-spacing:.06em; color:#fff; min-width:64px;}
-/* ---- käännä laite -vihje ---- */
-#rotate{position:fixed; inset:0; z-index:60; background:#000; display:none;
-align-items:center; justify-content:center; text-align:center; padding:36px;}
-#rotate.show{display:flex;}
-#rotate .ic{font-size:64px; margin-bottom:20px; animation:tip 1.8s ease-in-out infinite;}
-#rotate .tx-main{color:#ffffff; font-size:18px; font-weight:700; letter-spacing:.04em;
-font-family:var(--mono); margin-bottom:14px; line-height:1.4;}
-#rotate .tx-sub{color:#666; font-size:13px; line-height:1.7; max-width:280px; margin:0 auto;}
-@keyframes tip{0%,100%{transform:rotate(0)}50%{transform:rotate(90deg)}}
-@media (prefers-reduced-motion: reduce){ #rotate .ic{animation:none;} }
+/* ---- pystytila (portrait) — mittarin sisäinen layout mukautuu, ks. isPortrait()/render() ---- */
+/* btnMean on näkymätön napautusalue ison heading-luvun päällä; sen sijainti/koko on sidottu
+   render()-funktion hero-numeron portrait-sijoitteluun (keskitetty n. H*0.36 kohdalle). */
+body.portrait #btnMean{top:22%; height:22%;}
 </style>
 </head>
 <body>
@@ -150,16 +144,6 @@ font-family:var(--mono); margin-bottom:14px; line-height:1.4;}
 <button class="ctl" id="btnSetMean">SET MEAN</button>
 <button class="ctl" id="btnBb">BB</button>
 </div>
-
-<!-- käännä laite -->
-<div id="rotate"><div>
-  <div class="ic">▭</div>
-  <div class="tx-main">ROTATE &amp; MOUNT IN BOAT'S DIRECTION</div>
-  <div class="tx-sub">
-    The compass works best when the device is fixed pointing forward — mount it on the deck or cockpit.<br><br>
-    Holding in hand still works, but accuracy suffers when the device moves independently of the boat.
-  </div>
-</div></div>
 
 <!-- aloitus -->
 <div class="overlay" id="overlay">
@@ -655,10 +639,10 @@ function isPortrait(){
   return window.innerHeight > window.innerWidth * 1.02;
 }
 function checkOrientation(){
-  // landscape-vaatimus koskee vain mittaritilaa; aloitusruutu toimii myös pystyssä,
-  // jotta käyttäjä ehtii valita klassisen tai mittarinäkymän
-  const meterMode = $("overlay").classList.contains("hidden");
-  $("rotate").classList.toggle("show", meterMode && isPortrait());
+  // Pystytila (portrait) on nyt tuettu mittarinäkymässä — render() piirtää eri koordinaatein.
+  // body-luokka mahdollistaa pienet CSS-poikkeukset (esim. btnMean-napautusalue) samalla
+  // isPortrait()-logiikalla kuin canvas-piirto käyttää, ilman erillistä @media-kyselyä.
+  document.body.classList.toggle('portrait', isPortrait());
 }
 
 /* --- seitsenosaisten numeroiden piirto --- */
@@ -727,14 +711,22 @@ function drawGauge(lifted,status,dim){
   const scale=S.settings.gaugeScale;
   const nBars=12; // palkkeja per puoli
   const cx=W/2;
+  const P=isPortrait();
   const CTRL_H=62; // alanapeille varattu kaista
   const fs=Math.max(11,W*0.015), labelH=fs+10;
   const baselineY=H-CTRL_H-labelH; // yhteinen alalinja kaikille palkeille
   // keskipalkit pysyvät matalina (kaaren pohja), joten ne eivät osu isoon numeroon;
   // reunapalkit saavat nousta kulmatilaan, koska ne ovat kaukana keskinumerosta vaakasuunnassa
-  const topForEdge=H*0.30; // reunapalkkien yläraja
-  const maxBarH=Math.max(40, Math.min(baselineY-topForEdge, H*0.46)); // reunapalkin korkeus
-  const minBarH=maxBarH*0.10; // keskipalkin (groove) korkeus
+  // Portrait: hero-numero on ylempänä (H*0.36) kuin landscapessa, joten reunapalkkien yläraja
+  // pitää siirtää alemmas ettei kaari osu heroon; korkeuskatto sidotaan W:hen H:n sijaan,
+  // koska pystyssä H on aina reilusti isompi kuin mikä olisi visuaalisesti tarpeen.
+  const topForEdge = P ? H*0.46 : H*0.30; // reunapalkkien yläraja
+  const maxBarH = P ? Math.max(40, Math.min(baselineY-topForEdge, W*0.85))
+                     : Math.max(40, Math.min(baselineY-topForEdge, H*0.46)); // reunapalkin korkeus
+  // Paraabelikäyrä (t*t) säilyy sekä landscapessa että portraitissa — vain lattiakorkeutta
+  // (minBarH) nostetaan portraitissa, jotta keskiosan palkit näyttävät paksummilta ilman että
+  // itse kaaren muoto muuttuu.
+  const minBarH=maxBarH*(P?0.22:0.10); // keskipalkin (groove) korkeus
   const halfWidth=W*0.44;
   const step=halfWidth/nBars;
   const barW=Math.max(5, step*0.55);
@@ -880,10 +872,21 @@ function render(){
 
   // --- iso suunta (hero, aina LED-punainen, ei himmennetä) ---
   // 2b: heading zoom -skaalaus (HEADING vs INSTRUMENTS tilassa)
+  const P = isPortrait();
   const headStr = S.heading==null ? '---' : pad3(S.heading);
   const hScale = S.settings.headingFocus ? 1.0 : 1.38; // Instruments: selvästi isompi heading, Heading: normaali
-  const sScale = S.settings.headingFocus ? 1.0 : 0.75; // Instruments: normaali sekund., Heading: pienempi
-  drawNumber(headStr, W/2, H*0.40, Math.min(H*0.28, W*0.19) * hScale, '#ff2b2b', true);
+  // Portrait: molemmat display-tilat (Heading/Instruments) saavat oman kertoimen, koska pystyssä
+  // on käytettävissä enemmän tilaa kuin landscapessa. Instruments (headingFocus=true) saa isomman
+  // boostin ylärivin lukuihin, koska sen tarkoitus on korostaa sekundäärilukemia (HEADER/PERF/SOG).
+  const rowBoost = P ? (S.settings.headingFocus ? 1.35 : 1.15) : 1.0;
+  const sScale = (S.settings.headingFocus ? 1.0 : 0.75) * rowBoost; // Instruments: normaali sekund., Heading: pienempi
+  // Portrait: W on kapea suhteessa H:hon, joten koko on sidottava W:hen eri kertoimella kuin
+  // landscapessa (jossa H on rajoittava tekijä). 0.27*W pitää 3-numeroisen LED-luvun marginaalilla
+  // näytön sisällä myös hScale=1.38:lla (numerosarjan kokonaisleveys ≈ 2.22× numeron korkeus).
+  const heroSize = P ? Math.min(H*0.16, W*0.27) * hScale
+                      : Math.min(H*0.28, W*0.19) * hScale;
+  const heroY = P ? H*0.36 : H*0.40;
+  drawNumber(headStr, W/2, heroY, heroSize, '#ff2b2b', true);
 
   // ===== yläriviruudukko (2b-layout): vasen=shift, keski=SOG, oikea=PERF =====
   const yEy=H*0.085, yVal=H*0.155;
@@ -1023,7 +1026,7 @@ document.querySelectorAll(".stepper").forEach(st=>{
 });
 
 /* ---------- init ---------- */
-const APP_VERSION="mittari v0.32";
+const APP_VERSION="mittari v0.35";
 (function(){
   const e=$("verEnable"); if(e) e.textContent=APP_VERSION;
   const n=$("verNote"); if(n) n.textContent=APP_VERSION+" · shares engine with index.html";
