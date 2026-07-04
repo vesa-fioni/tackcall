@@ -212,7 +212,7 @@ body.portrait #btnMean{top:22%; height:22%;}
 <p class="helpp">Audio alerts play distinct tones for lift, header and tack. Turn them on or off in Settings.</p>
 <div class="helph">Tip</div>
 <p class="helpp">Re-set the mean whenever the average wind direction shifts, or use "Reset means" in Settings to start over.</p>
-<button class="close" id="btnMountFlow">Testaa asennus</button>
+<button class="close" id="btnMountFlow">Test mounting</button>
 <button class="close" id="btnCloseHelp">Got it</button>
 </div>
 </div>
@@ -664,13 +664,13 @@ function mfFinishTiltSweep(){ mfStopTiltSampling(); MF.step='tilt-result'; mfRen
 
 function mfBind(){
   const on=(id,fn)=>{ const el=document.getElementById(id); if(el) el.addEventListener('click',fn); };
-  on('mfYes', ()=>{ MF.step='selftest-intro'; mfRender(); });
-  on('mfNo', ()=>{ MF.step='handheld'; mfRender(); });
   on('mfDone', finishMountFlow);
-  on('mfSkipTest', ()=>{ MF.step='offset'; mfRender(); });
+  on('mfSkipTest', ()=>{ MF.step='mount-gate'; mfRender(); });
   on('mfHoldStart', mfStartHold);
   on('mfTurnDone', mfCaptureTurn);
-  on('mfToOffset', ()=>{ MF.step='offset'; mfRender(); });
+  on('mfToOffset', ()=>{ MF.step='mount-gate'; mfRender(); });
+  on('mfMountYes', ()=>{ MF.step='offset'; mfRender(); });
+  on('mfMountNo', ()=>{ MF.step='mount-skip'; mfRender(); });
   on('mfToTiltIntro', ()=>{ mfStopLiveHeading(); MF.step='tilt-intro'; mfRender(); });
   on('mfTiltStart', mfStartTiltHold);
   on('mfTiltDone', mfFinishTiltSweep);
@@ -680,78 +680,77 @@ function mfBind(){
 function mfRender(){
   const p=$("mountFlowPanel");
   let html='';
-  if(MF.step==='gate'){
-    html=`<h2>Asennus</h2>
-      <p class="helpp">Onko laite jo kiinnitetty paikalleen veneeseen?</p>
-      <button class="close" id="mfYes">Kyllä, laite on kiinnitetty</button>
-      <button class="close" id="mfNo">Ei, pidän kädessä</button>`;
-  } else if(MF.step==='handheld'){
-    html=`<h2>Selvä</h2>
-      <p class="helpp">Kompassi toimii kyllä kädessä pidettynä — LIFT/HEADER perustuu itse asetettuun keskisuuntaan eikä välitä laitteen asennosta.</p>
-      <p class="helpp">Odota kuitenkin enemmän kohinaa käden liikkeestä. Asennusohjaus ja kallistustesti eivät sovi tähän käyttötapaan — voit ajaa ne myöhemmin Help-paneelista kun laite on kiinnitetty.</p>
-      <button class="close" id="mfDone">Jatka</button>`;
-  } else if(MF.step==='selftest-intro'){
-    html=`<h2>Pikatesti</h2>
-      <p class="helpp">Lyhyt testi selvittää miten juuri tämä laite käyttäytyy kierrettäessä. Pidä laite ensin paikallaan yhteen suuntaan.</p>
-      <button class="close" id="mfHoldStart">Aloita — pidä paikallaan</button>
-      <button class="close" id="mfSkipTest">Ohita testi</button>`;
+  if(MF.step==='selftest-intro'){
+    html=`<h2>Quick test</h2>
+      <p class="helpp">A short test checks how this device behaves when rotated. First, hold the device still, pointing in one direction.</p>
+      <button class="close" id="mfHoldStart">Start — hold still</button>
+      <button class="close" id="mfSkipTest">Skip test</button>`;
   } else if(MF.step==='selftest-hold'){
-    html=`<h2>Pidä paikallaan…</h2>
-      <p class="helpp">Älä liikuta laitetta.</p>
+    html=`<h2>Hold still…</h2>
+      <p class="helpp">Don't move the device.</p>
       <div style="font-family:var(--mono);font-size:48px;color:var(--led);text-align:center;margin:20px 0;" id="mfCountdown">2</div>`;
   } else if(MF.step==='selftest-turn'){
-    html=`<h2>Käännä 90°</h2>
-      <p class="helpp">Käännä laitetta fyysisesti 90° pitäen se koko ajan samaan todelliseen suuntaan kuin äsken.</p>
-      <button class="close" id="mfTurnDone">Valmis, käänsin</button>`;
+    html=`<h2>Turn 90°</h2>
+      <p class="helpp">Physically turn the device 90°, keeping it pointed in the same real-world direction as before.</p>
+      <button class="close" id="mfTurnDone">Done, I turned it</button>`;
   } else if(MF.step==='selftest-result'){
     const raw=Math.abs(MF.turnDiff)>60;
-    html=`<h2>Tulos</h2>
+    html=`<h2>Result</h2>
       <p class="helpp">${raw
-        ? 'Laite näyttää käyttäytyvän kuten iOS: heading seuraa laitteen fyysistä kiertoa suoraan (havaittu muutos '+Math.round(Math.abs(MF.turnDiff))+'°). Heading-offset-asetus on tarpeen.'
-        : 'Laite näyttää kompensoivan kierron jo itse (havaittu muutos vain '+Math.round(Math.abs(MF.turnDiff))+'°). Suurta offsetia tuskin tarvitaan, mutta hienosäätö kannattaa silti tehdä silmämääräisesti.'}</p>
-      <button class="close" id="mfToOffset">Jatka offsetin säätöön</button>`;
+        ? 'This device follows its physical rotation directly, like iOS does (observed change '+Math.round(Math.abs(MF.turnDiff))+'°). A heading offset will likely be needed.'
+        : 'This device already compensates for rotation on its own (observed change only '+Math.round(Math.abs(MF.turnDiff))+'°). A large offset is unlikely to be needed, but fine-tuning by eye is still worth doing.'}</p>
+      <button class="close" id="mfToOffset">Continue to mounting setup</button>`;
+  } else if(MF.step==='mount-gate'){
+    html=`<h2>Mounting position</h2>
+      <p class="helpp">Are you holding the device right now in the position you're planning to mount it?</p>
+      <button class="close" id="mfMountYes">Yes, continue</button>
+      <button class="close" id="mfMountNo">No, skip for now</button>`;
+  } else if(MF.step==='mount-skip'){
+    html=`<h2>No problem</h2>
+      <p class="helpp">You can set the heading offset and run the tilt test anytime once the device is in place — open Help → Test mounting.</p>
+      <button class="close" id="mfFinish">Finish</button>`;
   } else if(MF.step==='offset'){
-    html=`<h2>Heading-offset</h2>
-      <p class="helpp">Säädä alla kunnes iso numero täsmää tuttuun suuntaan (esim. veneen kiinteä kompassi tai puhelimen oma Compass-appi ennen asennusta).</p>
+    html=`<h2>Heading offset</h2>
+      <p class="helpp">Adjust below until the big number matches a direction you know to be correct (e.g. compare with the boat's fixed compass, or the phone's own Compass app, before mounting).</p>
       <div style="font-family:var(--mono);font-size:34px;color:var(--led);letter-spacing:.04em;text-align:center;margin:10px 0;" id="mfLiveHeading">---°</div>
-      <div class="row"><div class="lbl">Offset<small>Lisätään jokaiseen lukemaan</small></div>
+      <div class="row"><div class="lbl">Offset<small>Added to every reading</small></div>
       <div class="stepper" data-key="headingOffset"><button data-d="-5">–</button><span class="val"></span><button data-d="5">+</button></div></div>
-      <button class="close" id="mfToTiltIntro">Valmis</button>`;
+      <button class="close" id="mfToTiltIntro">Done</button>`;
   } else if(MF.step==='tilt-intro'){
-    html=`<h2>Kallistustesti (valinnainen)</h2>
-      <p class="helpp">Mittaa kuinka paljon veneen heeli vääristää kompassia tässä asennossa. Kestää n. 30 sekuntia.</p>
-      <button class="close" id="mfTiltStart">Testaa nyt</button>
-      <button class="close" id="mfFinish">Ohita, tee myöhemmin Helpistä</button>`;
+    html=`<h2>Tilt test (optional)</h2>
+      <p class="helpp">Measures how much boat heel distorts the compass in this position. Takes about 30 seconds.</p>
+      <button class="close" id="mfTiltStart">Test now</button>
+      <button class="close" id="mfFinish">Skip, do this later from Help</button>`;
   } else if(MF.step==='tilt-hold'){
-    html=`<h2>Pidä laite tasaisena…</h2>
-      <p class="helpp">Asennossa jossa se tulee olemaan, älä kallista vielä.</p>
+    html=`<h2>Hold the device level…</h2>
+      <p class="helpp">In the position it will be mounted — don't tilt yet.</p>
       <div style="font-family:var(--mono);font-size:48px;color:var(--led);text-align:center;margin:20px 0;" id="mfCountdown">2</div>`;
   } else if(MF.step==='tilt-sweep'){
-    html=`<h2>Kallista hitaasti</h2>
-      <p class="helpp">Kallista laitetta kuin vene kallistuisi, 0°→40°→takaisin 0°, suunnan pysyessä samana. Paina Valmis kun olet käynyt liikkeen läpi.</p>
+    html=`<h2>Tilt slowly</h2>
+      <p class="helpp">Tilt the device as the boat would heel, 0°→40°→back to 0°, keeping the same heading. Press Done once you've completed the motion.</p>
       <div style="display:flex; gap:18px; margin:14px 0;">
-        <div><div style="font-size:12px;color:#8a8a8a;">KALLISTUS</div><div id="mfTiltNow" style="font-family:var(--mono);font-size:30px;color:#fff;">0°</div></div>
-        <div><div style="font-size:12px;color:#8a8a8a;">POIKKEAMA</div><div id="mfErrNow" style="font-family:var(--mono);font-size:30px;color:var(--led);">0°</div></div>
+        <div><div style="font-size:12px;color:#8a8a8a;">TILT</div><div id="mfTiltNow" style="font-family:var(--mono);font-size:30px;color:#fff;">0°</div></div>
+        <div><div style="font-size:12px;color:#8a8a8a;">ERROR</div><div id="mfErrNow" style="font-family:var(--mono);font-size:30px;color:var(--led);">0°</div></div>
       </div>
-      <button class="close" id="mfTiltDone">Valmis</button>`;
+      <button class="close" id="mfTiltDone">Done</button>`;
   } else if(MF.step==='tilt-result'){
     const maxErr=mfMaxError();
     let verdict,msg;
-    if(maxErr<S.settings.deadband){ verdict='🟢 Hyvä'; msg='Asennus toimii hyvin — kompassi pysyy vakaana myös kallistuksessa.'; }
-    else if(maxErr<S.settings.tackThresh){ verdict='🟡 Kohtalainen'; msg='Pieniä poikkeamia kovilla kallistuskulmilla. Ei vielä sekoita LIFT/HEADER-tulkintaa, mutta tasaisempi asento parantaisi tarkkuutta.'; }
-    else { verdict='🔴 Merkittävä'; msg='Tässä asennossa pelkkä kallistus voi näyttää virheellistä HEADERia/LIFTiä. Kokeile toista asentoa tai käsittele lukemia varauksella kovassa kallistuksessa.'; }
+    if(maxErr<S.settings.deadband){ verdict='🟢 Good'; msg='This mounting position holds up well — the compass stays stable even under heel.'; }
+    else if(maxErr<S.settings.tackThresh){ verdict='🟡 Moderate'; msg="Some deviation at steep heel angles. Won't confuse LIFT/HEADER yet, but a flatter mount would improve accuracy."; }
+    else { verdict='🔴 Significant'; msg='In this position, heel alone can show a false HEADER/LIFT. Try a different position, or treat readings with caution at steep heel.'; }
     const rows=Object.keys(MF.tiltBins).map(Number).sort((a,b)=>a-b).map(k=>k+'°→'+Math.round(MF.tiltBins[k])+'°').join(' · ');
     html=`<h2>${verdict}</h2>
       <p class="helpp">${msg}</p>
-      <p class="note">${rows||'(ei tarpeeksi dataa)'}</p>
-      <button class="close" id="mfFinish">Valmis</button>`;
+      <p class="note">${rows||'(not enough data)'}</p>
+      <button class="close" id="mfFinish">Done</button>`;
   }
   p.innerHTML=html;
   mfBind();
 }
 function mfShow(){ $("mountFlow").classList.remove("hidden"); }
 function mfHide(){ $("mountFlow").classList.add("hidden"); }
-function startMountFlow(){ MF.step='gate'; mfRender(); mfShow(); }
+function startMountFlow(){ MF.step='selftest-intro'; mfRender(); mfShow(); }
 function finishMountFlow(){
   mfStopTiltSampling(); mfStopLiveHeading(); mfHide();
   if(!$("overlay").classList.contains("hidden")) hideOverlay();
@@ -1228,7 +1227,7 @@ document.querySelectorAll(".stepper").forEach(st=>{
 });
 
 /* ---------- init ---------- */
-const APP_VERSION="mittari v0.36";
+const APP_VERSION="mittari v0.37";
 (function(){
   const e=$("verEnable"); if(e) e.textContent=APP_VERSION;
   const n=$("verNote"); if(n) n.textContent=APP_VERSION+" · shares engine with index.html";
