@@ -23,20 +23,11 @@ overflow:hidden; overscroll-behavior:none; user-select:none; -webkit-user-select
 #stage{position:fixed; inset:0;}
 /* ---- orientaatiolukitus (Portrait/Landscape/Automatic) ----
    iOS Safari ei tue screen.orientation.lock():ia, joten "lukitus" toteutetaan
-   visuaalisesti kiertämällä koko #stage 90° kun fyysinen laite ei vastaa haluttua
-   tilaa. resize() lukee canvasin koon clientWidth/Height:lla (ei getBoundingClientRect,
-   joka heijastaisi kierretyn elementin näyttöavaruuden mittoja transformin JÄLKEEN) —
-   näin canvasin sisäinen piirto saa oikean, kiertoa edeltävän loogisen koon. */
-#stage.force-landscape{
-  position:fixed; inset:auto; top:100%; left:0;
-  width:100vh; height:100vw;
-  transform-origin:0 0; transform:rotate(-90deg);
-}
-#stage.force-portrait{
-  position:fixed; inset:auto; top:0; left:100%;
-  width:100vh; height:100vw;
-  transform-origin:0 0; transform:rotate(90deg);
-}
+   visuaalisesti kiertämällä #stage. Tarkka kiertomäärä (0/90/180/270) lasketaan JS:ssä
+   screen.orientation.angle:n perusteella ja asetetaan inline-tyylinä — kattaa myös
+   180°-tapauksen (esim. landscape-vasen ↔ landscape-oikea), jota pelkkä karkea
+   portrait/landscape-tarkistus ei erottele. Ks. checkOrientation(). */
+#stage.force-rotate{ position:fixed; top:50%; left:50%; transform-origin:center center; }
 canvas#inst{position:absolute; inset:0; width:100%; height:100%; display:block;}
 /* ---- läpinäkyvät säätöpainikkeet kankaan päällä ---- */
 .ctl{position:absolute; z-index:5; font-family:var(--mono); letter-spacing:.06em;
@@ -881,15 +872,39 @@ function effectivePortrait(){
   if(S.settings.orientationLock==='portrait') return true;
   return isPortrait();
 }
+// Fyysisen laitteen tarkka kiertokulma (0/90/180/270), ei vain karkea portrait/landscape-bool.
+// screen.orientation.angle on ensisijainen (nykyaikainen Safari); window.orientation varalla.
+function currentAngle(){
+  try{ if(screen.orientation && typeof screen.orientation.angle==='number') return norm(screen.orientation.angle); }catch(e){}
+  if(typeof window.orientation==='number') return norm(window.orientation);
+  return 0;
+}
+// Kohdekulma lukitusasetuksen mukaan: portrait aina 0°, landscape aina 90°
+// (yksi kiinteä landscape-suunta valittu mielivaltaisesti — jos näyttää väärinpäin
+// laitteellasi, vaihda tähän 270 90:n tilalle). 'auto': ei pakotusta, kohde=todellinen.
+function desiredAngle(){
+  if(S.settings.orientationLock==='portrait') return 0;
+  if(S.settings.orientationLock==='landscape') return 90;
+  return currentAngle();
+}
 function checkOrientation(){
   // Pystytila (portrait) on nyt tuettu mittarinäkymässä — render() piirtää eri koordinaatein.
   // body-luokka mahdollistaa pienet CSS-poikkeukset (esim. btnMean-napautusalue) samalla
-  // effectivePortrait()-logiikalla kuin canvas-piirto käyttää, ilman erillistä @media-kyselyä.
-  const want = effectivePortrait(), actual = isPortrait();
-  document.body.classList.toggle('portrait', want);
-  // orientationLock: jos haluttu tila ei vastaa fyysistä laitetta, kierretään #stage visuaalisesti
-  $("stage").classList.toggle('force-landscape', !want && actual);
-  $("stage").classList.toggle('force-portrait', want && !actual);
+  // effectivePortrait()-logiikalla kuin canvas-piirto käyttää.
+  document.body.classList.toggle('portrait', effectivePortrait());
+  const actual=currentAngle(), desired=desiredAngle();
+  const delta=norm(desired-actual); // kuinka monta astetta myötäpäivään sisältöä pitää kiertää
+  const stage=$("stage");
+  if(delta===0){
+    stage.classList.remove('force-rotate');
+    stage.removeAttribute('style');
+  } else {
+    stage.classList.add('force-rotate');
+    const swap=(delta===90 || delta===270);
+    stage.style.width = swap ? '100vh' : '100vw';
+    stage.style.height = swap ? '100vw' : '100vh';
+    stage.style.transform = 'translate(-50%,-50%) rotate('+delta+'deg)';
+  }
 }
 
 /* --- seitsenosaisten numeroiden piirto --- */
@@ -1284,7 +1299,7 @@ document.querySelectorAll(".stepper").forEach(st=>{
 });
 
 /* ---------- init ---------- */
-const APP_VERSION="mittari v0.44";
+const APP_VERSION="mittari v0.45";
 (function(){
   const e=$("verEnable"); if(e) e.textContent=APP_VERSION;
   const n=$("verNote"); if(n) n.textContent=APP_VERSION+" · shares engine with index.html";
