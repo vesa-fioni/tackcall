@@ -41,8 +41,11 @@ align-items:center; justify-content:center; gap:1px; line-height:1.1;}
 #btnBb{right:max(10px,env(safe-area-inset-right));}
 /* Väistämissääntöjen mukainen värikoodaus: STB = haale vihreä (etuajo-oikeus), BB = haale punainen (väistää).
    Haaleina jotta ei kilpaile pääluvun kanssa. */
-#btnStb.active{color:#ccc; border-color:#2d6642; box-shadow:0 0 0 1px #2d6642 inset, 0 0 10px rgba(45,102,66,.20);}
-#btnBb.active{color:#ccc; border-color:#6b2d2d; box-shadow:0 0 0 1px #6b2d2d inset, 0 0 10px rgba(107,45,45,.20);}
+#btnStb.active{color:#eafff0; border-color:#33cc66; border-width:2px; background:rgba(51,204,102,.16);
+box-shadow:0 0 0 1px #33cc66 inset, 0 0 18px rgba(51,204,102,.45);}
+#btnBb.active{color:#ffecec; border-color:#ff4444; border-width:2px; background:rgba(255,68,68,.16);
+box-shadow:0 0 0 1px #ff4444 inset, 0 0 18px rgba(255,68,68,.45);}
+#btnStb.active .btn-mean-val,#btnBb.active .btn-mean-val{color:#e8e8e8;}
 /* STB/BB nappien sisäiset span-elementit: halssikirjain + asetettu mean-arvo */
 .btn-tack{font-size:15px; font-weight:800; letter-spacing:.04em;}
 .btn-mean-val{font-size:11px; font-weight:600; color:#8a8a8a; letter-spacing:.03em;}
@@ -67,17 +70,15 @@ height:46px; padding:0 22px; font-size:15px; font-weight:800; letter-spacing:.10
 color:#ffd9d9; border-color:#6a1f1f; background:rgba(255,43,43,.10);}
 #btnSetMean:active{background:rgba(255,43,43,.22);}
 #btnSetMean.flash{color:#000; background:var(--green); border-color:var(--green);}
-/* Pulsointi: osoittaa kumpi mean vielä puuttuu (A-vaihtoehto onboarding-ohjaus) */
-@keyframes pulse-bb{
-  0%,100%{box-shadow:0 0 0 2px #cc3333 inset,0 0 8px rgba(200,50,50,.20);}
-  50%{box-shadow:0 0 0 2px #ff4444 inset,0 0 32px rgba(255,68,68,.80);}
+/* Pulsointi: osoittaa kumpi mean vielä puuttuu. Keltainen = aina "puuttuu", riippumatta halssin
+   omasta väristä (STB=vihreä/BB=punainen), jotta se ei sekoitu active-tilan hehkuun. */
+@keyframes pulse-mean{
+  0%,100%{box-shadow:0 0 0 2px #a8730a inset,0 0 8px rgba(255,176,32,.20);}
+  50%{box-shadow:0 0 0 2px #ffb020 inset,0 0 32px rgba(255,176,32,.80);}
 }
-@keyframes pulse-stb{
-  0%,100%{box-shadow:0 0 0 2px #228844 inset,0 0 8px rgba(34,136,68,.20);}
-  50%{box-shadow:0 0 0 2px #33cc66 inset,0 0 32px rgba(51,204,102,.80);}
-}
-#btnBb.needs-mean{border-color:#ff4444;border-width:2px;animation:pulse-bb 2s ease-in-out infinite;}
-#btnStb.needs-mean{border-color:#33cc66;border-width:2px;animation:pulse-stb 2s ease-in-out infinite;}
+#btnBb.needs-mean,#btnStb.needs-mean{border-color:#ffb020; border-width:2px; background:rgba(255,176,32,.10);
+color:#ffe4ad; animation:pulse-mean 2s ease-in-out infinite;}
+#btnBb.needs-mean .btn-mean-val,#btnStb.needs-mean .btn-mean-val{color:#e0b070;}
 /* ---- aloitusoverlay ---- */
 .overlay{position:fixed; inset:0; z-index:30; background:#000; display:flex;
 align-items:center; justify-content:center; padding:24px;}
@@ -1089,9 +1090,10 @@ function render(){
   // Kompassiluku poistettu (toisteinen: STB/BB-napit näyttävät jo asetetut meanit).
   const meanLbl = S.tack==='bb' ? 'SET BB' : S.tack==='stb' ? 'SET STB' : 'SET MEAN';
   { const bm=$("btnSetMean"); if(bm.textContent!==meanLbl) bm.textContent=meanLbl; }
-  // Pulsointi: osoittaa kumpi mean vielä puuttuu — katoaa automaattisesti kun molemmat asetettu
-  $("btnBb").classList.toggle("needs-mean", S.meanStb!=null && S.meanBb==null);
-  $("btnStb").classList.toggle("needs-mean", S.meanBb!=null && S.meanStb==null);
+  // Pulsointi: keltainen kun tällä halssilla ei ole meania — joko koska se on nyt aktiivinen
+  // halssi vailla meania, tai koska toinen halssi on jo asetettu ja tämä puuttuu vielä.
+  $("btnBb").classList.toggle("needs-mean", S.meanBb==null && (S.tack==='bb' || S.meanStb!=null));
+  $("btnStb").classList.toggle("needs-mean", S.meanStb==null && (S.tack==='stb' || S.meanBb!=null));
   // Nappi pysyy aina toiminnallisena tuulen kierron varalta — ei koskaan poistu.
   const posForSync = pointOfSail();
   const isDownwind = !!(posForSync && !posForSync.up);
@@ -1305,7 +1307,7 @@ document.querySelectorAll(".stepper").forEach(st=>{
 });
 
 /* ---------- init ---------- */
-const APP_VERSION="mittari v0.45";
+const APP_VERSION="mittari v0.48";
 (function(){
   const e=$("verEnable"); if(e) e.textContent=APP_VERSION;
   const n=$("verNote"); if(n) n.textContent=APP_VERSION+" · shares engine with index.html";
