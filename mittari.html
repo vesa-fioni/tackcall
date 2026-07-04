@@ -845,10 +845,24 @@ document.addEventListener("visibilitychange", ()=>{ if(document.visibilityState=
    UUSI VISUALISOINTI — seitsenosainen LED-mittari + kaaripalkki
    ============================================================ */
 const cv=$("inst"), ctx=cv.getContext("2d");
-let W=0,H=0,DPR=1;
+let W=0,H=0,DPR=1,SAFE_BOTTOM=0;
 let meanFlash=0; // ✓-välähdys keskisuuntaa asetettaessa
 
+// Mittaa todellinen safe-area-inset-bottom samalla env()-arvolla jota #btnStb/#btnBb
+// käyttävät CSS-sijoittelussaan (bottom:max(4px,env(safe-area-inset-bottom))). Ilman tätä
+// gauge varasi kiinteän 62px-kaistan, joka riitti vain kun turva-aluetta ei ollut (esim.
+// Safarin oma työkalupalkki näkyvissä) — kotikuvake-täysnäytössä nappirivi työntyi ylemmäs
+// eikä canvas tiennyt siitä, jolloin asteikko/palkit piirtyivät nappien alle.
+function updateSafeArea(){
+  const probe=document.createElement('div');
+  probe.style.cssText='position:fixed; bottom:0; height:0; padding-bottom:env(safe-area-inset-bottom); visibility:hidden; pointer-events:none;';
+  document.body.appendChild(probe);
+  SAFE_BOTTOM=parseFloat(getComputedStyle(probe).paddingBottom)||0;
+  document.body.removeChild(probe);
+}
+
 function resize(){
+  updateSafeArea();
   // iPhonen retina-näytöllä DPR voi olla 3; sallitaan täysterävyys (ei rajata 2.5:een,
   // joka pehmensi isoa numeroa). resize ajetaan myös visualViewport-muutoksissa,
   // jotta Safarin työkalupalkin piiloutuminen ei venytä vanhaa puskuria sumeaksi.
@@ -981,7 +995,8 @@ function drawGauge(lifted,status,dim){
   const nBars=12; // palkkeja per puoli
   const cx=W/2;
   const P=effectivePortrait();
-  const CTRL_H=62; // alanapeille varattu kaista
+  const BTN_H=54; // vastaa #btnStb/#btnBb-nappien CSS-korkeutta
+  const CTRL_H=BTN_H+Math.max(4,SAFE_BOTTOM)+8; // nappirivin todellinen korkeus + pieni hengitysväli
   const fs=Math.max(11,W*0.015), labelH=fs+10;
   const baselineY=H-CTRL_H-labelH; // yhteinen alalinja kaikille palkeille
   // keskipalkit pysyvät matalina (kaaren pohja), joten ne eivät osu isoon numeroon;
@@ -1307,7 +1322,7 @@ document.querySelectorAll(".stepper").forEach(st=>{
 });
 
 /* ---------- init ---------- */
-const APP_VERSION="mittari v0.48";
+const APP_VERSION="mittari v0.49";
 (function(){
   const e=$("verEnable"); if(e) e.textContent=APP_VERSION;
   const n=$("verNote"); if(n) n.textContent=APP_VERSION+" · shares engine with index.html";
