@@ -845,7 +845,7 @@ document.addEventListener("visibilitychange", ()=>{ if(document.visibilityState=
    UUSI VISUALISOINTI — seitsenosainen LED-mittari + kaaripalkki
    ============================================================ */
 const cv=$("inst"), ctx=cv.getContext("2d");
-let W=0,H=0,DPR=1,SAFE_BOTTOM=0,SAFE_TOP=0,HERO_BOTTOM=0;
+let W=0,H=0,DPR=1,SAFE_BOTTOM=0,SAFE_TOP=0;
 let meanFlash=0; // ✓-välähdys keskisuuntaa asetettaessa
 
 // Mittaa todelliset safe-area-insetit samoilla env()-arvoilla joita #btnGear (top) ja
@@ -991,6 +991,35 @@ function shiftColor(lifted, scale){
   const ratio=Math.min(1, Math.abs(lifted)/scale);
   return lifted>0 ? liftColor(ratio) : gaugeColor(ratio);
 }
+// Palauttaa gaugen alkuperäiset mitat MUUTTAMATTA niitä. render() lukee näitä sijoittaakseen
+// hero-numeron gaugen yläpuolelle. Tärkeä huomio: gaugen palkit ovat paraabelin muotoiset —
+// matalia keskellä (missä hero on) ja korkeita reunoilla (kaukana herosta vaakasuunnassa).
+// Siksi hero saa laskeutua alemmas kuin reunapalkkien yläraja: se törmää vain niihin palkkeihin
+// jotka ovat sen leveyden alla. heroClearYFor(halfWidthPx) = korkein kohta johon heron alareuna
+// saa ulottua, kun heron puolikas leveys on halfWidthPx pikseliä.
+function gaugeZone(){
+  const nBars=12;
+  const BTN_H=54; // vastaa #btnStb/#btnBb-nappien CSS-korkeutta
+  const CTRL_H=BTN_H+Math.max(4,SAFE_BOTTOM)+8; // nappirivin todellinen korkeus + pieni hengitysväli
+  const fs=Math.max(11,W*0.015), labelH=fs+10;
+  const baselineY=H-CTRL_H-labelH; // yhteinen alalinja kaikille palkeille
+  const P=effectivePortrait();
+  const topForEdge = P ? H*0.46 : H*0.30; // reunapalkkien yläraja (alkuperäinen kaava, ennallaan)
+  const maxBarH = P ? Math.max(40, Math.min(baselineY-topForEdge, W*0.85))
+                     : Math.max(40, Math.min(baselineY-topForEdge, H*0.46));
+  const minBarH = maxBarH*(P?0.22:0.10); // keskipalkin korkeus (sama kaava kuin drawGauge)
+  const halfWidth=W*0.44, step=halfWidth/nBars; // sama kuin drawGauge
+  // Korkein palkki heron leveyden alla: paraabeli i:n kohdalla, missä i = montako palkkia
+  // heron puolikkaan leveyden (+pieni marginaali) alle mahtuu. Heron alareuna ei saa mennä
+  // tämän palkin yläreunan yläpuolelle.
+  const heroClearYFor = (halfWidthPx)=>{
+    const iUnder = Math.min(nBars, Math.ceil((halfWidthPx + step*0.5)/step));
+    const t=iUnder/nBars;
+    const barH = minBarH + (maxBarH-minBarH)*(t*t);
+    return baselineY - barH;
+  };
+  return {baselineY, topForEdge, heroClearYFor};
+}
 function drawGauge(lifted,status,dim){
   dim = (dim==null) ? 1 : dim;
   const scale=S.settings.gaugeScale;
@@ -1006,15 +1035,7 @@ function drawGauge(lifted,status,dim){
   // Portrait: hero-numero on ylempänä (H*0.36) kuin landscapessa, joten reunapalkkien yläraja
   // pitää siirtää alemmas ettei kaari osu heroon; korkeuskatto sidotaan W:hen H:n sijaan,
   // koska pystyssä H on aina reilusti isompi kuin mikä olisi visuaalisesti tarpeen.
-  // topForEdge sidotaan HERO_BOTTOMiin (asetetaan render():ssä hero-numeron piirron yhteydessä),
-  // jotta palkit eivät koskaan nouse heron päälle — myös silloin kun hero on työntynyt alaspäin
-  // väistääkseen ylärivin (LIFT/PERF/SOG). Kiinteä H-prosentti toimii lattiana normaalitapauksessa.
-  // Suojaus: jos HERO_BOTTOM on jostain syystä epäkelpo (NaN, 0 tai pienempi kuin ylärivi —
-  // esim. render()-järjestys tai selainkohtainen mittausongelma), älä anna sen koskaan LASKEA
-  // topForEdge-rajaa alkuperäisestä; käytetään sitä vain rajaa NOSTAMAAN, ei koskaan laskemaan.
-  const baseTopForEdge = P ? H*0.46 : H*0.30;
-  const heroFloor = (isFinite(HERO_BOTTOM) && HERO_BOTTOM > H*0.15) ? HERO_BOTTOM + H*0.02 : 0;
-  const topForEdge = Math.max(baseTopForEdge, heroFloor); // reunapalkkien yläraja
+  const topForEdge = P ? H*0.46 : H*0.30; // reunapalkkien yläraja
   const maxBarH = P ? Math.max(40, Math.min(baselineY-topForEdge, W*0.85))
                      : Math.max(40, Math.min(baselineY-topForEdge, H*0.46)); // reunapalkin korkeus
   // Paraabelikäyrä (t*t) säilyy sekä landscapessa että portraitissa — vain lattiakorkeutta
@@ -1178,8 +1199,9 @@ function render(){
   // Portrait: W on kapea suhteessa H:hon, joten koko on sidottava W:hen eri kertoimella kuin
   // landscapessa (jossa H on rajoittava tekijä). 0.27*W pitää 3-numeroisen LED-luvun marginaalilla
   // näytön sisällä myös hScale=1.38:lla (numerosarjan kokonaisleveys ≈ 2.22× numeron korkeus).
-  const heroSize = P ? Math.min(H*0.16, W*0.27) * hScale
-                      : Math.min(H*0.28, W*0.19) * hScale;
+  const heroSize0 = P ? Math.min(H*0.16, W*0.27) * hScale
+                       : Math.min(H*0.28, W*0.19) * hScale;
+  let heroSize = heroSize0;
   let heroY = P ? H*0.36 : H*0.40;
 
   // ===== yläriviruudukko (2b-layout): vasen=shift, keski=SOG, oikea=PERF =====
@@ -1190,15 +1212,27 @@ function render(){
   const topReserved = Math.max(10,SAFE_TOP) + GEAR_H + GEAR_GAP;
   const yEy=Math.max(H*0.085, topReserved), yVal=yEy+H*0.07;
 
-  // Törmäyseste ylärivin (LIFT/PERF/SOG) kanssa: topReserved on kiinteitä pikseleitä,
-  // heroY/heroSize taas H:n prosentteja. Kun H on pieni suhteessa laitteeseen tuunattuun
-  // mittasuhteeseen, topReserved syö suhteessa isomman osan H:sta kuin heroY-kaava olettaa.
-  // Työnnetään heroa tarvittaessa alaspäin — kokoa EI kutisteta täällä, koska gauge-yhteensopivuus
-  // hoidetaan toisin päin: drawGauge() pitää palkkinsa aina HERO_BOTTOMin alapuolella (ks. alla).
+  // Hero pidetään alkuperäisellä paikallaan ja koossaan (heroY/heroSize yllä) NORMAALISTI.
+  // Vain jos alkuperäinen hero törmäisi ylärivin alareunaan tai gaugen keskiosan palkkeihin
+  // (ahdas tila, esim. Chrome iOS landscape jossa selain vie paljon pystytilaa), sitä
+  // KUTISTETAAN juuri sen verran että se mahtuu — ei siirretä eikä keskitetä muulloin.
+  // Portraitissa ja normaalissa landscapessa tämä ei muuta mitään, koska tilaa on riittävästi.
   const topRowDigitH = small*0.092*sScale;
-  const minHeroTop = yVal + topRowDigitH/2 + H*0.02;
-  if(heroY - heroSize/2 < minHeroTop) heroY = minHeroTop + heroSize/2;
-  HERO_BOTTOM = heroY + heroSize/2; // drawGauge() lukee tämän estääkseen palkkien nousun heron päälle
+  const topRowBottom = yVal + topRowDigitH/2 + H*0.015;
+  const gz = gaugeZone();
+  // Heron efektiivinen puolikas leveys gaugea vasten: käytetään ~70% todellisesta bounding-boxista.
+  // Seitsenosaisen numeron ALAKULMAT ovat suurimmaksi osaksi tyhjää (vain pystysegmentit e/c),
+  // joten heron ja matalien keskipalkkien pieni lomittaisuus ei näy törmäyksenä. Tämä estää
+  // heroa kutistumasta turhaan normaalikorkuisilla näytöillä (Safari) mutta pitää ahtaan
+  // Chrome-landscapen siistinä.
+  const heroHalfWidth = heroSize * 1.11 * 0.70;
+  const heroBottomLimit = gz.heroClearYFor(heroHalfWidth) - H*0.01; // gaugen palkkien yläreuna heron leveyden alla
+  const availableSpan = heroBottomLimit - topRowBottom;
+  // Kutista vain jos alkuperäinen hero ei mahdu käytettävissä olevaan pystytilaan.
+  if(heroSize > availableSpan) heroSize = Math.max(H*0.14, availableSpan);
+  // Pidä alkuperäinen heroY, mutta clamppaa rajojen sisään jos kutistus/ahtaus vaatii.
+  if(heroY - heroSize/2 < topRowBottom) heroY = topRowBottom + heroSize/2;
+  if(heroY + heroSize/2 > heroBottomLimit) heroY = heroBottomLimit - heroSize/2;
 
   drawNumber(headStr, W/2, heroY, heroSize, '#ff2b2b', true);
 
@@ -1348,7 +1382,7 @@ document.querySelectorAll(".stepper").forEach(st=>{
 });
 
 /* ---------- init ---------- */
-const APP_VERSION="mittari v0.54";
+const APP_VERSION="mittari v0.57";
 (function(){
   const e=$("verEnable"); if(e) e.textContent=APP_VERSION;
   const n=$("verNote"); if(n) n.textContent=APP_VERSION+" · shares engine with index.html";
