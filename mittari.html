@@ -1009,7 +1009,12 @@ function drawGauge(lifted,status,dim){
   // topForEdge sidotaan HERO_BOTTOMiin (asetetaan render():ssä hero-numeron piirron yhteydessä),
   // jotta palkit eivät koskaan nouse heron päälle — myös silloin kun hero on työntynyt alaspäin
   // väistääkseen ylärivin (LIFT/PERF/SOG). Kiinteä H-prosentti toimii lattiana normaalitapauksessa.
-  const topForEdge = Math.max(P ? H*0.46 : H*0.30, HERO_BOTTOM + H*0.02); // reunapalkkien yläraja
+  // Suojaus: jos HERO_BOTTOM on jostain syystä epäkelpo (NaN, 0 tai pienempi kuin ylärivi —
+  // esim. render()-järjestys tai selainkohtainen mittausongelma), älä anna sen koskaan LASKEA
+  // topForEdge-rajaa alkuperäisestä; käytetään sitä vain rajaa NOSTAMAAN, ei koskaan laskemaan.
+  const baseTopForEdge = P ? H*0.46 : H*0.30;
+  const heroFloor = (isFinite(HERO_BOTTOM) && HERO_BOTTOM > H*0.15) ? HERO_BOTTOM + H*0.02 : 0;
+  const topForEdge = Math.max(baseTopForEdge, heroFloor); // reunapalkkien yläraja
   const maxBarH = P ? Math.max(40, Math.min(baselineY-topForEdge, W*0.85))
                      : Math.max(40, Math.min(baselineY-topForEdge, H*0.46)); // reunapalkin korkeus
   // Paraabelikäyrä (t*t) säilyy sekä landscapessa että portraitissa — vain lattiakorkeutta
@@ -1343,7 +1348,7 @@ document.querySelectorAll(".stepper").forEach(st=>{
 });
 
 /* ---------- init ---------- */
-const APP_VERSION="mittari v0.53";
+const APP_VERSION="mittari v0.54";
 (function(){
   const e=$("verEnable"); if(e) e.textContent=APP_VERSION;
   const n=$("verNote"); if(n) n.textContent=APP_VERSION+" · shares engine with index.html";
