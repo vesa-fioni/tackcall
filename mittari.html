@@ -17,10 +17,26 @@
 --mono:"SF Mono",ui-monospace,Menlo,Consolas,monospace;
 --sans:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
 }
-*{box-sizing:border-box; -webkit-tap-highlight-color:transparent;}
+*{box-sizing:border-box; -webkit-tap-highlight-color:transparent; touch-action:manipulation;}
 html,body{margin:0; height:100%; background:var(--bg); color:#fff; font-family:var(--sans);
 overflow:hidden; overscroll-behavior:none; user-select:none; -webkit-user-select:none;}
 #stage{position:fixed; inset:0;}
+/* ---- orientaatiolukitus (Portrait/Landscape/Automatic) ----
+   iOS Safari ei tue screen.orientation.lock():ia, joten "lukitus" toteutetaan
+   visuaalisesti kiertämällä koko #stage 90° kun fyysinen laite ei vastaa haluttua
+   tilaa. resize() lukee canvasin koon clientWidth/Height:lla (ei getBoundingClientRect,
+   joka heijastaisi kierretyn elementin näyttöavaruuden mittoja transformin JÄLKEEN) —
+   näin canvasin sisäinen piirto saa oikean, kiertoa edeltävän loogisen koon. */
+#stage.force-landscape{
+  position:fixed; inset:auto; top:100%; left:0;
+  width:100vh; height:100vw;
+  transform-origin:0 0; transform:rotate(-90deg);
+}
+#stage.force-portrait{
+  position:fixed; inset:auto; top:0; left:100%;
+  width:100vh; height:100vw;
+  transform-origin:0 0; transform:rotate(90deg);
+}
 canvas#inst{position:absolute; inset:0; width:100%; height:100%; display:block;}
 /* ---- läpinäkyvät säätöpainikkeet kankaan päällä ---- */
 .ctl{position:absolute; z-index:5; font-family:var(--mono); letter-spacing:.06em;
@@ -110,6 +126,10 @@ background:#777; transition:transform .15s, background .15s;}
 .stepper button{width:34px; height:34px; border-radius:9px; background:#1c1c1c; color:#fff;
 border:1px solid #2a2a2a; font-size:18px; font-weight:700; cursor:pointer;}
 .stepper .val{min-width:54px; text-align:center; font-family:var(--mono); font-size:15px; color:#fff;}
+.seg{display:flex; gap:6px; margin:0 0 11px;}
+.seg button{flex:1; padding:9px 0; border-radius:9px; background:#1c1c1c; color:#9a9a9a;
+border:1px solid #2a2a2a; font-size:13px; font-weight:700; cursor:pointer;}
+.seg button.active{background:#2a2a2a; color:#fff; border-color:#555;}
 .panel .close{display:block; width:100%; margin-top:14px; padding:13px; border-radius:12px;
 border:none; font-weight:700; font-size:15px; cursor:pointer; background:#1a1a1a; color:#fff;}
 .panel .reset{background:transparent; border:1px solid #5a1f1f; color:#ff9b9b;}
@@ -128,16 +148,10 @@ display:flex; align-items:center; justify-content:center;}
 .legend .li{display:flex; align-items:center; gap:10px; font-size:13.5px; color:#cfcfcf;}
 .legend .sw{flex:0 0 auto; width:18px; height:18px; border-radius:5px;}
 .legend .li b{font-family:var(--mono); letter-spacing:.06em; color:#fff; min-width:64px;}
-/* ---- käännä laite -vihje ---- */
-#rotate{position:fixed; inset:0; z-index:60; background:#000; display:none;
-align-items:center; justify-content:center; text-align:center; padding:36px;}
-#rotate.show{display:flex;}
-#rotate .ic{font-size:64px; margin-bottom:20px; animation:tip 1.8s ease-in-out infinite;}
-#rotate .tx-main{color:#ffffff; font-size:18px; font-weight:700; letter-spacing:.04em;
-font-family:var(--mono); margin-bottom:14px; line-height:1.4;}
-#rotate .tx-sub{color:#666; font-size:13px; line-height:1.7; max-width:280px; margin:0 auto;}
-@keyframes tip{0%,100%{transform:rotate(0)}50%{transform:rotate(90deg)}}
-@media (prefers-reduced-motion: reduce){ #rotate .ic{animation:none;} }
+/* ---- pystytila (portrait) — mittarin sisäinen layout mukautuu, ks. isPortrait()/render() ---- */
+/* btnMean on näkymätön napautusalue ison heading-luvun päällä; sen sijainti/koko on sidottu
+   render()-funktion hero-numeron portrait-sijoitteluun (keskitetty n. H*0.36 kohdalle). */
+body.portrait #btnMean{top:22%; height:22%;}
 </style>
 </head>
 <body>
@@ -150,16 +164,6 @@ font-family:var(--mono); margin-bottom:14px; line-height:1.4;}
 <button class="ctl" id="btnSetMean">SET MEAN</button>
 <button class="ctl" id="btnBb">BB</button>
 </div>
-
-<!-- käännä laite -->
-<div id="rotate"><div>
-  <div class="ic">▭</div>
-  <div class="tx-main">ROTATE &amp; MOUNT IN BOAT'S DIRECTION</div>
-  <div class="tx-sub">
-    The compass works best when the device is fixed pointing forward — mount it on the deck or cockpit.<br><br>
-    Holding in hand still works, but accuracy suffers when the device moves independently of the boat.
-  </div>
-</div></div>
 
 <!-- aloitus -->
 <div class="overlay" id="overlay">
@@ -196,6 +200,14 @@ font-family:var(--mono); margin-bottom:14px; line-height:1.4;}
 <div class="stepper" data-key="smooth"><button data-d="-1">–</button><span class="val"></span><button data-d="1">+</button></div></div>
 <div class="row"><div class="lbl">Tack angle<small>STB↔BB, used for wind estimate</small></div>
 <div class="stepper" data-key="tackAngle"><button data-d="-2">–</button><span class="val"></span><button data-d="2">+</button></div></div>
+<div class="row"><div class="lbl">Heading offset<small>Corrects for physical mounting rotation</small></div>
+<div class="stepper" data-key="headingOffset"><button data-d="-5">–</button><span class="val"></span><button data-d="5">+</button></div></div>
+<div class="row"><div class="lbl">Screen orientation<small>Automatic follows device rotation</small></div></div>
+<div class="seg" data-key="orientationLock">
+<button data-val="portrait">Portrait</button>
+<button data-val="landscape">Landscape</button>
+<button data-val="auto">Automatic</button>
+</div>
 <button class="close" id="btnPolarUpdate">Update polar</button>
 <button class="close reset" id="btnReset">Reset means</button>
 <a class="link" href="index.html">Switch to classic view →</a>
@@ -226,8 +238,14 @@ font-family:var(--mono); margin-bottom:14px; line-height:1.4;}
 <p class="helpp">Audio alerts play distinct tones for lift, header and tack. Turn them on or off in Settings.</p>
 <div class="helph">Tip</div>
 <p class="helpp">Re-set the mean whenever the average wind direction shifts, or use "Reset means" in Settings to start over.</p>
+<button class="close" id="btnMountFlow">Test mounting</button>
 <button class="close" id="btnCloseHelp">Got it</button>
 </div>
+</div>
+
+<!-- asennusohjaus (Edellytys / A: offset / B: kallistustesti — ks. valmistusohjeet v2) -->
+<div class="sheet hidden" id="mountFlow">
+<div class="panel" id="mountFlowPanel"></div>
 </div>
 
 <script>
@@ -260,7 +278,7 @@ const S = {
   gps:{cog:null, sog:null, on:false, watch:null},
   wakeLock:null,
   demo:false, demoT:0,
-  settings:{ deadband:3, tackThresh:20, tackAngle:90, gps:true, wake:false, smooth:5, audio:false, gaugeScale:20, headingFocus:false }, // tackThresh oletus = skaalan max, käyttäjä kiristää itse
+  settings:{ deadband:3, tackThresh:20, tackAngle:90, gps:true, wake:false, smooth:5, audio:false, gaugeScale:20, headingFocus:false, headingOffset:0, orientationLock:'auto' }, // tackThresh oletus = skaalan max, käyttäjä kiristää itse; headingOffset = asennuskorjaus, orientationLock = Portrait/Landscape/Automatic, ks. valmistusohjeet
   source:null, compassOk:false, liveSince:0,
   audio:{ state:'nomean', cand:'nomean', candSince:0, tackSince:null, tackArmed:true, tackLockUntil:0 },
 };
@@ -269,7 +287,7 @@ const AUDIO_DWELL_MS=800, TACK_HOLD_MS=4000, TACK_LOCK_MS=12000;
 // Käännöksen visuaalinen vaimennus: kun heading on tämän verran tuulesta, gauge himmenee.
 // Toimii vain kun molemmat meanit asetettu (estWind() palauttaa null muuten → ei vaimennusta).
 // Säädettävissä kenttädatan perusteella — tyypillinen no-go-vyöhyke ~25–40°.
-const NO_GO_DEG = 30;
+const NO_GO_DEG = 10;
 
 /* ============================================================
    POLAARI — VAIHE 0.5 + VAIHE 1 (näkymätön taustakeruu, ei UI:ta)
@@ -497,7 +515,10 @@ function handleAudio(status, lifted){
 /* ---------- suunta & halssi ---------- */
 function setHeading(raw){
   if(raw==null || isNaN(raw)) return;
-  S.headingRaw = norm(raw);
+  // Asennuskorjaus lisätään heti raakalukemaan — yksi totuuden lähde, näkyy kauttaaltaan
+  // (iso numero, STB/BB-meanit). Ei riko polaaria/LIFT-HEADERia, koska ne laskevat aina
+  // erotuksia (heading - mean), johon vakio-offset ei vaikuta. Ks. valmistusohjeet 4.4.
+  S.headingRaw = norm(raw + S.settings.headingOffset);
   S.smooth.k = 0.5 + S.settings.smooth*0.045;
   S.heading = circMeanPush(S.smooth, S.headingRaw);
   S.compassOk = true;
@@ -570,10 +591,207 @@ async function enableSensors(){
   }catch(err){ granted=false; }
   if(!granted){ showError("Motion sensor permission denied. Open the page in the phone browser and allow Motion & Orientation, or try the demo."); return; }
   setTimeout(()=>{ if(!S.compassOk) showError("No compass data. Works best opened directly in the phone browser. You can try the demo."); }, 1800);
-  hideOverlay();
+  startMountFlow();
 }
 function showError(msg){ const e=$("errBox"); e.textContent=msg; e.classList.remove("hidden"); }
 function hideOverlay(){ $("overlay").classList.add("hidden"); S.liveSince=Date.now(); applyWake(); applyGps(); checkOrientation(); resize(); }
+
+/* ============================================================
+   ASENNUSOHJAUS (mount flow) — Edellytys / offset-itsetesti /
+   heading-offset / kallistustesti. Ks. valmistusohjeet v2.
+   v1: yksi asento (ei moniasento-vertailua vielä).
+   ============================================================ */
+const MF = { step:null, h0:null, turnDiff:null, tiltRef:null, tiltBins:{}, tiltTimer:null, liveTimer:null, orientTimer:null, liveTilt:0 };
+
+function applyOffsetDelta(d){
+  let v=S.settings.headingOffset+d; v=Math.max(-180,Math.min(180,v));
+  S.settings.headingOffset=v;
+  // Pakotettu meanien nollaus — vanha mean+offset-pari ei enää täsmää uuden offsetin kanssa (ks. 4.5)
+  S.meanStb=null; S.meanBb=null; Polar.onReset();
+  document.querySelectorAll('.stepper[data-key="headingOffset"] .val').forEach(el=> el.textContent=v+'°');
+}
+function mfWireOffsetStepper(){
+  const st = document.querySelector('#mountFlowPanel .stepper[data-key="headingOffset"]');
+  if(!st) return;
+  st.querySelector('.val').textContent = S.settings.headingOffset+'°';
+  st.querySelectorAll('button').forEach(b=> b.addEventListener('click', ()=> applyOffsetDelta(parseInt(b.dataset.d,10))));
+}
+function mfStartLiveHeading(){
+  mfStopLiveHeading();
+  MF.liveTimer=setInterval(()=>{
+    const el=document.getElementById('mfLiveHeading');
+    if(!el){ mfStopLiveHeading(); return; }
+    el.textContent=(S.heading==null?'---':pad3(S.heading))+'°';
+  },200);
+}
+function mfStopLiveHeading(){ if(MF.liveTimer){ clearInterval(MF.liveTimer); MF.liveTimer=null; } }
+function mfStartOrientWatch(){
+  mfStopOrientWatch();
+  MF.orientTimer=setInterval(()=>{
+    const el=document.getElementById('mfOrientStatus');
+    if(!el){ mfStopOrientWatch(); return; }
+    el.textContent='Screen: '+(isPortrait()?'portrait':'landscape');
+  },300);
+}
+function mfStopOrientWatch(){ if(MF.orientTimer){ clearInterval(MF.orientTimer); MF.orientTimer=null; } }
+
+function mfTiltAngle(beta,gamma){
+  if(beta==null||gamma==null) return 0;
+  const br=beta*Math.PI/180, gr=gamma*Math.PI/180;
+  const c=Math.max(-1,Math.min(1, Math.cos(br)*Math.cos(gr)));
+  return Math.acos(c)*180/Math.PI;
+}
+let _mfTiltHandler=null;
+function mfAttachTiltSensor(){
+  _mfTiltHandler = e=>{ MF.liveTilt = mfTiltAngle(e.beta,e.gamma); };
+  window.addEventListener('deviceorientation', _mfTiltHandler, true);
+}
+function mfDetachTiltSensor(){ if(_mfTiltHandler){ window.removeEventListener('deviceorientation', _mfTiltHandler, true); _mfTiltHandler=null; } }
+function mfStopTiltSampling(){ if(MF.tiltTimer){ clearInterval(MF.tiltTimer); MF.tiltTimer=null; } mfDetachTiltSensor(); }
+function mfMaxError(){ const vals=Object.values(MF.tiltBins); return vals.length?Math.max(...vals):0; }
+
+function mfStartHold(){
+  // Ei enää erillistä "Hold still" -näyttöä — riittää lyhyt sisäinen viive, jotta smoothattu
+  // heading ehtii tasoittua ennen h0:n tallennusta. Käyttäjä ei tarvitse omaa odotusruutua tähän.
+  setTimeout(()=>{ MF.h0=S.heading; MF.step='selftest-turn'; mfRender(); }, 400);
+}
+function mfCaptureTurn(){
+  const h1=S.heading;
+  MF.turnDiff = (h1==null||MF.h0==null) ? 0 : angDiff(h1, MF.h0);
+  MF.step='selftest-result'; mfRender();
+}
+function mfStartTiltHold(){
+  MF.step='tilt-hold'; mfRender();
+  mfAttachTiltSensor();
+  let n=2;
+  const tick=()=>{
+    n--;
+    const e=document.getElementById('mfCountdown'); if(e) e.textContent=String(Math.max(n,0));
+    if(n<=0){
+      MF.tiltRef=S.heading; MF.tiltBins={};
+      MF.step='tilt-sweep'; mfRender(); mfStartTiltSampling();
+      return;
+    }
+    setTimeout(tick,1000);
+  };
+  setTimeout(tick,1000);
+}
+function mfStartTiltSampling(){
+  mfStopTiltSampling(); mfAttachTiltSensor();
+  MF.tiltTimer=setInterval(()=>{
+    if(S.heading==null || MF.tiltRef==null) return;
+    const tiltDeg=MF.liveTilt||0;
+    const err=Math.abs(angDiff(S.heading, MF.tiltRef));
+    const bin=Math.round(tiltDeg/5)*5;
+    if(!(bin in MF.tiltBins) || MF.tiltBins[bin]<err) MF.tiltBins[bin]=err;
+    const tEl=document.getElementById('mfTiltNow'), eEl=document.getElementById('mfErrNow');
+    if(tEl) tEl.textContent=Math.round(tiltDeg)+'°';
+    if(eEl) eEl.textContent=Math.round(err)+'°';
+  },200); // 5 Hz, ks. valmistusohjeet 7.6
+}
+function mfFinishTiltSweep(){ mfStopTiltSampling(); MF.step='tilt-result'; mfRender(); }
+
+function mfBind(){
+  const on=(id,fn)=>{ const el=document.getElementById(id); if(el) el.addEventListener('click',fn); };
+  on('mfDone', finishMountFlow);
+  on('mfSkipTest', ()=>{ MF.step='mount-gate'; mfRender(); });
+  on('mfHoldStart', mfStartHold);
+  on('mfTurnDone', mfCaptureTurn);
+  on('mfToOffset', ()=>{ MF.step='mount-gate'; mfRender(); });
+  on('mfMountYes', ()=>{ MF.step='offset'; mfRender(); });
+  on('mfMountNo', ()=>{ MF.step='mount-skip'; mfRender(); });
+  on('mfToTiltIntro', ()=>{ mfStopLiveHeading(); MF.step='tilt-intro'; mfRender(); });
+  on('mfTiltStart', mfStartTiltHold);
+  on('mfTiltDone', mfFinishTiltSweep);
+  on('mfFinish', finishMountFlow);
+  if(MF.step==='offset'){ mfWireOffsetStepper(); mfStartLiveHeading(); }
+  if(MF.step==='selftest-turn'){ mfStartOrientWatch(); } else { mfStopOrientWatch(); }
+}
+function mfRender(){
+  const p=$("mountFlowPanel");
+  let html='';
+  if(MF.step==='selftest-intro'){
+    html=`<h2>Quick test</h2>
+      <p class="helpp">Checks whether rotating your phone changes its compass reading. Hold it up like you're about to look at it — not flat on a table.</p>
+      <button class="close" id="mfHoldStart">Start</button>
+      <button class="close" id="mfSkipTest">Skip test</button>`;
+  } else if(MF.step==='selftest-turn'){
+    html=`<h2>Now turn it 90°</h2>
+      <p class="helpp">Rotate it 90°, like turning a steering wheel, until the screen switches to landscape. (If it doesn't switch, turn off rotation lock in Control Center.)</p>
+      <svg width="180" height="80" viewBox="0 0 180 80" style="display:block;margin:6px auto 4px;">
+        <defs><marker id="mfArrow" markerWidth="8" markerHeight="8" refX="4" refY="4" orient="auto"><path d="M0,0 L8,4 L0,8 Z" fill="#9a9a9a"/></marker></defs>
+        <rect x="20" y="14" width="34" height="54" rx="6" fill="none" stroke="#9a9a9a" stroke-width="2"/>
+        <circle cx="37" cy="22" r="3" fill="#ff2b2b"/>
+        <path d="M66 40 Q90 12 114 40" fill="none" stroke="#9a9a9a" stroke-width="2" marker-end="url(#mfArrow)"/>
+        <rect x="126" y="27" width="54" height="34" rx="6" fill="none" stroke="#9a9a9a" stroke-width="2"/>
+        <circle cx="175" cy="44" r="3" fill="#ff2b2b"/>
+      </svg>
+      <div id="mfOrientStatus" style="text-align:center;font-family:var(--mono);font-size:13px;color:#7a7a7a;margin-top:6px;">Screen: —</div>
+      <button class="close" id="mfTurnDone">Done</button>`;
+  } else if(MF.step==='selftest-result'){
+    const raw=Math.abs(MF.turnDiff)>60;
+    html=`<h2>Result</h2>
+      <p class="helpp">${raw
+        ? "Your phone's compass follows its own rotation directly. A heading offset will help."
+        : "Your phone already compensates for rotation. You likely won't need a big offset."}</p>
+      <button class="close" id="mfToOffset">Continue</button>`;
+  } else if(MF.step==='mount-gate'){
+    html=`<h2>Mounting position</h2>
+      <p class="helpp">Are you holding the device right now in the position you're planning to mount it?</p>
+      <button class="close" id="mfMountYes">Yes, continue</button>
+      <button class="close" id="mfMountNo">No, skip for now</button>`;
+  } else if(MF.step==='mount-skip'){
+    html=`<h2>No problem</h2>
+      <p class="helpp">You can set the heading offset and run the tilt test anytime once the device is in place — open Help → Test mounting.</p>
+      <button class="close" id="mfFinish">Finish</button>`;
+  } else if(MF.step==='offset'){
+    html=`<h2>Heading offset</h2>
+      <p class="helpp">Adjust below until the big number matches a direction you know to be correct — compare with the boat's fixed compass.</p>
+      <div style="font-family:var(--mono);font-size:34px;color:var(--led);letter-spacing:.04em;text-align:center;margin:10px 0;" id="mfLiveHeading">---°</div>
+      <div class="row"><div class="lbl">Offset<small>Added to every reading</small></div>
+      <div class="stepper" data-key="headingOffset"><button data-d="-5">–</button><span class="val"></span><button data-d="5">+</button></div></div>
+      <button class="close" id="mfToTiltIntro">Done</button>`;
+  } else if(MF.step==='tilt-intro'){
+    html=`<h2>Tilt test</h2>
+      <p class="helpp">Measures how much boat heel distorts the compass in this position. Takes about 30 seconds.</p>
+      <button class="close" id="mfTiltStart">Test now</button>
+      <button class="close" id="mfFinish">Skip, do this later from Help</button>`;
+  } else if(MF.step==='tilt-hold'){
+    html=`<h2>Hold the device level…</h2>
+      <p class="helpp">In the position it will be mounted — don't tilt yet.</p>
+      <div style="font-family:var(--mono);font-size:48px;color:var(--led);text-align:center;margin:20px 0;" id="mfCountdown">2</div>`;
+  } else if(MF.step==='tilt-sweep'){
+    html=`<h2>Tilt slowly</h2>
+      <p class="helpp">Tilt the device as the boat would heel, 0°→40°→back to 0°, keeping the same heading. Press Done once you've completed the motion.</p>
+      <div style="display:flex; gap:18px; margin:14px 0;">
+        <div><div style="font-size:12px;color:#8a8a8a;">TILT</div><div id="mfTiltNow" style="font-family:var(--mono);font-size:30px;color:#fff;">0°</div></div>
+        <div><div style="font-size:12px;color:#8a8a8a;">ERROR</div><div id="mfErrNow" style="font-family:var(--mono);font-size:30px;color:var(--led);">0°</div></div>
+      </div>
+      <button class="close" id="mfTiltDone">Done</button>`;
+  } else if(MF.step==='tilt-result'){
+    const maxErr=mfMaxError();
+    let verdict,msg;
+    if(maxErr<S.settings.deadband){ verdict='🟢 Good'; msg='This mounting position holds up well — the compass stays stable even under heel.'; }
+    else if(maxErr<S.settings.tackThresh){ verdict='🟡 Moderate'; msg="Some deviation at steep heel angles. Won't confuse LIFT/HEADER yet, but a flatter mount would improve accuracy."; }
+    else { verdict='🔴 Significant'; msg='In this position, heel alone can show a false HEADER/LIFT. Try a different position, or treat readings with caution at steep heel.'; }
+    const rows=Object.keys(MF.tiltBins).map(Number).sort((a,b)=>a-b).map(k=>k+'°→'+Math.round(MF.tiltBins[k])+'°').join(' · ');
+    html=`<h2>${verdict}</h2>
+      <p class="helpp">${msg}</p>
+      <p class="note">${rows||'(not enough data)'}</p>
+      <button class="close" id="mfFinish">Done</button>`;
+  }
+  p.innerHTML=html;
+  mfBind();
+}
+function mfShow(){ $("mountFlow").classList.remove("hidden"); }
+function mfHide(){ $("mountFlow").classList.add("hidden"); }
+function startMountFlow(){ MF.step='selftest-intro'; mfRender(); mfShow(); }
+function finishMountFlow(){
+  mfStopTiltSampling(); mfStopLiveHeading(); mfStopOrientWatch(); mfHide();
+  if(!$("overlay").classList.contains("hidden")) hideOverlay();
+}
+$("btnMountFlow").addEventListener("click", ()=>{ $("help").classList.add("hidden"); startMountFlow(); });
+
 
 /* ---------- demo ---------- */
 function startDemo(){
@@ -643,22 +861,35 @@ function resize(){
   // joka pehmensi isoa numeroa). resize ajetaan myös visualViewport-muutoksissa,
   // jotta Safarin työkalupalkin piiloutuminen ei venytä vanhaa puskuria sumeaksi.
   DPR=Math.min(window.devicePixelRatio||1, 3);
-  const r=cv.getBoundingClientRect();
-  W=r.width; H=r.height;
+  // checkOrientation() ENNEN mittausta: se asettaa/poistaa #stage:n force-rotate-luokat,
+  // jotka muuttavat sen CSS-kokoa (100vh/100vw). clientWidth/Height (ei getBoundingClientRect,
+  // joka antaisi kierretyn elementin NÄYTTÖAVARUUDEN mitat) lukee canvasin loogisen,
+  // kiertoa edeltävän koon — juuri sen minkä sisäinen piirto tarvitsee. Ks. orientationLock.
+  checkOrientation();
+  W=cv.clientWidth; H=cv.clientHeight;
   cv.width=Math.round(W*DPR); cv.height=Math.round(H*DPR);
   ctx.setTransform(DPR,0,0,DPR,0,0);
-  checkOrientation();
 }
 // pystyssä: ensisijaisesti matchMedia (luotettava webviewissä), varalla viewportin mitat
 function isPortrait(){
   try{ if(window.matchMedia){ const m=window.matchMedia("(orientation: portrait)"); if(typeof m.matches==='boolean') return m.matches; } }catch(e){}
   return window.innerHeight > window.innerWidth * 1.02;
 }
+// haluttu (lukittu) orientaatio asetuksen mukaan; 'auto' seuraa fyysistä laitetta sellaisenaan
+function effectivePortrait(){
+  if(S.settings.orientationLock==='landscape') return false;
+  if(S.settings.orientationLock==='portrait') return true;
+  return isPortrait();
+}
 function checkOrientation(){
-  // landscape-vaatimus koskee vain mittaritilaa; aloitusruutu toimii myös pystyssä,
-  // jotta käyttäjä ehtii valita klassisen tai mittarinäkymän
-  const meterMode = $("overlay").classList.contains("hidden");
-  $("rotate").classList.toggle("show", meterMode && isPortrait());
+  // Pystytila (portrait) on nyt tuettu mittarinäkymässä — render() piirtää eri koordinaatein.
+  // body-luokka mahdollistaa pienet CSS-poikkeukset (esim. btnMean-napautusalue) samalla
+  // effectivePortrait()-logiikalla kuin canvas-piirto käyttää, ilman erillistä @media-kyselyä.
+  const want = effectivePortrait(), actual = isPortrait();
+  document.body.classList.toggle('portrait', want);
+  // orientationLock: jos haluttu tila ei vastaa fyysistä laitetta, kierretään #stage visuaalisesti
+  $("stage").classList.toggle('force-landscape', !want && actual);
+  $("stage").classList.toggle('force-portrait', want && !actual);
 }
 
 /* --- seitsenosaisten numeroiden piirto --- */
@@ -727,14 +958,22 @@ function drawGauge(lifted,status,dim){
   const scale=S.settings.gaugeScale;
   const nBars=12; // palkkeja per puoli
   const cx=W/2;
+  const P=effectivePortrait();
   const CTRL_H=62; // alanapeille varattu kaista
   const fs=Math.max(11,W*0.015), labelH=fs+10;
   const baselineY=H-CTRL_H-labelH; // yhteinen alalinja kaikille palkeille
   // keskipalkit pysyvät matalina (kaaren pohja), joten ne eivät osu isoon numeroon;
   // reunapalkit saavat nousta kulmatilaan, koska ne ovat kaukana keskinumerosta vaakasuunnassa
-  const topForEdge=H*0.30; // reunapalkkien yläraja
-  const maxBarH=Math.max(40, Math.min(baselineY-topForEdge, H*0.46)); // reunapalkin korkeus
-  const minBarH=maxBarH*0.10; // keskipalkin (groove) korkeus
+  // Portrait: hero-numero on ylempänä (H*0.36) kuin landscapessa, joten reunapalkkien yläraja
+  // pitää siirtää alemmas ettei kaari osu heroon; korkeuskatto sidotaan W:hen H:n sijaan,
+  // koska pystyssä H on aina reilusti isompi kuin mikä olisi visuaalisesti tarpeen.
+  const topForEdge = P ? H*0.46 : H*0.30; // reunapalkkien yläraja
+  const maxBarH = P ? Math.max(40, Math.min(baselineY-topForEdge, W*0.85))
+                     : Math.max(40, Math.min(baselineY-topForEdge, H*0.46)); // reunapalkin korkeus
+  // Paraabelikäyrä (t*t) säilyy sekä landscapessa että portraitissa — vain lattiakorkeutta
+  // (minBarH) nostetaan portraitissa, jotta keskiosan palkit näyttävät paksummilta ilman että
+  // itse kaaren muoto muuttuu.
+  const minBarH=maxBarH*(P?0.22:0.10); // keskipalkin (groove) korkeus
   const halfWidth=W*0.44;
   const step=halfWidth/nBars;
   const barW=Math.max(5, step*0.55);
@@ -880,10 +1119,21 @@ function render(){
 
   // --- iso suunta (hero, aina LED-punainen, ei himmennetä) ---
   // 2b: heading zoom -skaalaus (HEADING vs INSTRUMENTS tilassa)
+  const P = effectivePortrait();
   const headStr = S.heading==null ? '---' : pad3(S.heading);
   const hScale = S.settings.headingFocus ? 1.0 : 1.38; // Instruments: selvästi isompi heading, Heading: normaali
-  const sScale = S.settings.headingFocus ? 1.0 : 0.75; // Instruments: normaali sekund., Heading: pienempi
-  drawNumber(headStr, W/2, H*0.40, Math.min(H*0.28, W*0.19) * hScale, '#ff2b2b', true);
+  // Portrait: molemmat display-tilat (Heading/Instruments) saavat oman kertoimen, koska pystyssä
+  // on käytettävissä enemmän tilaa kuin landscapessa. Instruments (headingFocus=true) saa isomman
+  // boostin ylärivin lukuihin, koska sen tarkoitus on korostaa sekundäärilukemia (HEADER/PERF/SOG).
+  const rowBoost = P ? (S.settings.headingFocus ? 1.35 : 1.15) : 1.0;
+  const sScale = (S.settings.headingFocus ? 1.0 : 0.75) * rowBoost; // Instruments: normaali sekund., Heading: pienempi
+  // Portrait: W on kapea suhteessa H:hon, joten koko on sidottava W:hen eri kertoimella kuin
+  // landscapessa (jossa H on rajoittava tekijä). 0.27*W pitää 3-numeroisen LED-luvun marginaalilla
+  // näytön sisällä myös hScale=1.38:lla (numerosarjan kokonaisleveys ≈ 2.22× numeron korkeus).
+  const heroSize = P ? Math.min(H*0.16, W*0.27) * hScale
+                      : Math.min(H*0.28, W*0.19) * hScale;
+  const heroY = P ? H*0.36 : H*0.40;
+  drawNumber(headStr, W/2, heroY, heroSize, '#ff2b2b', true);
 
   // ===== yläriviruudukko (2b-layout): vasen=shift, keski=SOG, oikea=PERF =====
   const yEy=H*0.085, yVal=H*0.155;
@@ -1010,12 +1260,23 @@ document.querySelectorAll(".tog").forEach(t=>{
     if(k==='audio'){ if(S.settings.audio) enableAudio(); else disableAudio(); }
   });
 });
-const stepRanges={deadband:[0,15],tackThresh:[1,20],tackAngle:[60,140],smooth:[1,9],gaugeScale:[10,40]};
+document.querySelectorAll(".seg").forEach(seg=>{
+  const k=seg.dataset.key;
+  const sync=()=> seg.querySelectorAll("button").forEach(b=> b.classList.toggle("active", b.dataset.val===S.settings[k]));
+  seg.querySelectorAll("button").forEach(b=> b.addEventListener("click", ()=>{
+    S.settings[k]=b.dataset.val; sync();
+    if(k==='orientationLock'){ checkOrientation(); resize(); } // sovelletaan heti, ks. valmistusohjeet
+  }));
+  sync();
+});
+const stepRanges={deadband:[0,15],tackThresh:[1,20],tackAngle:[60,140],smooth:[1,9],gaugeScale:[10,40],headingOffset:[-180,180]};
 document.querySelectorAll(".stepper").forEach(st=>{
   const k=st.dataset.key, val=st.querySelector(".val");
   const unit = k==='smooth' ? "" : "°";
   st.querySelectorAll("button").forEach(b=> b.addEventListener("click", ()=>{
-    const d=parseInt(b.dataset.d,10); let v=S.settings[k]+d;
+    const d=parseInt(b.dataset.d,10);
+    if(k==='headingOffset'){ applyOffsetDelta(d); return; } // ks. valmistusohjeet 4.5: pakottaa meanien nollauksen
+    let v=S.settings[k]+d;
     const [lo,hi]=stepRanges[k]; v=Math.max(lo,Math.min(hi,v));
     S.settings[k]=v; val.textContent=v+unit;
   }));
@@ -1023,7 +1284,7 @@ document.querySelectorAll(".stepper").forEach(st=>{
 });
 
 /* ---------- init ---------- */
-const APP_VERSION="mittari v0.32";
+const APP_VERSION="mittari v0.44";
 (function(){
   const e=$("verEnable"); if(e) e.textContent=APP_VERSION;
   const n=$("verNote"); if(n) n.textContent=APP_VERSION+" · shares engine with index.html";
