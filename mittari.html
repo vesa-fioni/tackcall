@@ -54,6 +54,15 @@ box-shadow:0 0 0 1px #ff4444 inset, 0 0 18px rgba(255,68,68,.45);}
 left:50%; transform:translateX(-50%); font-size:10px; font-weight:700; letter-spacing:.15em;
 color:#7a5a2a; pointer-events:none; display:none; white-space:nowrap;}
 #downwindHint.visible{display:block;}
+/* Offshore (COG) -tilan hint gear-napin vieressä — tämä tila on aidosti käyttämätöntä riippumatta
+   orientaatiosta tai gaugen koosta (bottom-ankkurointi törmäsi sekä onboarding-ohjetekstiin että
+   gaugen palkkeihin/tick-numeroihin, koska niiden välissä ei kaavan mukaan ole vapaata tilaa lainkaan,
+   ks. IMG_3304/IMG_3305). Violetinpunainen — sama väri kuin pääluku Offshore-tilassa. */
+#offshoreHint{position:absolute; z-index:5; top:max(10px,env(safe-area-inset-top));
+left:50%; transform:translateX(-50%); height:42px;
+font-size:11px; font-weight:800; letter-spacing:.08em; font-family:var(--mono);
+color:#ff2d7a; pointer-events:none; display:none; align-items:center; white-space:nowrap;}
+#offshoreHint.visible{display:flex;}
 /* Mean-nappi himmenee downwind-tilassa muttei poistu — aina toiminnallinen tuulen kierron varalta */
 #btnSetMean.is-downwind{opacity:0.35; transition:opacity .3s;}
 #btnSetMean:not(.is-downwind){transition:opacity .3s;}
@@ -153,6 +162,7 @@ body.portrait #btnMean{top:22%; height:22%;}
 <button class="ctl" id="btnMean" title="Aseta keskisuunta"></button>
 <button class="ctl" id="btnStb">STB</button>
 <div id="downwindHint">· DOWNWIND ·</div>
+<div id="offshoreHint">· OFFSHORE · COG ·</div>
 <button class="ctl" id="btnSetMean">SET MEAN</button>
 <button class="ctl" id="btnBb">BB</button>
 </div>
@@ -179,6 +189,7 @@ body.portrait #btnMean{top:22%; height:22%;}
 <div class="panel">
 <h2>Settings</h2>
 <div class="row"><div class="lbl">GPS<small>SOG speed · polar performance learning</small></div><div class="tog" data-key="gps"></div></div>
+<div class="row"><div class="lbl">Offshore (COG)<small>Replaces compass with GPS course over ground. Ignores leeway — best above ~3 kn. Turns GPS on automatically.</small></div><div class="tog" data-key="offshoreCog"></div></div>
 <div class="row"><div class="lbl">Display mode<small>Off: Heading · enlarged main number<br>On: Instruments · enlarged secondary data</small></div><div class="tog" data-key="headingFocus"></div></div>
 <div class="row"><div class="lbl">Keep screen awake</div><div class="tog" data-key="wake"></div></div>
 <div class="row"><div class="lbl">Audio alerts<small>Lift / header / tack tones</small></div><div class="tog" data-key="audio"></div></div>
@@ -270,7 +281,7 @@ const S = {
   gps:{cog:null, sog:null, on:false, watch:null},
   wakeLock:null,
   demo:false, demoT:0,
-  settings:{ deadband:3, tackThresh:20, tackAngle:90, gps:true, wake:false, smooth:5, audio:false, gaugeScale:20, headingFocus:false, headingOffset:0, orientationLock:'auto' }, // tackThresh oletus = skaalan max, käyttäjä kiristää itse; headingOffset = asennuskorjaus, orientationLock = Portrait/Landscape/Automatic, ks. valmistusohjeet
+  settings:{ deadband:3, tackThresh:20, tackAngle:90, gps:true, wake:false, smooth:5, audio:false, gaugeScale:20, headingFocus:false, headingOffset:0, orientationLock:'auto', offshoreCog:false }, // tackThresh oletus = skaalan max, käyttäjä kiristää itse; headingOffset = asennuskorjaus, orientationLock = Portrait/Landscape/Automatic; offshoreCog = korvaa kompassin GPS-COG:lla, ks. valmistusohjeet
   source:null, compassOk:false, liveSince:0,
   audio:{ state:'nomean', cand:'nomean', candSince:0, tackSince:null, tackArmed:true, tackLockUntil:0 },
 };
@@ -280,6 +291,8 @@ const AUDIO_DWELL_MS=800, TACK_HOLD_MS=4000, TACK_LOCK_MS=12000;
 // Toimii vain kun molemmat meanit asetettu (estWind() palauttaa null muuten → ei vaimennusta).
 // Säädettävissä kenttädatan perusteella — tyypillinen no-go-vyöhyke ~25–40°.
 const NO_GO_DEG = 10;
+const OFFSHORE_MIN_KN = 3; // COG epäluotettava alle tämän — koko näyttö odotustilassa Offshore-tilassa
+const OFFSHORE_HERO_COLOR = '#ff2d7a'; // violetinpunainen — sama perhe kuin normaali punainen (#ff2b2b) mutta violetimpi
 
 /* ============================================================
    POLAARI — VAIHE 0.5 + VAIHE 1 (näkymätön taustakeruu, ei UI:ta)
@@ -555,11 +568,13 @@ function estWind(){
 /* ---------- anturit ---------- */
 function startCompassIOS(){
   window.addEventListener("deviceorientation", e=>{
+    if(S.settings.offshoreCog) return; // Offshore-tilassa suunta tulee GPS-COG:sta, ei kompassista
     if(e.webkitCompassHeading!=null){ setHeading(e.webkitCompassHeading); S.source='ios'; }
   }, true);
 }
 function startCompassGeneric(){
   const handler = e=>{
+    if(S.settings.offshoreCog) return; // Offshore-tilassa suunta tulee GPS-COG:sta, ei kompassista
     let hd=null;
     if(e.webkitCompassHeading!=null){ hd=e.webkitCompassHeading; }
     else if(e.absolute && e.alpha!=null){
@@ -819,6 +834,11 @@ function stepDemo(){
 }
 
 /* ---------- GPS ---------- */
+function applyOffshoreCog(){
+  // Offshore vaatii GPS:n datalähteeksi — jos käyttäjä kytkee Offshoren päälle GPS:n
+  // ollessa pois, kytketään GPS auki automaattisesti (ks. asetusrivin kuvausteksti).
+  if(S.settings.offshoreCog && !S.settings.gps){ S.settings.gps=true; applyGps(); syncToggles(); }
+}
 function applyGps(){
   if(S.settings.gps && !S.gps.watch && "geolocation" in navigator){
     S.gps.on=true;
@@ -826,6 +846,12 @@ function applyGps(){
       const sp=p.coords.speed;
       S.gps.sog = sp!=null && !isNaN(sp) ? sp*1.943844 : S.gps.sog;
       if(p.coords.heading!=null && !isNaN(p.coords.heading)) S.gps.cog=p.coords.heading;
+      // Offshore-tila: COG korvaa kompassin kokonaan. p.coords.heading on null kun nopeus
+      // on liian alhainen (selaimen oma suoja) — silloin setHeading ei ylikirjoita edellistä
+      // arvoa (ks. setHeading: null ohitetaan), joten mittari jää viimeiseen tunnettuun suuntaan.
+      if(S.settings.offshoreCog && p.coords.heading!=null && !isNaN(p.coords.heading)){
+        setHeading(p.coords.heading); S.source='cog';
+      }
     }, err=>{}, {enableHighAccuracy:true, maximumAge:1000, timeout:8000});
   } else if(!S.settings.gps && S.gps.watch){
     navigator.geolocation.clearWatch(S.gps.watch); S.gps.watch=null; S.gps.on=false; S.gps.sog=null;
@@ -1145,6 +1171,7 @@ function render(){
   const isDownwind = !!(posForSync && !posForSync.up);
   $("btnSetMean").classList.toggle("is-downwind", isDownwind);
   $("downwindHint").classList.toggle("visible", isDownwind);
+  $("offshoreHint").classList.toggle("visible", !!S.settings.offshoreCog);
 
   // --- kompassin tila: jos mittaritila on käynnissä, ei demoa eikä suuntadataa ---
   const liveNoData = $("overlay").classList.contains("hidden") && !S.demo && S.heading==null;
@@ -1166,6 +1193,26 @@ function render(){
     }
     ctx.restore();
     return; // ei piirretä muuta ennen kuin dataa tulee
+  }
+
+  // Offshore (COG): alle kynnysnopeuden GPS-suunta on epäluotettava (kohinaa/leewaytä),
+  // joten koko gauge/hero/lift-header-tack jää odotustilaan sen sijaan että näytettäisiin
+  // jäätynyt tai hyppivä lukema. STB/BB-napit ja niiden asetetut meanit pysyvät ennallaan.
+  const cogWaiting = S.settings.offshoreCog && !S.demo &&
+                      $("overlay").classList.contains("hidden") &&
+                      (S.gps.sog==null || S.gps.sog < OFFSHORE_MIN_KN);
+  if(cogWaiting){
+    const small0=Math.min(W,H);
+    const sogTxt = S.gps.sog!=null ? S.gps.sog.toFixed(1)+' kn' : '-- kn';
+    ctx.save(); ctx.textAlign='center'; ctx.textBaseline='middle';
+    ctx.fillStyle='#7ad9ff';
+    ctx.font=`800 ${small0*0.05}px ${getCSS('--mono')}`;
+    ctx.fillText('OFFSHORE · WAITING FOR SPEED', W/2, H*0.42);
+    ctx.fillStyle='#9a9a9a';
+    ctx.font=`600 ${small0*0.028}px ${getCSS('--sans')}`;
+    ctx.fillText('COG needs > '+OFFSHORE_MIN_KN+' kn SOG · currently '+sogTxt, W/2, H*0.50);
+    ctx.restore();
+    return;
   }
 
   const {liftedDeg,status}=evalShift();
@@ -1234,7 +1281,11 @@ function render(){
   if(heroY - heroSize/2 < topRowBottom) heroY = topRowBottom + heroSize/2;
   if(heroY + heroSize/2 > heroBottomLimit) heroY = heroBottomLimit - heroSize/2;
 
-  drawNumber(headStr, W/2, heroY, heroSize, '#ff2b2b', true);
+  // Pääluvun väri: violetinpunainen kun suunta tulee Offshore/COG:sta, muuten normaali punainen.
+  // cogWaiting-tilassa tähän ei koskaan tulla (return yllä), joten offshoreCog=true tarkoittaa
+  // aina että heading on juuri nyt GPS-COG-peräinen.
+  const heroColor = S.settings.offshoreCog ? OFFSHORE_HERO_COLOR : '#ff2b2b';
+  drawNumber(headStr, W/2, heroY, heroSize, heroColor, true);
 
   // --- vasen: LIFT/HEADER/GROOVE/TACK (ennallaan, himmennetään myötätuulella) ---
   ctx.save();
@@ -1356,6 +1407,7 @@ document.querySelectorAll(".tog").forEach(t=>{
     if(k==='gps') applyGps();
     if(k==='wake') applyWake();
     if(k==='audio'){ if(S.settings.audio) enableAudio(); else disableAudio(); }
+    if(k==='offshoreCog') applyOffshoreCog();
   });
 });
 document.querySelectorAll(".seg").forEach(seg=>{
@@ -1382,7 +1434,7 @@ document.querySelectorAll(".stepper").forEach(st=>{
 });
 
 /* ---------- init ---------- */
-const APP_VERSION="mittari v0.57";
+const APP_VERSION="mittari v0.64";
 (function(){
   const e=$("verEnable"); if(e) e.textContent=APP_VERSION;
   const n=$("verNote"); if(n) n.textContent=APP_VERSION+" · shares engine with index.html";
@@ -1415,6 +1467,7 @@ if(window.visualViewport){
 // varmistus: tarkista orientaatio säännöllisesti, jos jokin tapahtuma jää väliin (iOS)
 setInterval(checkOrientation, 600);
 syncToggles();
+applyOffshoreCog();
 resize();
 loop();
 </script>
