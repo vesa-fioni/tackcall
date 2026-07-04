@@ -17,7 +17,7 @@
 --mono:"SF Mono",ui-monospace,Menlo,Consolas,monospace;
 --sans:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
 }
-*{box-sizing:border-box; -webkit-tap-highlight-color:transparent;}
+*{box-sizing:border-box; -webkit-tap-highlight-color:transparent; touch-action:manipulation;}
 html,body{margin:0; height:100%; background:var(--bg); color:#fff; font-family:var(--sans);
 overflow:hidden; overscroll-behavior:none; user-select:none; -webkit-user-select:none;}
 #stage{position:fixed; inset:0;}
@@ -691,7 +691,7 @@ function mfRender(){
       <div style="font-family:var(--mono);font-size:48px;color:var(--led);text-align:center;margin:20px 0;" id="mfCountdown">2</div>`;
   } else if(MF.step==='selftest-turn'){
     html=`<h2>Turn 90°</h2>
-      <p class="helpp">Without moving from where you're standing or turning your body, rotate the phone itself 90° — like spinning a steering wheel flat in your hands — so a different edge now faces forward.</p>
+      <p class="helpp">Put the phone down flat on a table, then turn it 90° in place — like spinning a steering wheel — so a different edge now faces forward.</p>
       <svg width="180" height="80" viewBox="0 0 180 80" style="display:block;margin:6px auto 4px;">
         <defs><marker id="mfArrow" markerWidth="8" markerHeight="8" refX="4" refY="4" orient="auto"><path d="M0,0 L8,4 L0,8 Z" fill="#9a9a9a"/></marker></defs>
         <rect x="20" y="14" width="34" height="54" rx="6" fill="none" stroke="#9a9a9a" stroke-width="2"/>
@@ -700,7 +700,7 @@ function mfRender(){
         <rect x="126" y="27" width="54" height="34" rx="6" fill="none" stroke="#9a9a9a" stroke-width="2"/>
         <circle cx="175" cy="44" r="3" fill="#ff2b2b"/>
       </svg>
-      <p class="note" style="text-align:center;">Same phone, same spot — just spun 90° in place. The red dot marks the same physical edge before/after.</p>
+      <p class="note" style="text-align:center;">Same phone, same table — just spun 90° in place. The red dot marks the same physical edge before/after.</p>
       <button class="close" id="mfTurnDone">Done, I turned it</button>`;
   } else if(MF.step==='selftest-result'){
     const raw=Math.abs(MF.turnDiff)>60;
@@ -726,7 +726,7 @@ function mfRender(){
       <div class="stepper" data-key="headingOffset"><button data-d="-5">–</button><span class="val"></span><button data-d="5">+</button></div></div>
       <button class="close" id="mfToTiltIntro">Done</button>`;
   } else if(MF.step==='tilt-intro'){
-    html=`<h2>Tilt test (optional)</h2>
+    html=`<h2>Tilt test</h2>
       <p class="helpp">Measures how much boat heel distorts the compass in this position. Takes about 30 seconds.</p>
       <button class="close" id="mfTiltStart">Test now</button>
       <button class="close" id="mfFinish">Skip, do this later from Help</button>`;
@@ -1236,7 +1236,7 @@ document.querySelectorAll(".stepper").forEach(st=>{
 });
 
 /* ---------- init ---------- */
-const APP_VERSION="mittari v0.38";
+const APP_VERSION="mittari v0.39";
 (function(){
   const e=$("verEnable"); if(e) e.textContent=APP_VERSION;
   const n=$("verNote"); if(n) n.textContent=APP_VERSION+" · shares engine with index.html";
