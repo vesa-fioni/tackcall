@@ -1170,8 +1170,9 @@ function render(){
   // Portrait: W on kapea suhteessa H:hon, joten koko on sidottava W:hen eri kertoimella kuin
   // landscapessa (jossa H on rajoittava tekijä). 0.27*W pitää 3-numeroisen LED-luvun marginaalilla
   // näytön sisällä myös hScale=1.38:lla (numerosarjan kokonaisleveys ≈ 2.22× numeron korkeus).
-  const heroSize = P ? Math.min(H*0.16, W*0.27) * hScale
-                      : Math.min(H*0.28, W*0.19) * hScale;
+  const heroSize0 = P ? Math.min(H*0.16, W*0.27) * hScale
+                       : Math.min(H*0.28, W*0.19) * hScale;
+  let heroSize = heroSize0;
   let heroY = P ? H*0.36 : H*0.40;
 
   // ===== yläriviruudukko (2b-layout): vasen=shift, keski=SOG, oikea=PERF =====
@@ -1186,12 +1187,18 @@ function render(){
   // Kun H on pieni suhteessa laitteeseen tuunattuun mittasuhteeseen (selaimen työkalupalkki
   // vie tilaa landscapessa, tai kotinäyttö-tilassa SAFE_TOP ei olekaan nolla landscapessa),
   // topReserved syö suhteessa isomman osan H:sta kuin heroY/heroSize-kaava olettaa, ja ylärivin
-  // luvut (esim. PERF) piirtyvät hero-numeron sisään. Varmistetaan tässä ettei niin käy —
-  // työnnetään heroa tarvittaessa alaspäin niin että ylärivin alareunan ja heron yläreunan
-  // väliin jää aina pieni hengitysväli.
+  // luvut (esim. PERF) piirtyvät hero-numeron sisään. Sovitetaan hero käytettävissä olevaan
+  // tilaan ylärivin alareunan ja kaaripalkin yläreunan (ks. drawGauge:n topForEdge, pidettävä
+  // samana tässä) väliin — ensisijaisesti keskitetään, ja kutistetaan vain jos tila ei riitä.
   const topRowDigitH = small*0.092*sScale;
   const minHeroTop = yVal + topRowDigitH/2 + H*0.02;
+  const gaugeTopForEdge = P ? H*0.46 : H*0.30; // sama kaava kuin drawGauge():n topForEdge
+  const maxHeroBottom = gaugeTopForEdge - H*0.02;
+  const availableSpan = maxHeroBottom - minHeroTop;
+  if(availableSpan < heroSize) heroSize = Math.max(H*0.12, availableSpan);
+  heroY = (minHeroTop + maxHeroBottom) / 2;
   if(heroY - heroSize/2 < minHeroTop) heroY = minHeroTop + heroSize/2;
+  if(heroY + heroSize/2 > maxHeroBottom) heroY = maxHeroBottom - heroSize/2;
 
   drawNumber(headStr, W/2, heroY, heroSize, '#ff2b2b', true);
 
@@ -1341,7 +1348,7 @@ document.querySelectorAll(".stepper").forEach(st=>{
 });
 
 /* ---------- init ---------- */
-const APP_VERSION="mittari v0.51";
+const APP_VERSION="mittari v0.52";
 (function(){
   const e=$("verEnable"); if(e) e.textContent=APP_VERSION;
   const n=$("verNote"); if(n) n.textContent=APP_VERSION+" · shares engine with index.html";
