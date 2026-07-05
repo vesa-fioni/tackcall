@@ -1289,6 +1289,14 @@ function render(){
   const heroColor = S.settings.offshoreCog ? OFFSHORE_HERO_COLOR : '#ff2b2b';
   drawNumber(headStr, W/2, heroY, heroSize, heroColor, true);
 
+  // Yläriviluvun sarakkeet (2c): portraitissa 3 saraketta (VMG putoaa heron alle),
+  // landscapessa 4 saraketta VMG äärioikealla — uloin/ylivuotava luku, joka
+  // portraitissa relokoituu tilan puutteessa pääluvun alle (yhtenäinen mielikuva).
+  // LIFT pysyy 0.16:ssa molemmissa; PERF ja SOG siirtyvät sisemmäs landscapessa.
+  const colPerf = P ? W*0.50 : W*0.39;
+  const colSog  = P ? W*0.84 : W*0.61;
+  const colVmg  = W*0.84; // vain landscape-ylärivi; portraitissa VMG piirretään heron alle
+
   // --- vasen: LIFT/HEADER/GROOVE/TACK (ennallaan, himmennetään myötätuulella) ---
   ctx.save();
   ctx.globalAlpha = dim;
@@ -1325,14 +1333,35 @@ function render(){
   if(!_pd||_pd.state==='none'){ perfStr='--'; perfCol='#3a3a3a'; }
   else if(_pd.state==='dim'){   perfStr=_pd.pct+'%'; perfCol='#7a4040'; }
   else {                        perfStr=_pd.pct+'%'; perfCol='#ff7a7a'; }
-  label('PERF', W*0.50, yEy, Math.max(10,small*0.024*sScale), '#6a6a6a','center');
-  drawNumber(perfStr, W*0.50, yVal, small*0.092*sScale, perfCol, false);
+  label('PERF', colPerf, yEy, Math.max(10,small*0.024*sScale), '#6a6a6a','center');
+  drawNumber(perfStr, colPerf, yVal, small*0.092*sScale, perfCol, false);
 
   // --- oikea: SOG (ensisijainen — saatavilla heti GPS:n kanssa) ---
   const sogStr = (S.gps.on && S.gps.sog!=null) ? S.gps.sog.toFixed(1) : '--';
   const sogCol = (S.gps.on && S.gps.sog!=null) ? '#ff7a7a' : '#3a3a3a';
-  label('SOG', W*0.84, yEy, Math.max(10,small*0.024*sScale), '#6a6a6a','center');
-  drawNumber(sogStr, W*0.84, yVal, small*0.092*sScale, sogCol, false);
+  label('SOG', colSog, yEy, Math.max(10,small*0.024*sScale), '#6a6a6a','center');
+  drawNumber(sogStr, colSog, yVal, small*0.092*sScale, sogCol, false);
+
+  // --- VMG (2c): |SOG·cos(TWA)| — nopeus tuulen akselilla, meripihka #ffb020 ---
+  // Näkyy aina kun windDir (molemmat meanit) + SOG saatavilla, sekä nousulla
+  // että myötäisellä: itseisarvo antaa oikean suuruuden molemmilla kursseilla
+  // (nousulla eteneminen ylätuuleen, myötäisellä alatuuleen). Landscapessa
+  // 4. sarake äärioikealla, portraitissa putoaa heron alle gaugen laaksoon.
+  const _vmg = (_twaNow!=null && _sogNow!=null)
+             ? Math.abs(_sogNow*Math.cos(_twaNow*Math.PI/180)) : null;
+  const vmgStr = _vmg!=null ? _vmg.toFixed(1) : '--';
+  const vmgCol = _vmg!=null ? '#ffb020' : '#3a3a3a';
+  if(P){
+    // portrait: heron alla, gaugen keskilaaksossa (keskipalkit aina matalia)
+    const vmgLabelY = heroY + heroSize/2 + H*0.05;
+    const vmgNumY   = vmgLabelY + H*0.06;
+    label('VMG', W*0.50, vmgLabelY, Math.max(10,small*0.024*sScale), '#6a6a6a','center');
+    drawNumber(vmgStr, W*0.50, vmgNumY, small*0.092*sScale, vmgCol, false);
+  } else {
+    // landscape: 4. sarake äärioikealla
+    label('VMG', colVmg, yEy, Math.max(10,small*0.024*sScale), '#6a6a6a','center');
+    drawNumber(vmgStr, colVmg, yVal, small*0.092*sScale, vmgCol, false);
+  }
 
   // --- kaaripalkki tai onboarding-ohje ---
   // Kun nykyisen halssin mean puuttuu (eikä olla downwindillä/no-go-vyöhykkeellä),
@@ -1436,7 +1465,7 @@ document.querySelectorAll(".stepper").forEach(st=>{
 });
 
 /* ---------- init ---------- */
-const APP_VERSION="mittari v0.65";
+const APP_VERSION="mittari v0.66";
 (function(){
   const e=$("verEnable"); if(e) e.textContent=APP_VERSION;
   const n=$("verNote"); if(n) n.textContent=APP_VERSION+" · shares engine with index.html";
