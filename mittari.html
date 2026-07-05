@@ -191,6 +191,7 @@ body.portrait #btnMean{top:22%; height:22%;}
 <div class="row"><div class="lbl">GPS<small>SOG speed · polar performance learning</small></div><div class="tog" data-key="gps"></div></div>
 <div class="row"><div class="lbl">Offshore (COG)<small>Replaces compass with GPS course over ground. Ignores leeway — best above ~3 kn. Turns GPS on automatically.</small></div><div class="tog" data-key="offshoreCog"></div></div>
 <div class="row"><div class="lbl">Display mode<small>Off: Heading · enlarged main number<br>On: Instruments · enlarged secondary data</small></div><div class="tog" data-key="headingFocus"></div></div>
+<div class="row"><div class="lbl">Duotone (sunlight)<small>Off: full colour<br>On: white / grey — max contrast in bright sun</small></div><div class="tog" data-key="monoScheme"></div></div>
 <div class="row"><div class="lbl">Keep screen awake</div><div class="tog" data-key="wake"></div></div>
 <div class="row"><div class="lbl">Audio alerts<small>Lift / header / tack tones</small></div><div class="tog" data-key="audio"></div></div>
 <div class="row"><div class="lbl">Gauge scale<small>Bar ± scale in degrees</small></div>
@@ -285,7 +286,7 @@ const S = {
   gps:{cog:null, sog:null, on:false, watch:null},
   wakeLock:null,
   demo:false, demoT:0,
-  settings:{ deadband:3, tackThresh:20, tackAngle:90, gps:true, wake:false, smooth:5, audio:false, gaugeScale:20, headingFocus:false, headingOffset:0, orientationLock:'auto', offshoreCog:false }, // tackThresh oletus = skaalan max, käyttäjä kiristää itse; headingOffset = asennuskorjaus, orientationLock = Portrait/Landscape/Automatic; offshoreCog = korvaa kompassin GPS-COG:lla, ks. valmistusohjeet
+  settings:{ deadband:3, tackThresh:20, tackAngle:90, gps:true, wake:false, smooth:5, audio:false, gaugeScale:20, headingFocus:false, headingOffset:0, orientationLock:'auto', offshoreCog:false, monoScheme:false }, // tackThresh oletus = skaalan max, käyttäjä kiristää itse; headingOffset = asennuskorjaus, orientationLock = Portrait/Landscape/Automatic; offshoreCog = korvaa kompassin GPS-COG:lla; monoScheme = valkoinen/harmaa duotone-väriskeema kirkkaaseen aurinkoon, ks. valmistusohjeet
   source:null, compassOk:false, liveSince:0,
   audio:{ state:'nomean', cand:'nomean', candSince:0, tackSince:null, tackArmed:true, tackLockUntil:0 },
 };
@@ -296,7 +297,161 @@ const AUDIO_DWELL_MS=800, TACK_HOLD_MS=4000, TACK_LOCK_MS=12000;
 // Säädettävissä kenttädatan perusteella — tyypillinen no-go-vyöhyke ~25–40°.
 const NO_GO_DEG = 10;
 const OFFSHORE_MIN_KN = 3; // COG epäluotettava alle tämän — koko näyttö odotustilassa Offshore-tilassa
-const OFFSHORE_HERO_COLOR = '#ff2d7a'; // violetinpunainen — sama perhe kuin normaali punainen (#ff2b2b) mutta violetimpi
+
+/* ============================================================
+   PALETIT — keskitetty värimääritys canvas-piirrolle
+   ------------------------------------------------------------
+   KAIKKI kankaalle piirretyt värit luetaan aktiivisesta PAL-
+   objektista. Skeemoja on kaksi:
+     PAL_COLOR — täysi väripaletti (oletus, 1:1 aiempi paletti)
+     PAL_MONO  — valkoinen/harmaa duotone kirkkaaseen aurinkoon
+   Aktiivinen skeema valitaan asetuksesta (S.settings.monoScheme)
+   funktiolla applyColorScheme(). render() lukee PAL:n joka ruudussa,
+   joten skeeman vaihto näkyy heti seuraavassa framessa.
+
+   Avaimet ovat semanttisesti erillisiä myös kun arvo sattuu
+   olemaan sama — näin kumpikin skeema säätää kutakin roolia
+   erikseen tärkeysjärjestyksen mukaan. Piirto-/tilalogiikkaan
+   ei kosketa: väriskeema on puhtaasti arvojen vaihto.
+   ============================================================ */
+const PAL_COLOR = {
+  // --- Pääluku (hero) ---
+  hero:         '#ff2b2b',        // suunta kompassista (normaali)
+  heroOffshore: '#ff2d7a',        // suunta GPS-COG:sta (Offshore) — violetinpunainen, punaisen perhettä mutta violetimpi
+  heroLabel:    '#6a6a6a',        // HDG/COG-selite
+
+  // --- Poikkeamatilan tekstisana (LIFT/HEADER/GROOVE/TACK) ---
+  stLift:       '#19e26a',        // lift (myönteinen)
+  stGroove:     '#cfcfcf',        // groove (neutraali)
+  stTack:       '#19e0e0',        // tack-kynnys ylitetty (turkoosi kuten palkit)
+  stHeader:     '#ff2b2b',        // header (kielteinen)
+  stNomean:     '#6a6a6a',        // ei meania asetettu
+
+  // --- Sekundaarilabelit (LIFT/PERF/SOG/VMG-otsikot) ---
+  label:        '#6a6a6a',
+
+  // --- Kaaripalkki: header-puolen gradientti (kiihtyvä varoitus keskeltä reunaan) ---
+  gaugeIdle:    '#333333',        // (vain mono-tila käyttää; väritilassa sammuneet käyttävät puolensa väriä)
+  gaugeG0:      '#19e26a',        // ratio <0.25  vihreä
+  gaugeG1:      '#ffd11a',        // ratio <0.5   keltainen
+  gaugeG2:      '#ff8a1e',        // ratio <0.75  oranssi
+  gaugeG3:      '#ff2b2b',        // ratio ≥0.75  punainen
+  // --- Kaaripalkki: lift-puoli (hyvä, kirkastuu hieman reunaa kohti) ---
+  liftLo:       '#19e26a',        // ratio <0.6
+  liftHi:       '#2bff86',        // ratio ≥0.6
+  // --- Kaaripalkki: tack-varoitus (vilkkuu) ---
+  tackBlink:    '#19e0e0',        // vilkun kirkas vaihe
+  tackDim:      '#0a5a5a',        // vilkun tumma vaihe
+  // --- Kaaripalkki: pegged (poikkeama skaalan ääripäässä) ---
+  peggedDim:    '#3a0d0d',
+  // --- Kaaripalkki: keskiviiva + asteikkonumerot ---
+  gaugeCenter:  'rgba(255,255,255,.4)',
+  gaugeScale:   '#7a1d1d',
+
+  // --- PERF (P90-polaari, kolmiportainen kirkkaus) ---
+  perfNone:     '#3a3a3a',        // ei dataa
+  perfDim:      '#7a4040',        // vähän dataa (himmeä)
+  perfBright:   '#ff7a7a',        // riittävästi dataa
+
+  // --- SOG ---
+  sog:          '#ff7a7a',
+  sogNone:      '#3a3a3a',
+
+  // --- VMG (nopeus tuulen akselilla) ---
+  vmg:          '#ffb020',        // meripihka
+  vmgNone:      '#3a3a3a',
+
+  // --- meanFlash (✓ kun mean asetetaan) ---
+  meanCheck:    '#19e26a',
+
+  // --- Onboarding-ohjerivi kankaalla ---
+  instruction:  '#ffffff',
+
+  // --- Ei-dataa / odotustilaruudut ---
+  waitCompass1: '#ff7a7a',        // "WAITING FOR COMPASS…"
+  waitCompass2: '#ff5a5a',        // "NO COMPASS DATA"
+  waitSub:      '#9a9a9a',        // aputeksti odotusruuduissa
+  waitOffshore: '#7ad9ff',        // "OFFSHORE · WAITING FOR SPEED"
+};
+
+/* ------------------------------------------------------------
+   PAL_MONO — valkoinen/harmaa duotone (kirkas aurinko)
+   ------------------------------------------------------------
+   Periaate: auringossa vain valkoinen ja lähes-valkoinen
+   säilyttävät kontrastin, joten PAKKO-LUETTAVA työnnetään
+   valkoista kohti (W) ja harmaat varataan vaimennukseen
+   (selitteet, inaktiiviset tilat), joissa haipuminen on ok.
+
+   Ramppi:  W #ffffff · L #cfcfcf · M #8a8a8a · D #4a4a4a · X #2a2a2a
+   ------------------------------------------------------------ */
+const PAL_MONO = {
+  // --- Pääluku (hero) — molemmat lähteet valkoisia (W) ---
+  hero:         '#ffffff',
+  heroOffshore: '#ffffff',
+  heroLabel:    '#8a8a8a',        // M — selite
+
+  // --- Poikkeamatilan tekstisana — kantaa hyvä/paha yksiselitteisesti ---
+  stLift:       '#cfcfcf',        // L
+  stGroove:     '#8a8a8a',        // M
+  stTack:       '#ffffff',        // W — kiireellisin
+  stHeader:     '#cfcfcf',        // L
+  stNomean:     '#4a4a4a',        // D
+
+  // --- Sekundaarilabelit (LIFT/PERF/SOG/VMG-otsikot) ---
+  label:        '#8a8a8a',        // M
+
+  // --- Kaaripalkki: header ESKALOI vaiheittain, lift pysyy hiljaisena ---
+  //   Sammuneet palkit piirtyvät neutraalilla gaugeIdle-sävyllä molemmilla
+  //   puolilla (ks. drawGauge) → tyhjä gauge on symmetrinen, ei "puolikas".
+  //   Syttyvät header-palkit kirkastuvat sisältä ulos (himmeä → valkoinen)
+  //   = kiihtyvä hälytys ilman sävyä. Lift-palkit jäävät tasaisen himmeiksi
+  //   (hyvä uutinen ei eskaloi), selvästi headeria vaimeammiksi.
+  gaugeIdle:    '#333333',        // sammuneen palkin lepotila (vain mono, molemmat puolet)
+  gaugeG0:      '#6a6a6a',        // header lievin  → himmeä
+  gaugeG1:      '#9a9a9a',        // header
+  gaugeG2:      '#cccccc',        // header
+  gaugeG3:      '#ffffff',        // header pahin   → valkoinen
+  liftLo:       '#555555',        // lift → tasainen himmeä (ei eskaloi)
+  liftHi:       '#555555',        // lift → tasainen himmeä
+  // --- Tack-vilkku: täyskontrasti W↔X erottuu auringossa liikkeenä ---
+  tackBlink:    '#ffffff',        // W  (rajumpi välähdys: vie tackDim → '#141414')
+  tackDim:      '#2a2a2a',        // X
+  // --- Pegged / keskiviiva / asteikko ---
+  peggedDim:    '#4a4a4a',        // D
+  gaugeCenter:  'rgba(255,255,255,.4)', // ennallaan — jo neutraali
+  gaugeScale:   '#4a4a4a',        // D
+
+  // --- PERF: datavarmuuden luonnollinen luminanssiramppi X→M→L ---
+  perfNone:     '#2a2a2a',        // X
+  perfDim:      '#8a8a8a',        // M
+  perfBright:   '#cfcfcf',        // L
+
+  // --- SOG ---
+  sog:          '#cfcfcf',        // L
+  sogNone:      '#2a2a2a',        // X
+
+  // --- VMG ---
+  vmg:          '#cfcfcf',        // L
+  vmgNone:      '#2a2a2a',        // X
+
+  // --- meanFlash (✓) ---
+  meanCheck:    '#ffffff',        // W
+
+  // --- Onboarding-ohjerivi ---
+  instruction:  '#ffffff',        // W
+
+  // --- Ei-dataa / odotustilaruudut ---
+  waitCompass1: '#cfcfcf',        // L
+  waitCompass2: '#ffffff',        // W
+  waitSub:      '#8a8a8a',        // M
+  waitOffshore: '#cfcfcf',        // L
+};
+
+// Aktiivinen paletti — vaihdetaan applyColorScheme():lla asetuksen mukaan.
+// render()/drawGauge() lukevat 'PAL':n joka framessa, joten uudelleensijoitus
+// riittää: seuraava frame piirtyy uudella skeemalla.
+let PAL = PAL_COLOR;
+function applyColorScheme(){ PAL = S.settings.monoScheme ? PAL_MONO : PAL_COLOR; }
 
 /* ============================================================
    POLAARI — VAIHE 0.5 + VAIHE 1 (näkymätön taustakeruu, ei UI:ta)
@@ -1008,13 +1163,13 @@ function pad3(v){ return String(Math.round(norm(v))).padStart(3,'0'); }
 
 /* --- kaaripalkki (oskillaatiomittari) --- */
 function gaugeColor(ratio){ // header-puoli: kiihtyvä varoitus keskeltä reunaan
-  if(ratio<0.25) return '#19e26a';
-  if(ratio<0.5) return '#ffd11a';
-  if(ratio<0.75) return '#ff8a1e';
-  return '#ff2b2b';
+  if(ratio<0.25) return PAL.gaugeG0;
+  if(ratio<0.5) return PAL.gaugeG1;
+  if(ratio<0.75) return PAL.gaugeG2;
+  return PAL.gaugeG3;
 }
 function liftColor(ratio){ // lift-puoli: hyvä, pysyy vihreänä (kirkastuu hieman reunaa kohti)
-  return ratio<0.6 ? '#19e26a' : '#2bff86';
+  return ratio<0.6 ? PAL.liftLo : PAL.liftHi;
 }
 // poikkeaman väri etumerkin mukaan: lift (+) vihreä, header (−) kiihtyvä varoitus
 function shiftColor(lifted, scale){
@@ -1101,24 +1256,27 @@ function drawGauge(lifted,status,dim){
       if(targetI>0 && i>0 && i<=targetI) lit=true;
       if(targetI<0 && i<0 && i>=targetI) lit=true;
     }
-    if(tackSide && lit){ col = blink? '#19e0e0' : '#0a5a5a'; }
-    if(pegged && lit && Math.abs(i)===nBars && !blink){ col='#3a0d0d'; }
+    if(tackSide && lit){ col = blink? PAL.tackBlink : PAL.tackDim; }
+    if(pegged && lit && Math.abs(i)===nBars && !blink){ col=PAL.peggedDim; }
+    // mono: sammuneet palkit neutraalilla lepotila-sävyllä MOLEMMILLA puolilla,
+    // jotta tyhjä gauge näyttää symmetriseltä eikä "aina puolikkaalta". Väritila ennallaan.
+    const drawCol = (S.settings.monoScheme && !lit) ? PAL.gaugeIdle : col;
     ctx.save();
-    ctx.fillStyle=col; ctx.globalAlpha = (lit? 1 : 0.22) * dim;
-    if(lit){ ctx.shadowColor=col; ctx.shadowBlur=10; }
+    ctx.fillStyle=drawCol; ctx.globalAlpha = (lit? 1 : 0.22) * dim;
+    if(lit){ ctx.shadowColor=drawCol; ctx.shadowBlur=10; }
     ctx.fillRect(x-barW/2, baselineY-h, barW, h); // alapää alalinjalla, kasvaa ylös
     ctx.restore();
   }
   // keskiviiva (0)
   ctx.save();
   ctx.globalAlpha=dim;
-  ctx.strokeStyle='rgba(255,255,255,.4)'; ctx.lineWidth=Math.max(1,W*0.002);
+  ctx.strokeStyle=PAL.gaugeCenter; ctx.lineWidth=Math.max(1,W*0.002);
   ctx.beginPath(); ctx.moveTo(cx, baselineY-minBarH*1.3); ctx.lineTo(cx, baselineY+6); ctx.stroke();
   ctx.restore();
   // asteikkonumerot — yhteisen alalinjan alle
   ctx.save();
   ctx.globalAlpha=dim;
-  ctx.fillStyle='#7a1d1d'; ctx.font=`600 ${fs}px ${getCSS('--mono')}`;
+  ctx.fillStyle=PAL.gaugeScale; ctx.font=`600 ${fs}px ${getCSS('--mono')}`;
   ctx.textAlign='center'; ctx.textBaseline='top';
   [0.25,0.5,0.75,1].forEach(tk=>{
     const val=Math.round(scale*tk);
@@ -1184,14 +1342,14 @@ function render(){
     const waited=Date.now()-S.liveSince;
     ctx.save(); ctx.textAlign='center';
     if(waited<2500){
-      ctx.fillStyle='#ff7a7a'; ctx.textBaseline='middle';
+      ctx.fillStyle=PAL.waitCompass1; ctx.textBaseline='middle';
       ctx.font=`700 ${small0*0.05}px ${getCSS('--mono')}`;
       ctx.fillText('WAITING FOR COMPASS…', W/2, H*0.42);
     } else {
-      ctx.fillStyle='#ff5a5a'; ctx.textBaseline='middle';
+      ctx.fillStyle=PAL.waitCompass2; ctx.textBaseline='middle';
       ctx.font=`800 ${small0*0.055}px ${getCSS('--mono')}`;
       ctx.fillText('NO COMPASS DATA', W/2, H*0.38);
-      ctx.fillStyle='#9a9a9a'; ctx.font=`600 ${small0*0.030}px ${getCSS('--sans')}`;
+      ctx.fillStyle=PAL.waitSub; ctx.font=`600 ${small0*0.030}px ${getCSS('--sans')}`;
       ctx.fillText('Open in Safari (https) and allow Motion & Orientation.', W/2, H*0.50);
       ctx.fillText('Or go back to the demo.', W/2, H*0.565);
     }
@@ -1209,10 +1367,10 @@ function render(){
     const small0=Math.min(W,H);
     const sogTxt = S.gps.sog!=null ? S.gps.sog.toFixed(1)+' kn' : '-- kn';
     ctx.save(); ctx.textAlign='center'; ctx.textBaseline='middle';
-    ctx.fillStyle='#7ad9ff';
+    ctx.fillStyle=PAL.waitOffshore;
     ctx.font=`800 ${small0*0.05}px ${getCSS('--mono')}`;
     ctx.fillText('OFFSHORE · WAITING FOR SPEED', W/2, H*0.42);
-    ctx.fillStyle='#9a9a9a';
+    ctx.fillStyle=PAL.waitSub;
     ctx.font=`600 ${small0*0.028}px ${getCSS('--sans')}`;
     ctx.fillText('COG needs > '+OFFSHORE_MIN_KN+' kn SOG · currently '+sogTxt, W/2, H*0.50);
     ctx.restore();
@@ -1299,7 +1457,7 @@ function render(){
   // Pääluvun väri: violetinpunainen kun suunta tulee Offshore/COG:sta, muuten normaali punainen.
   // cogWaiting-tilassa tähän ei koskaan tulla (return yllä), joten offshoreCog=true tarkoittaa
   // aina että heading on juuri nyt GPS-COG-peräinen.
-  const heroColor = S.settings.offshoreCog ? OFFSHORE_HERO_COLOR : '#ff2b2b';
+  const heroColor = S.settings.offshoreCog ? PAL.heroOffshore : PAL.hero;
   drawNumber(headStr, W/2, heroY, heroSize, heroColor, true);
   // Heron seliteteksti: HDG normaalisti, COG Offshore-tilassa (sama lähde-erottelu
   // kuin heron väri). Piirretään heron yläreunan yläpuolelle varattuun tilaan,
@@ -1308,14 +1466,14 @@ function render(){
   const heroLblSize = Math.max(10, small*0.026*sScale);
   if(P){
     // portrait: selite heron yläpuolella (tilaa on, yhtenäinen sekundaarilabelien kanssa)
-    label(heroLabel, W/2, heroY - heroSize/2 - H*0.025, heroLblSize, '#6a6a6a','center');
+    label(heroLabel, W/2, heroY - heroSize/2 - H*0.025, heroLblSize, PAL.heroLabel,'center');
   } else {
     // landscape: selite heron VASEMMALLA, pystysuunnassa keskitettynä heroon.
     // Sijoitus heron vasemman reunan viereen (heron puolileveys ≈ heroSize*1.11);
     // tässä kohtaa gaugen palkit ovat heron korkeudella matalampia kuin selite,
     // joten myöhemmin piirtyvä gauge ei peitä sitä.
     label(heroLabel, W/2 - heroSize*1.11 - H*0.015, heroY + heroLblSize*0.35,
-          heroLblSize, '#6a6a6a','right');
+          heroLblSize, PAL.heroLabel,'right');
   }
 
   // Yläriviluvun sarakkeet (2c): portraitissa 3 saraketta (VMG putoaa heron alle),
@@ -1329,25 +1487,26 @@ function render(){
   // --- vasen: LIFT/HEADER/GROOVE/TACK (ennallaan, himmennetään myötätuulella) ---
   ctx.save();
   ctx.globalAlpha = dim;
-  let devCol='#6a6a6a', stateTxt='NO MEAN';
+  let devCol=PAL.stNomean, stateTxt='NO MEAN';
   if(dispStatus!=='nomean'){
-    if(dispStatus==='lift'){ devCol='#19e26a'; stateTxt='LIFT'; }
-    else if(dispStatus==='groove'){ devCol='#cfcfcf'; stateTxt='GROOVE'; }
+    if(dispStatus==='lift'){ devCol=PAL.stLift; stateTxt='LIFT'; }
+    else if(dispStatus==='groove'){ devCol=PAL.stGroove; stateTxt='GROOVE'; }
     else { // header
-      if(Math.abs(dispLifted)>=S.settings.tackThresh){ devCol='#19e0e0'; stateTxt='TACK'; }
-      else { devCol='#ff2b2b'; stateTxt='HEADER'; }
+      if(Math.abs(dispLifted)>=S.settings.tackThresh){ devCol=PAL.stTack; stateTxt='TACK'; }
+      else { devCol=PAL.stHeader; stateTxt='HEADER'; }
     }
   }
   const devStr = (dispStatus==='nomean') ? '--' : (dispLifted>0?'':'-')+Math.abs(Math.round(dispLifted));
-  const devNumCol = (dispStatus==='nomean') ? '#6a6a6a'
-                  : (stateTxt==='TACK') ? '#19e0e0'                      // tack: turkoosi kuten palkit
-                  : shiftColor(dispLifted, S.settings.gaugeScale);       // lift vihreä, header kiihtyvä
+  const devNumCol = (dispStatus==='nomean') ? PAL.stNomean
+                  : (stateTxt==='TACK') ? PAL.stTack                      // tack: turkoosi kuten palkit
+                  : S.settings.monoScheme ? devCol                       // mono: numero seuraa tilasanan luettavaa sävyä — lift-palkit katoavat, mutta lift-luku ei
+                  : shiftColor(dispLifted, S.settings.gaugeScale);       // väri: lift vihreä, header kiihtyvä
   label(stateTxt, W*0.16, yEy, Math.max(11,small*0.027*sScale), devCol,'center');
   drawNumber(devStr, W*0.16, yVal, small*0.092*sScale, devNumCol, true);
   ctx.restore();
 
   // meanFlash-välähdys (✓ kun mean asetetaan) — piirretään canvasille muttei enää lukua
-  if(meanFlash>0){ ctx.save(); ctx.globalAlpha=Math.min(1,meanFlash); ctx.fillStyle='#19e26a';
+  if(meanFlash>0){ ctx.save(); ctx.globalAlpha=Math.min(1,meanFlash); ctx.fillStyle=PAL.meanCheck;
     ctx.font=`800 ${small*0.06}px ${getCSS('--mono')}`; ctx.textAlign='center'; ctx.textBaseline='middle';
     ctx.fillText('✓', W/2, yVal); ctx.restore(); meanFlash-=0.03; }
 
@@ -1359,16 +1518,16 @@ function render(){
   const _sogNow=(S.gps.on&&S.gps.sog!=null)?S.gps.sog:null;
   const _pd=Polar.perf(_twaNow,_sogNow);
   let perfStr,perfCol;
-  if(!_pd||_pd.state==='none'){ perfStr='--'; perfCol='#3a3a3a'; }
-  else if(_pd.state==='dim'){   perfStr=_pd.pct+'%'; perfCol='#7a4040'; }
-  else {                        perfStr=_pd.pct+'%'; perfCol='#ff7a7a'; }
-  label('PERF', colPerf, yEy, Math.max(10,small*0.024*sScale), '#6a6a6a','center');
+  if(!_pd||_pd.state==='none'){ perfStr='--'; perfCol=PAL.perfNone; }
+  else if(_pd.state==='dim'){   perfStr=_pd.pct+'%'; perfCol=PAL.perfDim; }
+  else {                        perfStr=_pd.pct+'%'; perfCol=PAL.perfBright; }
+  label('PERF', colPerf, yEy, Math.max(10,small*0.024*sScale), PAL.label,'center');
   drawNumber(perfStr, colPerf, yVal, small*0.092*sScale, perfCol, false);
 
   // --- oikea: SOG (ensisijainen — saatavilla heti GPS:n kanssa) ---
   const sogStr = (S.gps.on && S.gps.sog!=null) ? S.gps.sog.toFixed(1) : '--';
-  const sogCol = (S.gps.on && S.gps.sog!=null) ? '#ff7a7a' : '#3a3a3a';
-  label('SOG', colSog, yEy, Math.max(10,small*0.024*sScale), '#6a6a6a','center');
+  const sogCol = (S.gps.on && S.gps.sog!=null) ? PAL.sog : PAL.sogNone;
+  label('SOG', colSog, yEy, Math.max(10,small*0.024*sScale), PAL.label,'center');
   drawNumber(sogStr, colSog, yVal, small*0.092*sScale, sogCol, false);
 
   // --- VMG (2c): |SOG·cos(TWA)| — nopeus tuulen akselilla, meripihka #ffb020 ---
@@ -1379,16 +1538,16 @@ function render(){
   const _vmg = (_twaNow!=null && _sogNow!=null)
              ? Math.abs(_sogNow*Math.cos(_twaNow*Math.PI/180)) : null;
   const vmgStr = _vmg!=null ? _vmg.toFixed(1) : '--';
-  const vmgCol = _vmg!=null ? '#ffb020' : '#3a3a3a';
+  const vmgCol = _vmg!=null ? PAL.vmg : PAL.vmgNone;
   if(P){
     // portrait: heron alla, gaugen keskilaaksossa (keskipalkit aina matalia)
     const vmgLabelY = heroY + heroSize/2 + H*0.05;
     const vmgNumY   = vmgLabelY + H*0.06;
-    label('VMG', W*0.50, vmgLabelY, Math.max(10,small*0.024*sScale), '#6a6a6a','center');
+    label('VMG', W*0.50, vmgLabelY, Math.max(10,small*0.024*sScale), PAL.label,'center');
     drawNumber(vmgStr, W*0.50, vmgNumY, small*0.092*sScale, vmgCol, false);
   } else {
     // landscape: 4. sarake äärioikealla
-    label('VMG', colVmg, yEy, Math.max(10,small*0.024*sScale), '#6a6a6a','center');
+    label('VMG', colVmg, yEy, Math.max(10,small*0.024*sScale), PAL.label,'center');
     drawNumber(vmgStr, colVmg, yVal, small*0.092*sScale, vmgCol, false);
   }
 
@@ -1408,7 +1567,7 @@ function render(){
       instrLine = 'TACK ON STB  ·  SETTLE  ·  TAP SET STB';
     }
     const fs = Math.max(11, small*0.026);
-    label(instrLine, W/2, H*0.72, fs, '#ffffff', 'center');
+    label(instrLine, W/2, H*0.72, fs, PAL.instruction, 'center');
   } else {
     drawGauge(dispLifted, dispStatus, dim);
   }
@@ -1468,6 +1627,7 @@ document.querySelectorAll(".tog").forEach(t=>{
     if(k==='wake') applyWake();
     if(k==='audio'){ if(S.settings.audio) enableAudio(); else disableAudio(); }
     if(k==='offshoreCog') applyOffshoreCog();
+    if(k==='monoScheme') applyColorScheme();
   });
 });
 document.querySelectorAll(".seg").forEach(seg=>{
@@ -1494,7 +1654,7 @@ document.querySelectorAll(".stepper").forEach(st=>{
 });
 
 /* ---------- init ---------- */
-const APP_VERSION="mittari v0.66";
+const APP_VERSION="mittari v0.71";
 (function(){
   const e=$("verEnable"); if(e) e.textContent=APP_VERSION;
   const n=$("verNote"); if(n) n.textContent=APP_VERSION+" · shares engine with index.html";
@@ -1528,6 +1688,7 @@ if(window.visualViewport){
 setInterval(checkOrientation, 600);
 syncToggles();
 applyOffshoreCog();
+applyColorScheme();
 resize();
 loop();
 </script>
