@@ -190,6 +190,7 @@ body.portrait #btnMean{top:22%; height:22%;}
 <h2>Settings</h2>
 <div class="row"><div class="lbl">GPS<small>SOG speed · polar performance learning</small></div><div class="tog" data-key="gps"></div></div>
 <div class="row"><div class="lbl">Offshore (COG)<small>Replaces compass with GPS course over ground. Ignores leeway — best above ~3 kn. Turns GPS on automatically.</small></div><div class="tog" data-key="offshoreCog"></div></div>
+<div class="row"><div class="lbl">Auto mean refresh<small>Learns your close-hauled angle and quietly refreshes both tack means from matched pairs of good upwind legs. Manual Set Mean always works. Off by default.</small></div><div class="tog" data-key="autoMeanRefresh"></div></div>
 <div class="row"><div class="lbl">Display mode<small>Off: Heading · enlarged main number<br>On: Instruments · enlarged secondary data</small></div><div class="tog" data-key="headingFocus"></div></div>
 <div class="row"><div class="lbl">Duotone (sunlight)<small>Off: full colour<br>On: white / grey — max contrast in bright sun</small></div><div class="tog" data-key="monoScheme"></div></div>
 <div class="row"><div class="lbl">Keep screen awake</div><div class="tog" data-key="wake"></div></div>
@@ -282,11 +283,12 @@ const S = {
   smooth:{sx:1, sy:0, k:0.78},
   tack:null, meanStb:null, meanBb:null, meanStbTs:null, meanBbTs:null,
   meanStbStability:null, meanBbStability:null,
+  meanStbSogRatio:null, meanBbSogRatio:null, // O1 SOG-ristivalidointi (white paper 4.5) — talteenotto, ei vielä käytössä päätöksissä
   rangeBuf:[],
   gps:{cog:null, sog:null, on:false, watch:null},
   wakeLock:null,
   demo:false, demoT:0,
-  settings:{ deadband:3, tackThresh:20, tackAngle:90, gps:true, wake:false, smooth:5, audio:false, gaugeScale:20, headingFocus:false, headingOffset:0, orientationLock:'auto', offshoreCog:false, monoScheme:false }, // tackThresh oletus = skaalan max, käyttäjä kiristää itse; headingOffset = asennuskorjaus, orientationLock = Portrait/Landscape/Automatic; offshoreCog = korvaa kompassin GPS-COG:lla; monoScheme = valkoinen/harmaa duotone-väriskeema kirkkaaseen aurinkoon, ks. valmistusohjeet
+  settings:{ deadband:3, tackThresh:20, tackAngle:90, gps:true, wake:false, smooth:5, audio:false, gaugeScale:20, headingFocus:false, headingOffset:0, orientationLock:'auto', offshoreCog:false, monoScheme:false, autoMeanRefresh:false }, // tackThresh oletus = skaalan max, käyttäjä kiristää itse; headingOffset = asennuskorjaus, orientationLock = Portrait/Landscape/Automatic; offshoreCog = korvaa kompassin GPS-COG:lla; monoScheme = valkoinen/harmaa duotone-väriskeema kirkkaaseen aurinkoon; autoMeanRefresh = tuulennollapisteen automaattinen virkistys käännöspareista (oletus pois, ks. valmistusohjeet)
   source:null, compassOk:false, liveSince:0,
   audio:{ state:'nomean', cand:'nomean', candSince:0, tackSince:null, tackArmed:true, tackLockUntil:0 },
 };
@@ -473,6 +475,22 @@ const Polar = (function(){
   const STABILITY_WINDOW_MS = 10*1000;
   let log = [];
 
+  // ============================================================
+  // Tuulennollapisteen automaattinen virkistys (valinnainen, oletus pois)
+  // Katso valmistusohjeet: tunnistaa vakaat closehauled-jaksot, suodattaa
+  // ne opitun kulman ja SOG-ristivalidoinnin läpi, ja päivittää molemmat
+  // meanit kun molemmilta halsseilta on tuore hyväksytty ehdokas.
+  // Kaikki kynnykset alustavia — kalibroitava kenttädatalla (O4/O5-henki).
+  // ============================================================
+  const AMR_STAB_THRESH   = 0.985; // vakaan jakson kynnys (mean resultant length)
+  const AMR_MIN_SAMPLES   = 6;     // min. näytettä jaksossa (~6 s @ 1×/s)
+  const AMR_CH_TOL        = 18;    // sallittu poikkeama opitusta puolikulmasta (°)
+  const AMR_SOG_RATIO     = 0.85;  // min. SOG-suhde halssin P90:een
+  const AMR_MAX_PAIR_GAP_MS = 6*60*1000; // kuinka vanha pariehdokas saa olla (6 min)
+  let learnedTackAngle = null;     // opittu täysi kulma meanStb↔meanBb
+  let _segment = {active:false, startT:null, samples:[]};
+  let _candStb = null, _candBb = null; // {hdg,sog,ts,stability,sogRatio}
+
   function loadLog(){
     try{
       const raw = localStorage.getItem(LOG_KEY);
@@ -485,12 +503,14 @@ const Polar = (function(){
     catch(e){ /* storage täynnä tai estetty — ei kaadeta sovellusta */ }
   }
 
-  // Osa A — meanit + aikaleima + vakaus
+  // Osa A — meanit + aikaleima + vakaus + SOG-ristivalidointi (O1)
   function saveMeans(){
     try{
       localStorage.setItem(MEANS_KEY, JSON.stringify({
         meanStb:S.meanStb, meanStbTs:S.meanStbTs, meanStbStability:S.meanStbStability,
-        meanBb:S.meanBb,   meanBbTs:S.meanBbTs,   meanBbStability:S.meanBbStability
+        meanBb:S.meanBb,   meanBbTs:S.meanBbTs,   meanBbStability:S.meanBbStability,
+        meanStbSogRatio:S.meanStbSogRatio, meanBbSogRatio:S.meanBbSogRatio,
+        learnedTackAngle:learnedTackAngle
       }));
     }catch(e){ /* ei kaadeta */ }
   }
@@ -504,11 +524,16 @@ const Polar = (function(){
       if(d.meanStb!=null && d.meanStbTs!=null && (now-d.meanStbTs)<=MEAN_MAX_AGE_MS){
         S.meanStb = d.meanStb; S.meanStbTs = d.meanStbTs;
         S.meanStbStability = (d.meanStbStability!=null) ? d.meanStbStability : null;
+        S.meanStbSogRatio = (d.meanStbSogRatio!=null) ? d.meanStbSogRatio : null;
       }
       if(d.meanBb!=null && d.meanBbTs!=null && (now-d.meanBbTs)<=MEAN_MAX_AGE_MS){
         S.meanBb = d.meanBb; S.meanBbTs = d.meanBbTs;
         S.meanBbStability = (d.meanBbStability!=null) ? d.meanBbStability : null;
+        S.meanBbSogRatio = (d.meanBbSogRatio!=null) ? d.meanBbSogRatio : null;
       }
+      // learnedTackAngle on opittu veneen ominaisuus, ei ajanhetken mittaus —
+      // ei vanhene mean-aikaleiman tavoin, joten ladataan ehdoitta jos tallessa.
+      if(d.learnedTackAngle!=null) learnedTackAngle = d.learnedTackAngle;
     }catch(e){ /* korruptoitunut tallenne — jätetään mean tyhjäksi */ }
   }
   function clearMeans(){
@@ -529,6 +554,31 @@ const Polar = (function(){
     return Math.sqrt(sx*sx+sy*sy);
   }
 
+  // O1 — SOG-ristivalidointi (white paper 4.5): SOG:n keskiarvo täsmälleen
+  // samalta 10 s ikkunalta kuin heading-vakaus, jotta molemmat signaalit
+  // kuvaavat samaa mean-asetushetkeä. Sama minimiotoskynnys kuin stabilityllä.
+  function computeAvgSog(){
+    const now = Date.now();
+    const recent = S.rangeBuf.filter(p => now - p.t <= STABILITY_WINDOW_MS && p.sog!=null);
+    if(recent.length < 3) return null;
+    return recent.reduce((s,p)=>s+p.sog,0) / recent.length;
+  }
+
+  // O1 — kevyt halssikohtainen SOG-P90 suoraan raakalokista, EI TWA-sidottu
+  // (ei sama kuin Vaiheen 2b kernel-P90 alempana). TWA-sidottu versio tarvitsisi
+  // molemmat meanit jo asetettuina — juuri setMean()-hetkellä tämä johtaisi
+  // kehäpäättelyyn, joten tässä käytetään suoraa, tavallista kvantiilia SOG:sta
+  // sillä halssilla kertyneestä raakadatasta. Minimiotos: 2 pistettä (tarkoituksella
+  // löysä ensimmäisessä vaiheessa, ks. O5-henkinen kynnysperiaate).
+  function tackSogP90(tack){
+    if(tack!=='stb' && tack!=='bb') return null;
+    const vals = log.filter(p=>p.tack===tack && p.sog!=null).map(p=>p.sog).sort((a,b)=>a-b);
+    if(vals.length < 2) return null;
+    const pos = 0.9*(vals.length-1);
+    const lo = Math.floor(pos), hi = Math.ceil(pos);
+    return vals[lo] + (vals[hi]-vals[lo])*(pos-lo);
+  }
+
   // Vaihe 1 — windAge-kirjanpito: sekunteja viimeisimmän mean-asetuksen jälkeen
   // (kumpi tahansa halssi, koska estWind() tarvitsee molempia). Pelkkä kirjanpito,
   // ei vielä kytketty mihinkään näkymättömään automatiikkaan.
@@ -536,6 +586,80 @@ const Polar = (function(){
     const ts = Math.max(S.meanStbTs||0, S.meanBbTs||0);
     if(!ts) return null;
     return Math.round((Date.now()-ts)/1000);
+  }
+
+  // --- Tuulennollapisteen automaattinen virkistys: apufunktiot ---
+  // Kiertokeskiarvo taulukolle asteita (mean resultant -suunta).
+  function _circMeanArr(degs){
+    let sx=0, sy=0;
+    for(const d of degs){ const r=d*Math.PI/180; sx+=Math.cos(r); sy+=Math.sin(r); }
+    if(sx===0 && sy===0) return null;
+    let a = Math.atan2(sy,sx)*180/Math.PI;
+    return (a<0)?a+360:a;
+  }
+
+  // Kutsutaan 1×/s samasta syklistä kuin collectPoint. Portti: koko mekanismi
+  // on lepotilassa kun asetus on pois — ei kerää, ei laske, ei koske meaneihin.
+  function tickSegment(){
+    if(!S.settings.autoMeanRefresh) return;
+    if(S.heading==null) return;
+    const stab = computeStability();
+    const now = Date.now();
+    if(stab!=null && stab>=AMR_STAB_THRESH){
+      if(!_segment.active) _segment = {active:true, startT:now, samples:[]};
+      _segment.samples.push({hdg:S.heading, sog:(S.gps.sog!=null?S.gps.sog:null)});
+    } else {
+      if(_segment.active) _finalizeSegment(_segment);
+      _segment = {active:false, startT:null, samples:[]};
+    }
+  }
+
+  function _finalizeSegment(seg){
+    if(!seg.samples || seg.samples.length < AMR_MIN_SAMPLES) return;
+    const avgHdg = _circMeanArr(seg.samples.map(s=>s.hdg));
+    if(avgHdg==null) return;
+    const sogVals = seg.samples.map(s=>s.sog).filter(v=>v!=null);
+    if(sogVals.length===0) return;
+    const avgSog = sogVals.reduce((a,b)=>a+b,0)/sogVals.length;
+    // Suodatin 1: näyttääkö nousukurssilta? Tarvitaan sekä opittu kulma että
+    // nykyinen tuuliakseli (molemmat meanit olemassa).
+    if(learnedTackAngle==null || S.meanStb==null || S.meanBb==null) return;
+    const windAxis = _cm2(S.meanStb, S.meanBb);
+    const d = Math.abs(_na(avgHdg - windAxis));
+    const expected = learnedTackAngle/2;
+    if(Math.abs(d-expected) > AMR_CH_TOL) return;
+    const tack = Math.abs(_na(avgHdg-S.meanStb)) <= Math.abs(_na(avgHdg-S.meanBb)) ? 'stb':'bb';
+    // Suodatin 2: kulkiko vene hyvin? (sama halssikohtainen SOG-P90 kuin O1)
+    const p90 = tackSogP90(tack);
+    if(p90==null || p90<=0) return;
+    const ratio = avgSog/p90;
+    if(ratio < AMR_SOG_RATIO) return;
+    const cand = {hdg:avgHdg, sog:avgSog, ts:Date.now(), stability:computeStability(), sogRatio:ratio};
+    if(tack==='stb') _candStb = cand; else _candBb = cand;
+    _tryCommit();
+  }
+
+  function _tryCommit(){
+    if(_candStb==null || _candBb==null) return;
+    const gap = Math.abs(_candStb.ts - _candBb.ts);
+    if(gap > AMR_MAX_PAIR_GAP_MS){
+      // vanhempi ehdokas vanheni — pudotetaan se, tuoreempi jää odottamaan uutta paria
+      if(_candStb.ts < _candBb.ts) _candStb=null; else _candBb=null;
+      return;
+    }
+    S.meanStb=_candStb.hdg; S.meanStbTs=_candStb.ts;
+    S.meanStbStability=_candStb.stability; S.meanStbSogRatio=_candStb.sogRatio;
+    S.meanBb=_candBb.hdg; S.meanBbTs=_candBb.ts;
+    S.meanBbStability=_candBb.stability; S.meanBbSogRatio=_candBb.sogRatio;
+    learnedTackAngle = Math.abs(_na(S.meanStb - S.meanBb)); // v1: kova korvaus
+    saveMeans();
+    _candStb=null; _candBb=null;
+  }
+
+  // Nollataan kesken oleva tila kun ominaisuus kytketään pois (kutsutaan togglesta).
+  function amrReset(){
+    _segment = {active:false, startT:null, samples:[]};
+    _candStb=null; _candBb=null;
   }
 
   // Osa B — append-only raakahavaintoloki
@@ -598,19 +722,34 @@ const Polar = (function(){
   function _perfAt(polar,twa){ if(!polar||twa==null)return null; let best=null,bd=Infinity; polar.queries.forEach((q,i)=>{ const d=Math.abs(q-twa); if(d<bd&&polar.results[i].p90!=null){bd=d;best=i;} }); if(best==null||bd>_STEP*1.5)return null; return{p90:polar.results[best].p90,mass:polar.results[best].mass}; }
 
   return {
-    init(){ loadMeans(); loadLog(); setInterval(collectPoint,LOG_INTERVAL_MS); _polar=_computePolar(log); },
+    init(){ loadMeans(); loadLog(); setInterval(collectPoint,LOG_INTERVAL_MS); setInterval(tickSegment,LOG_INTERVAL_MS); _polar=_computePolar(log); },
     onMeanSet(){
       // Vaihe 1: lasketaan vakaus juuri ennen tallennusta — kuvaa kuinka
       // tasainen heading oli viimeisten STABILITY_WINDOW_MS millisekunnin ajan.
-      if(S.tack==='stb') S.meanStbStability = computeStability();
-      else if(S.tack==='bb') S.meanBbStability = computeStability();
+      // O1: SOG-ristivalidointi samalta ikkunalta, suhteutettuna halssin
+      // siihenastiseen SOG-P90:een. Talteenotto — ei käytetä mihinkään
+      // päätökseen tässä vaiheessa (ks. white paper 4.5, O1).
+      const avgSog = computeAvgSog();
+      const tackP90 = tackSogP90(S.tack);
+      const ratio = (avgSog!=null && tackP90!=null && tackP90>0) ? avgSog/tackP90 : null;
+      if(S.tack==='stb'){ S.meanStbStability = computeStability(); S.meanStbSogRatio = ratio; }
+      else if(S.tack==='bb'){ S.meanBbStability = computeStability(); S.meanBbSogRatio = ratio; }
+      // Bootstrap: ensimmäinen manuaalinen mean-pari opettaa closehauled-kulman
+      // automaattiselle virkistykselle. Manuaalinen asetus myös päivittää sen aina,
+      // koska käyttäjän tarkoituksellinen asetus on paras saatavilla oleva totuus.
+      if(S.meanStb!=null && S.meanBb!=null){
+        learnedTackAngle = Math.abs(_na(S.meanStb - S.meanBb));
+      }
       saveMeans();
     },
     onReset(){
       S.meanStbTs=null; S.meanBbTs=null;
       S.meanStbStability=null; S.meanBbStability=null;
+      S.meanStbSogRatio=null; S.meanBbSogRatio=null;
+      learnedTackAngle=null; amrReset();
       clearMeans();
     },
+    amrOff(){ amrReset(); },
     logLength(){ return log.length; },
     hasData(){ return _polar!=null; },
     recompute(){ _polar=_computePolar(log); return _polar?_polar.nPts:0; },
@@ -690,7 +829,11 @@ function setHeading(raw){
 }
 function pushRange(h){
   const now=Date.now();
-  S.rangeBuf.push({t:now, hdg:h});
+  // O1: sog tallennetaan heading-näytteen rinnalle samaan puskuriin, jotta
+  // mean-vakaus ja SOG-ristivalidointi lasketaan täsmälleen samalta ikkunalta
+  // (white paper 4.5). null jos GPS ei ole päällä tai lukemaa ei vielä ole.
+  const sog = (S.settings.gps && S.gps.sog!=null) ? S.gps.sog : null;
+  S.rangeBuf.push({t:now, hdg:h, sog:sog});
   while(S.rangeBuf.length && now - S.rangeBuf[0].t > HIST_MS) S.rangeBuf.shift();
 }
 function currentMean(){ return S.tack==='stb' ? S.meanStb : (S.tack==='bb' ? S.meanBb : null); }
@@ -1628,6 +1771,7 @@ document.querySelectorAll(".tog").forEach(t=>{
     if(k==='audio'){ if(S.settings.audio) enableAudio(); else disableAudio(); }
     if(k==='offshoreCog') applyOffshoreCog();
     if(k==='monoScheme') applyColorScheme();
+    if(k==='autoMeanRefresh' && !S.settings.autoMeanRefresh) Polar.amrOff();
   });
 });
 document.querySelectorAll(".seg").forEach(seg=>{
@@ -1654,7 +1798,7 @@ document.querySelectorAll(".stepper").forEach(st=>{
 });
 
 /* ---------- init ---------- */
-const APP_VERSION="mittari v0.71";
+const APP_VERSION="mittari v0.73";
 (function(){
   const e=$("verEnable"); if(e) e.textContent=APP_VERSION;
   const n=$("verNote"); if(n) n.textContent=APP_VERSION+" · shares engine with index.html";
