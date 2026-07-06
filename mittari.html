@@ -282,6 +282,7 @@ const S = {
   smooth:{sx:1, sy:0, k:0.78},
   tack:null, meanStb:null, meanBb:null, meanStbTs:null, meanBbTs:null,
   meanStbStability:null, meanBbStability:null,
+  meanStbSogRatio:null, meanBbSogRatio:null, // O1 SOG-ristivalidointi (white paper 4.5) — talteenotto, ei vielä käytössä päätöksissä
   rangeBuf:[],
   gps:{cog:null, sog:null, on:false, watch:null},
   wakeLock:null,
@@ -485,12 +486,13 @@ const Polar = (function(){
     catch(e){ /* storage täynnä tai estetty — ei kaadeta sovellusta */ }
   }
 
-  // Osa A — meanit + aikaleima + vakaus
+  // Osa A — meanit + aikaleima + vakaus + SOG-ristivalidointi (O1)
   function saveMeans(){
     try{
       localStorage.setItem(MEANS_KEY, JSON.stringify({
         meanStb:S.meanStb, meanStbTs:S.meanStbTs, meanStbStability:S.meanStbStability,
-        meanBb:S.meanBb,   meanBbTs:S.meanBbTs,   meanBbStability:S.meanBbStability
+        meanBb:S.meanBb,   meanBbTs:S.meanBbTs,   meanBbStability:S.meanBbStability,
+        meanStbSogRatio:S.meanStbSogRatio, meanBbSogRatio:S.meanBbSogRatio
       }));
     }catch(e){ /* ei kaadeta */ }
   }
@@ -504,10 +506,12 @@ const Polar = (function(){
       if(d.meanStb!=null && d.meanStbTs!=null && (now-d.meanStbTs)<=MEAN_MAX_AGE_MS){
         S.meanStb = d.meanStb; S.meanStbTs = d.meanStbTs;
         S.meanStbStability = (d.meanStbStability!=null) ? d.meanStbStability : null;
+        S.meanStbSogRatio = (d.meanStbSogRatio!=null) ? d.meanStbSogRatio : null;
       }
       if(d.meanBb!=null && d.meanBbTs!=null && (now-d.meanBbTs)<=MEAN_MAX_AGE_MS){
         S.meanBb = d.meanBb; S.meanBbTs = d.meanBbTs;
         S.meanBbStability = (d.meanBbStability!=null) ? d.meanBbStability : null;
+        S.meanBbSogRatio = (d.meanBbSogRatio!=null) ? d.meanBbSogRatio : null;
       }
     }catch(e){ /* korruptoitunut tallenne — jätetään mean tyhjäksi */ }
   }
@@ -527,6 +531,31 @@ const Polar = (function(){
     recent.forEach(p=>{ const r=p.hdg*Math.PI/180; sx+=Math.cos(r); sy+=Math.sin(r); });
     sx/=recent.length; sy/=recent.length;
     return Math.sqrt(sx*sx+sy*sy);
+  }
+
+  // O1 — SOG-ristivalidointi (white paper 4.5): SOG:n keskiarvo täsmälleen
+  // samalta 10 s ikkunalta kuin heading-vakaus, jotta molemmat signaalit
+  // kuvaavat samaa mean-asetushetkeä. Sama minimiotoskynnys kuin stabilityllä.
+  function computeAvgSog(){
+    const now = Date.now();
+    const recent = S.rangeBuf.filter(p => now - p.t <= STABILITY_WINDOW_MS && p.sog!=null);
+    if(recent.length < 3) return null;
+    return recent.reduce((s,p)=>s+p.sog,0) / recent.length;
+  }
+
+  // O1 — kevyt halssikohtainen SOG-P90 suoraan raakalokista, EI TWA-sidottu
+  // (ei sama kuin Vaiheen 2b kernel-P90 alempana). TWA-sidottu versio tarvitsisi
+  // molemmat meanit jo asetettuina — juuri setMean()-hetkellä tämä johtaisi
+  // kehäpäättelyyn, joten tässä käytetään suoraa, tavallista kvantiilia SOG:sta
+  // sillä halssilla kertyneestä raakadatasta. Minimiotos: 2 pistettä (tarkoituksella
+  // löysä ensimmäisessä vaiheessa, ks. O5-henkinen kynnysperiaate).
+  function tackSogP90(tack){
+    if(tack!=='stb' && tack!=='bb') return null;
+    const vals = log.filter(p=>p.tack===tack && p.sog!=null).map(p=>p.sog).sort((a,b)=>a-b);
+    if(vals.length < 2) return null;
+    const pos = 0.9*(vals.length-1);
+    const lo = Math.floor(pos), hi = Math.ceil(pos);
+    return vals[lo] + (vals[hi]-vals[lo])*(pos-lo);
   }
 
   // Vaihe 1 — windAge-kirjanpito: sekunteja viimeisimmän mean-asetuksen jälkeen
@@ -602,13 +631,20 @@ const Polar = (function(){
     onMeanSet(){
       // Vaihe 1: lasketaan vakaus juuri ennen tallennusta — kuvaa kuinka
       // tasainen heading oli viimeisten STABILITY_WINDOW_MS millisekunnin ajan.
-      if(S.tack==='stb') S.meanStbStability = computeStability();
-      else if(S.tack==='bb') S.meanBbStability = computeStability();
+      // O1: SOG-ristivalidointi samalta ikkunalta, suhteutettuna halssin
+      // siihenastiseen SOG-P90:een. Talteenotto — ei käytetä mihinkään
+      // päätökseen tässä vaiheessa (ks. white paper 4.5, O1).
+      const avgSog = computeAvgSog();
+      const tackP90 = tackSogP90(S.tack);
+      const ratio = (avgSog!=null && tackP90!=null && tackP90>0) ? avgSog/tackP90 : null;
+      if(S.tack==='stb'){ S.meanStbStability = computeStability(); S.meanStbSogRatio = ratio; }
+      else if(S.tack==='bb'){ S.meanBbStability = computeStability(); S.meanBbSogRatio = ratio; }
       saveMeans();
     },
     onReset(){
       S.meanStbTs=null; S.meanBbTs=null;
       S.meanStbStability=null; S.meanBbStability=null;
+      S.meanStbSogRatio=null; S.meanBbSogRatio=null;
       clearMeans();
     },
     logLength(){ return log.length; },
@@ -690,7 +726,11 @@ function setHeading(raw){
 }
 function pushRange(h){
   const now=Date.now();
-  S.rangeBuf.push({t:now, hdg:h});
+  // O1: sog tallennetaan heading-näytteen rinnalle samaan puskuriin, jotta
+  // mean-vakaus ja SOG-ristivalidointi lasketaan täsmälleen samalta ikkunalta
+  // (white paper 4.5). null jos GPS ei ole päällä tai lukemaa ei vielä ole.
+  const sog = (S.settings.gps && S.gps.sog!=null) ? S.gps.sog : null;
+  S.rangeBuf.push({t:now, hdg:h, sog:sog});
   while(S.rangeBuf.length && now - S.rangeBuf[0].t > HIST_MS) S.rangeBuf.shift();
 }
 function currentMean(){ return S.tack==='stb' ? S.meanStb : (S.tack==='bb' ? S.meanBb : null); }
@@ -1654,7 +1694,7 @@ document.querySelectorAll(".stepper").forEach(st=>{
 });
 
 /* ---------- init ---------- */
-const APP_VERSION="mittari v0.71";
+const APP_VERSION="mittari v0.72";
 (function(){
   const e=$("verEnable"); if(e) e.textContent=APP_VERSION;
   const n=$("verNote"); if(n) n.textContent=APP_VERSION+" · shares engine with index.html";
