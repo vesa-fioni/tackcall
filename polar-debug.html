@@ -63,6 +63,21 @@
   <div class="label">Polaari — napakaavio</div>
   <canvas id="polarCanvas"></canvas>
   <div id="polarCanvasMsg" style="color:#666;font-size:12px;text-align:center;margin-top:6px;"></div>
+
+  <div id="animControls" style="display:none;margin-top:10px;">
+    <div style="display:flex;align-items:center;gap:10px;">
+      <button class="secondary" id="animPlayBtn" style="margin:0;padding:8px 12px;" onclick="animTogglePlay()">▶</button>
+      <input type="range" id="animScrub" min="0" max="1000" value="1000" step="1"
+             style="flex:1;" oninput="animOnScrub(this.value)">
+      <div id="animTimeLabel" style="font-size:11px;color:#888;min-width:86px;text-align:right;">—</div>
+    </div>
+    <div style="color:#666;font-size:11px;margin-top:6px;">
+      Piirtää raakapisteet ja P90-kaaren kumulatiivisesti aikaleiman (ts) mukaan.
+      Asteikko on kiinnitetty koko session lopulliseen maksimiin, jotta rengasmittakaava ei hyppele kesken toiston.
+      Pisteiden kirkkaus ~ sogW(sog) — <b>ei</b> sama asia kuin stability/windAge-pohjainen luottamus,
+      koska kumpaakaan ei tallenneta per piste tässä lokirakenteessa (vrt. white paper luku 5.1).
+    </div>
+  </div>
 </div>
 
   <button class="secondary" onclick="autoToggle()" id="autoBtn">▶ Auto-päivitys (3s)</button>
@@ -209,6 +224,8 @@ function coolwarm(t) {
   return `rgb(${r},${g},${b})`;
 }
 
+// VANHA staattinen piirto — ei enää kutsuta suoraan, säilytetty vertailun
+// vuoksi. Uusi animoitu versio on renderPolarFrame() alempana.
 function drawPolarCanvas(polar, rawPts) {
   const canvas = document.getElementById('polarCanvas');
   const msg    = document.getElementById('polarCanvasMsg');
@@ -387,6 +404,287 @@ function drawPolarCanvas(polar, rawPts) {
   ctx.fillText('P90', p90lx, p90ly);
 }
 
+// ============================================================
+// ANIMOITU NAPAKAAVIO — polaari täyttyy kronologisesti ts:n mukaan.
+// Ks. white paper luku 4.4 "polaari täyttyy itsestään purjehtiessa".
+//
+// Huom pisteiden kirkkaudesta: käytetään sogW(sog) -painoa, koska se on
+// ainoa per-piste-laatusignaali joka tässä lokirakenteessa (heading +
+// meanStb/meanBb + sog + ts) on jo olemassa. Whitepaperin 5.1 kuvaama
+// stability/windAge per piste EI ole tässä koodissa tallennettuna per
+// datapiste — vain meanien yhteydessä (MEANS_KEY). Aito "tuuliluottamus"
+// -väritys vaatisi joko windAgen tallentamista per piste, tai stabilityn
+// interpolointia meanin asetushetkien väliltä. Tämä on siis tarkoituksella
+// vaatimattomampi signaali kuin konseptivaiheen mockupeissa käytetty.
+// ============================================================
+let animLog = [], animRawPts = [];
+let animMinTs = null, animMaxTs = null, animCurrentTs = null;
+let animPlaying = false;
+let animScaleMaxSOG = 1;
+let animPrevVisibleCount = 0;
+let animPulses = []; // {x,y,bornAt}
+let animRafStarted = false;
+
+function initAnimation(log, rawPts){
+  animLog = log;
+  animRawPts = rawPts.slice().sort((a,b)=>a.ts-b.ts);
+
+  const controls = document.getElementById('animControls');
+  if(animRawPts.length < 2){
+    controls.style.display='none';
+    // ei tarpeeksi pisteitä animoitavaksi — piirretään mitä on staattisesti
+    drawPolarCanvas(null, []);
+    return;
+  }
+  controls.style.display='block';
+
+  animMinTs = animRawPts[0].ts;
+  animMaxTs = animRawPts[animRawPts.length-1].ts;
+  // Kiinteä säde-asteikko koko sessiosta, jotta renkaat eivät hyppele
+  // kesken toiston kun uusia (mahdollisesti nopeampia) pisteitä paljastuu.
+  animScaleMaxSOG = Math.max(...animRawPts.map(p=>p.sog)) * 1.05;
+
+  // Oletus: pysäytettynä lopputilaan, taaksepäin selattavissa
+  // (ks. keskustelu: käyttäjä haluaa yleensä nähdä lopputuloksen
+  // näkemättä koko toistoa joka kerta).
+  animCurrentTs = animMaxTs;
+  animPlaying = false;
+  animPrevVisibleCount = animRawPts.length;
+  animPulses = [];
+  document.getElementById('animPlayBtn').textContent = '▶';
+  document.getElementById('animScrub').value = 1000;
+
+  renderPolarFrame();
+  if(!animRafStarted){ animRafStarted = true; requestAnimationFrame(animTick); }
+}
+
+function fmtDur(ms){
+  const s = Math.max(0, Math.round(ms/1000));
+  const m = Math.floor(s/60), r = s%60;
+  return m+':'+String(r).padStart(2,'0');
+}
+
+function visiblePointsAt(ts){
+  // animRawPts on aikajärjestyksessä -> voisi binäärihakea, mutta
+  // debug-session pistemäärillä (satoja) lineaarihaku riittää.
+  const pts = [];
+  for(const p of animRawPts){ if(p.ts<=ts) pts.push(p); else break; }
+  return pts;
+}
+
+function renderPolarFrame(){
+  const visPts = visiblePointsAt(animCurrentTs);
+  const visLog = animLog.filter(p=>p.ts<=animCurrentTs);
+
+  // uudet pisteet tämän ja edellisen piirron välillä -> "juuri saapunut" -pulssi
+  if(visPts.length > animPrevVisibleCount){
+    for(let i=animPrevVisibleCount;i<visPts.length;i++){
+      animPulses.push({ pt:visPts[i], bornAt: performance.now() });
+    }
+  }
+  animPrevVisibleCount = visPts.length;
+  animPulses = animPulses.filter(p => performance.now()-p.bornAt < 650);
+
+  let polarPartial = null;
+  try{ polarPartial = computePolar(visLog); }catch(e){}
+
+  drawAnimatedCanvas(polarPartial, visPts);
+
+  // aikalukema + slider-asento
+  const frac = animMaxTs>animMinTs ? (animCurrentTs-animMinTs)/(animMaxTs-animMinTs) : 1;
+  document.getElementById('animScrub').value = Math.round(frac*1000);
+  document.getElementById('animTimeLabel').textContent =
+    fmtDur(animCurrentTs-animMinTs)+' / '+fmtDur(animMaxTs-animMinTs)+
+    '  ('+visPts.length+'/'+animRawPts.length+' pt)';
+}
+
+function drawAnimatedCanvas(polar, rawPts){
+  const canvas = document.getElementById('polarCanvas');
+  const msg    = document.getElementById('polarCanvasMsg');
+  const card   = canvas.parentElement;
+
+  canvas.style.display = 'block';
+  msg.textContent = rawPts.length ? '' : '(ei vielä pisteitä tässä kohtaa sessiota)';
+
+  const dpr  = Math.min(window.devicePixelRatio || 1, 2);
+  const size = Math.min(card.clientWidth - 24, 400);
+  canvas.width  = size * dpr;
+  canvas.height = size * dpr;
+  canvas.style.width  = size + 'px';
+  canvas.style.height = size + 'px';
+
+  const ctx = canvas.getContext('2d');
+  ctx.clearRect(0,0,canvas.width,canvas.height);
+  ctx.scale(dpr, dpr);
+
+  const cx = size/2, cy = size/2, maxR = size*0.38;
+  const maxSOG = animScaleMaxSOG;
+
+  function toCanvas(twaDeg, r, stb){
+    const t = twaDeg*Math.PI/180;
+    const sign = stb ? -1 : 1;
+    return [ cx + sign*r*Math.sin(t), cy - r*Math.cos(t) ];
+  }
+
+  // nopearenkaat, kiinteä asteikko (ei polar.maxP90 vaan koko session maksimi)
+  const ringCount = 5;
+  for(let i=1;i<=ringCount;i++){
+    const spd = (maxSOG/ringCount)*i;
+    const rr = (spd/maxSOG)*maxR;
+    ctx.beginPath();
+    for(let deg=0; deg<=180; deg+=2){
+      const [x,y] = toCanvas(deg, rr, true);
+      deg===0 ? ctx.moveTo(x,y) : ctx.lineTo(x,y);
+    }
+    for(let deg=180; deg>=0; deg-=2){
+      const [x,y] = toCanvas(deg, rr, false);
+      ctx.lineTo(x,y);
+    }
+    ctx.strokeStyle = '#1e1e1e';
+    ctx.lineWidth = 0.8;
+    ctx.stroke();
+    const [lx,ly] = toCanvas(92, rr, false);
+    ctx.fillStyle = '#444';
+    ctx.font = '10px monospace';
+    ctx.textAlign = 'left';
+    ctx.fillText(spd.toFixed(1), lx+2, ly+4);
+  }
+
+  // sektoriviivat
+  [30,60,90,120,150].forEach(deg=>{
+    const [x,y] = toCanvas(deg, maxR*1.10, true);
+    ctx.beginPath(); ctx.moveTo(cx,cy); ctx.lineTo(x,y);
+    ctx.strokeStyle = '#2a2a2a'; ctx.lineWidth = 0.8; ctx.stroke();
+    const [lx,ly] = toCanvas(deg, maxR*1.20, true);
+    ctx.fillStyle = '#444'; ctx.font = '10px monospace';
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.fillText(deg+'°', lx, ly);
+  });
+  ctx.fillStyle = '#444'; ctx.font = '10px monospace'; ctx.textAlign = 'center';
+  ctx.fillText('0°', cx, cy - maxR*1.20);
+  ctx.fillText('180°', cx, cy + maxR*1.20);
+
+  // raakapisteet: kirkkaus ~ sogW(sog)
+  rawPts.forEach(p=>{
+    const r = (p.sog/maxSOG)*maxR;
+    const [xs,ys] = toCanvas(p.twa, r, true);
+    const [xb,yb] = toCanvas(p.twa, r, false);
+    const w = sogW(p.sog); // 0..1, sama paino kuin kernelissä
+    ctx.globalAlpha = 0.15 + 0.45*w;
+    ctx.fillStyle = '#ffcc00';
+    ctx.beginPath(); ctx.arc(xs,ys,2.5,0,Math.PI*2); ctx.fill();
+    ctx.beginPath(); ctx.arc(xb,yb,2.5,0,Math.PI*2); ctx.fill();
+  });
+  ctx.globalAlpha = 1.0;
+
+  // "juuri saapunut" -pulssit
+  const now = performance.now();
+  animPulses.forEach(pulse=>{
+    const age = now - pulse.bornAt;
+    if(age>650) return;
+    const prog = age/650;
+    const r = (pulse.pt.sog/maxSOG)*maxR;
+    const [xs,ys] = toCanvas(pulse.pt.twa, r, true);
+    const [xb,yb] = toCanvas(pulse.pt.twa, r, false);
+    const ringR = 2.5 + prog*10;
+    const ringOp = (1-prog)*0.7;
+    ctx.strokeStyle = '#ffcc00';
+    ctx.lineWidth = 1.3;
+    ctx.globalAlpha = ringOp;
+    ctx.beginPath(); ctx.arc(xs,ys,ringR,0,Math.PI*2); ctx.stroke();
+    ctx.beginPath(); ctx.arc(xb,yb,ringR,0,Math.PI*2); ctx.stroke();
+  });
+  ctx.globalAlpha = 1.0;
+
+  if(!polar) return; // liian vähän pisteitä vielä tässä kohtaa P90:lle
+
+  const p90pts = polar.queries.map((twa,i)=>{
+    const p90 = polar.results[i].p90;
+    return p90==null ? null : {twa,p90};
+  }).filter(v=>v!=null);
+  if(p90pts.length < 2) return;
+
+  ctx.beginPath();
+  p90pts.forEach((pt,i)=>{
+    const r = (pt.p90/maxSOG)*maxR;
+    const [x,y] = toCanvas(pt.twa, r, true);
+    i===0 ? ctx.moveTo(x,y) : ctx.lineTo(x,y);
+  });
+  [...p90pts].reverse().forEach(pt=>{
+    const r = (pt.p90/maxSOG)*maxR;
+    const [x,y] = toCanvas(pt.twa, r, false);
+    ctx.lineTo(x,y);
+  });
+  ctx.closePath();
+  ctx.fillStyle = 'rgba(150,150,150,0.06)';
+  ctx.fill();
+
+  const p90vals = p90pts.map(p=>p.p90);
+  const minP90 = Math.min(...p90vals), maxP90v = Math.max(...p90vals);
+  function drawGradientSide(stb){
+    for(let i=0;i<p90pts.length-1;i++){
+      const a=p90pts[i], b=p90pts[i+1];
+      const ra=(a.p90/maxSOG)*maxR, rb=(b.p90/maxSOG)*maxR;
+      const [x1,y1]=toCanvas(a.twa,ra,stb), [x2,y2]=toCanvas(b.twa,rb,stb);
+      const mid=(a.p90+b.p90)/2;
+      const t=(mid-minP90)/(maxP90v-minP90+1e-9);
+      ctx.beginPath(); ctx.moveTo(x1,y1); ctx.lineTo(x2,y2);
+      ctx.strokeStyle=coolwarm(t); ctx.lineWidth=2.5; ctx.lineJoin='round';
+      ctx.stroke();
+    }
+  }
+  drawGradientSide(true);
+  drawGradientSide(false);
+
+  ctx.font = 'bold 13px -apple-system,system-ui,monospace';
+  ctx.textBaseline = 'middle';
+  const [stbLx,stbLy] = toCanvas(58, maxR*0.72, true);
+  ctx.fillStyle = '#aaa'; ctx.textAlign = 'center';
+  ctx.fillText('STB', stbLx, stbLy);
+  const [bbLx,bbLy] = toCanvas(58, maxR*0.72, false);
+  ctx.fillText('BB', bbLx, bbLy);
+}
+
+function animTogglePlay(){
+  if(animMinTs==null) return;
+  if(!animPlaying && animCurrentTs>=animMaxTs) animCurrentTs = animMinTs; // toisto alusta
+  animPlaying = !animPlaying;
+  document.getElementById('animPlayBtn').textContent = animPlaying ? '⏸' : '▶';
+}
+
+function animOnScrub(sliderVal){
+  if(animMinTs==null) return;
+  animPlaying = false;
+  document.getElementById('animPlayBtn').textContent = '▶';
+  const frac = sliderVal/1000;
+  animCurrentTs = animMinTs + frac*(animMaxTs-animMinTs);
+  renderPolarFrame();
+}
+
+let animLastFrameWall = null;
+function animTick(wallTs){
+  if(animLastFrameWall==null) animLastFrameWall = wallTs;
+  const dt = wallTs - animLastFrameWall;
+  animLastFrameWall = wallTs;
+
+  if(animPlaying && animMinTs!=null){
+    // koko session toisto venytetään n. 10 sekuntiin riippumatta
+    // siitä kuinka pitkä purjehdus todellisuudessa oli
+    const span = animMaxTs - animMinTs;
+    animCurrentTs += dt * (span/10000);
+    if(animCurrentTs >= animMaxTs){
+      animCurrentTs = animMaxTs;
+      animPlaying = false;
+      document.getElementById('animPlayBtn').textContent = '▶';
+    }
+    renderPolarFrame();
+  } else if(animPulses.length){
+    // pulssit häivytetään loppuun vaikka toisto olisi pysäytetty
+    renderPolarFrame();
+  }
+  requestAnimationFrame(animTick);
+}
+
 function refreshPolar(log){
   let polar=null;
   try{ polar=computePolar(log); }catch(e){}
@@ -397,7 +695,7 @@ function refreshPolar(log){
     document.getElementById('polCurrent').textContent=
       '(liian vähän hyväksyttyjä pisteitä — tarvitaan min. 5 TWA-suodatuksen jälkeen)';
     document.getElementById('polTable').textContent='—';
-    drawPolarCanvas(null, []);
+    initAnimation(log, []);
     return;
   }
   document.getElementById('polValid').textContent=polar.nPts;
@@ -430,15 +728,15 @@ function refreshPolar(log){
   document.getElementById('polTable').textContent=
     [header,sep,...rows].join('\n');
 
-  // Raakapisteet canvasta varten
+  // Raakapisteet canvasta varten (ts mukana animaatiota varten)
   const rawPts = [];
   for(const p of log){
     const twa = pointTWA(p);
     if(twa==null) continue;
     if(sogW(p.sog)===0) continue;
-    rawPts.push({twa, sog:p.sog});
+    rawPts.push({twa, sog:p.sog, ts:p.ts});
   }
-  drawPolarCanvas(polar, rawPts);
+  initAnimation(log, rawPts);
 }
 
 function refresh(){
