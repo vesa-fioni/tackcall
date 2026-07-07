@@ -107,6 +107,7 @@ padding:15px; margin:0 0 10px; cursor:pointer;}
 .err{background:#2a0d0d; color:#ff9b9b; border:1px solid #5a1f1f; border-radius:12px;
 padding:12px; font-size:13px; line-height:1.5; margin-top:6px; text-align:left;}
 .hidden{display:none;}
+.panel .close.hidden{display:none;}
 .ver{font-family:var(--mono); font-size:11px; color:#4a4a4a; letter-spacing:.16em; margin-top:16px;}
 /* ---- asetukset ---- */
 .sheet{position:fixed; inset:0; z-index:40; background:rgba(0,0,0,.6);
@@ -161,6 +162,15 @@ body.portrait #btnMean{top:22%; height:22%;}
   text-shadow:0 0 12px rgba(25,224,224,.5); white-space:nowrap;}
 .ssHint{font-size:11px; line-height:1.5; color:#7a7a7a; margin:6px 0 10px; font-family:var(--sans);}
 #ssCanvas{display:block; width:100%; height:auto; margin:6px auto; max-width:360px;}
+.ssTransport{display:flex; align-items:center; gap:10px; max-width:360px; margin:2px auto 4px; padding:0 4px;}
+.ssPlay{flex:0 0 auto; width:34px; height:34px; border-radius:50%; border:1px solid #2a2a2a;
+  background:#141414; color:var(--cyan); font-size:13px; cursor:pointer; padding:0;}
+.ssScrub{flex:1 1 auto; accent-color:var(--cyan); height:3px;}
+.ssTime{flex:0 0 auto; font-family:var(--mono); font-size:10px; color:#7a7a7a; min-width:64px; text-align:right;}
+.ssLegend{display:flex; justify-content:center; flex-wrap:wrap; gap:12px; max-width:360px; margin:2px auto 6px; font-family:var(--mono); font-size:9px; color:#7a7a7a;}
+.ssLegend span{display:flex; align-items:center; gap:4px;}
+.ssLegend i{width:12px; height:2px; display:inline-block;}
+.ssLegend i.dash{background:linear-gradient(90deg,#787878 0 50%,transparent 50%); background-size:6px 2px;}
 .ssSub{font-family:var(--mono); font-size:10px; letter-spacing:.1em; color:var(--cyan);
   text-transform:uppercase; text-align:center; margin:14px 0 8px;}
 .ssDelta{font-family:var(--mono); font-size:16px; font-weight:700; margin-top:6px;}
@@ -171,6 +181,8 @@ body.portrait #btnMean{top:22%; height:22%;}
 .ssBreak .sep{color:#4a4a4a;}
 .ssNote{font-size:12px; line-height:1.5; color:#cfcfcf; text-align:center; margin:10px 4px 4px; font-family:var(--sans);}
 .ssNote b{color:#fff;}
+.ssKeep{margin:14px 0 4px; text-align:center;}
+.ssKeepStatus{font-size:12px; line-height:1.5; color:#7a7a7a; margin-bottom:8px; font-family:var(--sans);}
 </style>
 </head>
 <body>
@@ -209,7 +221,6 @@ body.portrait #btnMean{top:22%; height:22%;}
 <div class="row"><div class="lbl">GPS<small>SOG speed · polar performance learning</small></div><div class="tog" data-key="gps"></div></div>
 <div class="row"><div class="lbl">Offshore (COG)<small>Replaces compass with GPS course over ground. Ignores leeway — best above ~3 kn. Turns GPS on automatically.</small></div><div class="tog" data-key="offshoreCog"></div></div>
 <div class="row"><div class="lbl">Auto mean refresh<small>Learns your close-hauled angle and quietly refreshes both tack means from matched pairs of good upwind legs. Manual Set Mean always works. Off by default.</small></div><div class="tog" data-key="autoMeanRefresh"></div></div>
-<div class="row"><div class="lbl">Session summary<small>After-sail recap: sector speeds and how today compared to before. Opens from a button in Settings. Off by default.</small></div><div class="tog" data-key="sessionSummary"></div></div>
 <div class="row"><div class="lbl">Display mode<small>Off: Heading · enlarged main number<br>On: Instruments · enlarged secondary data</small></div><div class="tog" data-key="headingFocus"></div></div>
 <div class="row"><div class="lbl">Duotone (sunlight)<small>Off: full colour<br>On: white / grey — max contrast in bright sun</small></div><div class="tog" data-key="monoScheme"></div></div>
 <div class="row"><div class="lbl">Keep screen awake</div><div class="tog" data-key="wake"></div></div>
@@ -233,6 +244,7 @@ body.portrait #btnMean{top:22%; height:22%;}
 <button data-val="auto">Automatic</button>
 </div>
 <button class="close" id="btnPolarUpdate">Update polar</button>
+<div class="row"><div class="lbl">Session summary<small>After-sail recap: sector speeds and how today compared to before. Turn on to reveal the button below. Off by default.</small></div><div class="tog" data-key="sessionSummary"></div></div>
 <button class="close hidden" id="btnOpenSummary">Session summary →</button>
 <button class="close reset" id="btnReset">Reset means</button>
 <a class="link" href="index.html">Switch to classic view →</a>
@@ -278,14 +290,26 @@ body.portrait #btnMean{top:22%; height:22%;}
 <div class="sheet hidden" id="sessionSummary">
 <div class="panel">
 <h2>Session summary</h2>
+<div class="ssSub">Top 10% speed</div>
 <div class="ssRow" id="ssSpeeds">
   <div class="ssCard"><div class="ssLbl">UPWIND</div><div class="ssNum" id="ssUp">—</div></div>
   <div class="ssCard"><div class="ssLbl">REACH</div><div class="ssNum" id="ssReach">—</div></div>
   <div class="ssCard"><div class="ssLbl">DOWNWIND</div><div class="ssNum" id="ssDown">—</div></div>
   <div class="ssCard"><div class="ssLbl">OVERALL</div><div class="ssNum" id="ssOverall">—</div></div>
 </div>
-<div class="ssHint">Top 10% speed per sector — the pace only your fastest moments beat, not their average.</div>
+<div class="ssHint">Your repeatable top speed — a pace you hit again and again, not one lucky gust.</div>
 <canvas id="ssCanvas"></canvas>
+<div class="ssTransport" id="ssTransport" style="display:none;">
+  <button class="ssPlay" id="ssPlay">▶</button>
+  <input type="range" class="ssScrub" id="ssScrub" min="0" max="1000" value="1000">
+  <span class="ssTime" id="ssTime">—</span>
+</div>
+<div class="ssLegend" id="ssLegend" style="display:none;">
+  <span><i style="background:var(--green)"></i>Better</span>
+  <span><i style="background:var(--yellow)"></i>Similar</span>
+  <span><i style="background:var(--red)"></i>Worse</span>
+  <span><i class="dash"></i>Past sessions</span>
+</div>
 <div class="ssHint" id="ssEmpty"></div>
 <div id="ssCompare" style="display:none;">
 <div class="ssSub">Performance comparison</div>
@@ -296,6 +320,10 @@ body.portrait #btnMean{top:22%; height:22%;}
 </div>
 <div class="ssHint">Small numbers: share of 5° slots better · similar · worse than your last session.</div>
 <div class="ssNote" id="ssNote"></div>
+</div>
+<div class="ssKeep" id="ssKeep">
+  <div class="ssKeepStatus" id="ssKeepStatus">—</div>
+  <button class="close" id="btnToggleKeep">Exclude this session</button>
 </div>
 <button class="close" id="btnCloseSummary">Done</button>
 </div>
@@ -842,6 +870,10 @@ const Polar = (function(){
       return out;
     },
     rawLog(){ return log.slice(); },
+    // Session summary (Vaihe E2): yhtenäinen P90-käyrä annetusta pistejoukosta.
+    // Käyttää samaa _computePolar-kernelia kuin live-PERF — yksi totuuden lähde.
+    // Palauttaa {queries:[°...], results:[{p90,mass}...]} tai null. Puhdas lukija.
+    polarCurve(rawlog){ return _computePolar(rawlog || log); },
     // Session summary (Vaihe C): jaa raakaloki sessioihin.
     // Uusi sessio alkaa kun peräkkäisten pisteiden ts-ero ylittää katkon.
     // Katko lasketaan KAIKISTA lokin pisteistä (myös TWA-alueen ulkopuoliset
@@ -1883,15 +1915,100 @@ $("btnSetMean").addEventListener("click", setMean);
 $("btnGear").addEventListener("click", ()=>$("sheet").classList.remove("hidden"));
 $("btnCloseSheet").addEventListener("click", ()=>$("sheet").classList.add("hidden"));
 $("btnOpenSummary").addEventListener("click", ()=>{ $("sheet").classList.add("hidden"); $("sessionSummary").classList.remove("hidden"); renderSessionSummary(); });
-$("btnCloseSummary").addEventListener("click", ()=>$("sessionSummary").classList.add("hidden"));
+$("btnCloseSummary").addEventListener("click", ()=>{ ssStopAnim(); $("sessionSummary").classList.add("hidden"); });
+$("btnToggleKeep").addEventListener("click", ()=>{
+  const sessions = Polar.splitSessions();
+  const cur = sessions.length ? sessions[sessions.length-1] : null;
+  if(!cur) return;
+  ssSetExcluded(cur.startTs, !ssIsExcluded(cur.startTs));
+  renderSessionSummary(); // päivitä status + vertailu (prev voi muuttua)
+});
+$("ssPlay").addEventListener("click", ssPlayPause);
+$("ssScrub").addEventListener("input", (e)=>{ ssStopAnim(); ssAnim.frac=(+e.target.value)/1000; ssDrawFrame(); ssUpdateScrub(); });
+// Turvaverkko: jos välilehti menee taustalle kesken animaation, pysäytä siististi
+document.addEventListener("visibilitychange", ()=>{ if(document.hidden) ssStopAnim(); });
 
 // Session summary (Vaihe C+D): session-tietoinen näkymä + vertailu edelliseen.
 // Puhdas lukija — Polar.splitSessions/sectorSpeeds/sectorCounts, ei kirjoita mitään.
 // Oma canvas (#ssCanvas), ei mittarin piirtosilmukkaa. Piirretään kerran avattaessa.
+
+// Demo-validointidata: synteettinen kahden session loki MUISTISSA.
+// EI koskaan tallenneta localStorageen — oikea tackcall_polar_log_v1 pysyy
+// koskemattomana. Käytetään vain kun S.demo on tosi, jotta Session summaryn
+// laskenta ja ulkoasu voidaan validoida ilman oikeaa purjehdusdataa.
+function ssDemoLog(){
+  const pts=[];
+  const wind=20, half=45; // tuulen suunta ja closehauled-puolikulma
+  const meanStb=norm(wind-half), meanBb=norm(wind+half);
+  // Venekohtainen "totuuspolaari" TWA→SOG (karkea, uskottava muoto)
+  const trueSog=twa=>{
+    if(twa<30) return 0.06*twa;            // no-go nousee jyrkästi
+    if(twa<50) return 1.8+0.09*(twa-30);   // nousukurssi ~3.6 kn
+    if(twa<100) return 3.6+0.05*(twa-50);  // reach kiihtyy ~6 kn
+    if(twa<140) return 6.1-0.01*(twa-100); // laakea huippu
+    return 5.7-0.03*(twa-140);             // myötä hidastuu
+  };
+  // Yksi sessio: satunnaisia pisteitä eri TWA:illa, annetulla nopeuskertoimella
+  const mkSession=(startTs, scale, n)=>{
+    for(let i=0;i<n;i++){
+      const twa=15+Math.random()*160;
+      const stb=Math.random()<0.5;
+      const heading=stb ? norm(wind-twa) : norm(wind+twa);
+      const noise=0.85+Math.random()*0.3;
+      const sog=Math.max(0.3, trueSog(twa)*scale*noise);
+      pts.push({
+        ts:startTs+i*1000, heading,
+        meanStb, meanBb,
+        tack: stb?'stb':'bb',
+        sog:Math.round(sog*100)/100, windAge:5,
+      });
+    }
+  };
+  const now=Date.now();
+  const dayMs=24*60*60*1000;
+  // Edellinen sessio: eilen, hieman hitaampi (scale 0.94)
+  mkSession(now-dayMs, 0.94, 200);
+  // Nykyinen sessio: tänään, hieman nopeampi (scale 1.0) — vertailu näyttää parannusta
+  mkSession(now-30*60*1000, 1.0, 200);
+  return pts;
+}
+
 function renderSessionSummary(){
-  const sessions = Polar.splitSessions();
+  // Demossa käytetään synteettistä muistidataa; muuten oikeaa lokia (Polarin sisällä).
+  const demo = S.demo;
+  const demoPts = demo ? ssDemoLog() : null;
+  const splitDemo = (log)=>{
+    const GAP=30*60*1000, sorted=log.slice().sort((a,b)=>a.ts-b.ts), out=[]; let cur=null;
+    for(const p of sorted){ if(cur&&(p.ts-cur.endTs)>GAP){out.push(cur);cur=null;} if(!cur)cur={points:[],startTs:p.ts,endTs:p.ts}; cur.points.push(p); cur.endTs=p.ts; }
+    if(cur)out.push(cur); return out;
+  };
+  const sessions = demo ? splitDemo(demoPts) : Polar.splitSessions();
   const cur = sessions.length ? sessions[sessions.length-1] : null;
-  const prev = sessions.length>1 ? sessions[sessions.length-2] : null;
+  // Edellinen sessio vertailuun: viimeisin cur:ia edeltävä joka EI ole hylätty
+  // (Vaihe F). Demossa ei sovelleta hylkäyksiä — demo on aina puhdas kahden
+  // session tapaus.
+  let prev = null;
+  if(cur){
+    for(let i=sessions.length-2;i>=0;i--){
+      if(demo || !ssIsExcluded(sessions[i].startTs)){ prev=sessions[i]; break; }
+    }
+  }
+
+  // Keep/exclude-kontrolli (Vaihe F) — koskee nykyistä (viimeisintä) sessiota.
+  // Demossa piilotetaan, koska demo-sessioilla ei ole pysyvää tunnistetta.
+  const keepWrap=$("ssKeep");
+  if(keepWrap){
+    if(cur && !demo){
+      keepWrap.style.display='block';
+      const excl=ssIsExcluded(cur.startTs);
+      $("ssKeepStatus").textContent = excl
+        ? 'Excluded — this session won\u2019t be used as a reference for future comparisons. Its data is kept.'
+        : 'Kept — this session will be the reference your next sail is compared against.';
+      $("btnToggleKeep").textContent = excl ? 'Include this session' : 'Exclude this session';
+    } else {
+      keepWrap.style.display='none';
+    }
+  }
 
   // Nykyisen session sektorinopeudet (viimeisin sessio, ei koko loki)
   const secs = cur ? Polar.sectorSpeeds(cur.points) : {};
@@ -1941,70 +2058,220 @@ function renderSessionSummary(){
     cmp.style.display = 'none';
   }
 
-  ssDrawPolar(cur);
+  // Käyrät E2:lle: nykyinen (segmenttiväritys prev vastaan) + taustakaaret
+  const past = sessions.slice(0, -1).slice(-5); // enintään 5 edellistä taustalle
+  ssDrawPolar(cur, prev, past);
 }
 
-function ssDrawPolar(session){
+// Session summary polaari + animaatio (Vaihe E1).
+// Oma requestAnimationFrame-kahva (_ssRAF) joka PYSÄYTETÄÄN aina paneelia
+// suljettaessa (ssStopAnim). Ei mittarin loop()-silmukkaa, ei jää taustalle.
+const ssAnim = { pts:null, geom:null, t0:0, dur:0, playing:false, frac:1, raf:null };
+
+function ssStopAnim(){
+  if(ssAnim.raf){ cancelAnimationFrame(ssAnim.raf); ssAnim.raf=null; }
+  ssAnim.playing=false;
+  const b=$("ssPlay"); if(b) b.textContent='▶';
+}
+
+function ssDrawPolar(session, prevSession, pastSessions){
   const cv = $("ssCanvas"); if(!cv) return;
-  const raw = session ? session.points : Polar.rawLog();
+  const raw = session ? session.points.slice().sort((a,b)=>a.ts-b.ts) : Polar.rawLog();
   const pts = [];
+  const t0 = raw.length ? raw[0].ts : 0;
   for(const p of raw){
     if(p.meanStb==null || p.meanBb==null) continue;
-    // TWA lennossa, sama logiikka kuin Polar._twa (mutta emme altista sisäistä)
     const cm = _cmDeg(p.meanStb, p.meanBb);
     let t = Math.abs(_naDeg(p.heading - cm));
     if(t<15 || t>175) continue;
-    // halssi tuulen puolen mukaan: rel>0 = stb-puoli
     const rel = _naDeg(p.heading - cm);
-    pts.push({twa:t, sog:p.sog, stb: rel>=0});
+    pts.push({twa:t, sog:p.sog, stb: rel>=0, dt:(p.ts-t0)/1000});
   }
-  const empty = $("ssEmpty");
+  const empty = $("ssEmpty"), transport = $("ssTransport");
   if(pts.length < 2){
-    cv.style.display = 'none';
-    if(empty) empty.textContent = 'Not enough data yet — sail with both means set and GPS on.';
+    ssStopAnim();
+    cv.style.display='none'; if(transport) transport.style.display='none';
+    const lg=$("ssLegend"); if(lg) lg.style.display='none';
+    if(empty) empty.textContent='Not enough data yet — sail with both means set and GPS on.';
     return;
   }
-  cv.style.display = 'block';
-  if(empty) empty.textContent = '';
+  cv.style.display='block'; if(transport) transport.style.display='flex';
+  if(empty) empty.textContent='';
+  // Legenda näkyy vain kun värjätty vertailu on mielekäs (edellinen sessio on)
+  const legend=$("ssLegend"); if(legend) legend.style.display = prevSession ? 'flex' : 'none';
 
   const dpr = Math.min(window.devicePixelRatio||1, 2);
-  const cssW = Math.min((cv.parentElement.clientWidth||360), 360);
-  const size = cssW;
-  cv.style.width = size+'px'; cv.style.height = size+'px';
-  cv.width = size*dpr; cv.height = size*dpr;
-  const ctx = cv.getContext('2d');
-  ctx.setTransform(dpr,0,0,dpr,0,0);
-  ctx.clearRect(0,0,size,size);
-
+  const size = Math.min((cv.parentElement.clientWidth||360), 360);
+  cv.style.width=size+'px'; cv.style.height=size+'px';
+  cv.width=size*dpr; cv.height=size*dpr;
+  const ctx = cv.getContext('2d'); ctx.setTransform(dpr,0,0,dpr,0,0);
   const cx=size/2, cy=size/2, maxR=size*0.40;
   const maxSOG = Math.max(...pts.map(p=>p.sog))*1.05 || 1;
+  const span = pts[pts.length-1].dt || 1; // session kesto sekunteina
+
+  // E2: yhtenäinen P90-käyrä + vertailu edelliseen + taustakaaret.
+  // Lasketaan kerran tässä (ei joka animaatioframessa) — kevyt lepotilan piirtoa varten.
+  const curCurve = session ? Polar.polarCurve(session.points) : null;
+  const prevCurve = prevSession ? Polar.polarCurve(prevSession.points) : null;
+  const pastCurves = (pastSessions||[]).map(s=>Polar.polarCurve(s.points)).filter(c=>c);
+
+  ssAnim.pts=pts; ssAnim.geom={ctx,size,cx,cy,maxR,maxSOG,dpr,span};
+  ssAnim.curCurve=curCurve; ssAnim.prevCurve=prevCurve; ssAnim.pastCurves=pastCurves;
+  ssAnim.frac=1; // avautuu valmiiseen lopputilaan
+  ssDrawFrame();
+  ssUpdateScrub();
+}
+
+function ssDrawFrame(){
+  const g=ssAnim.geom, pts=ssAnim.pts; if(!g||!pts) return;
+  const {ctx,size,cx,cy,maxR,maxSOG}=g;
   const toXY=(twa,sog,stb)=>{ const r=Math.min(sog/maxSOG,1)*maxR; const a=twa*Math.PI/180; const s=stb?1:-1; return [cx+s*Math.sin(a)*r, cy-Math.cos(a)*r]; };
-
+  const mono=getComputedStyle(document.body).getPropertyValue('--mono');
+  ctx.clearRect(0,0,size,size);
   // renkaat
-  ctx.strokeStyle='#1f1f1f'; ctx.lineWidth=1; ctx.font='9px '+getComputedStyle(document.body).getPropertyValue('--mono');
-  ctx.fillStyle='#4a4a4a';
-  for(let i=1;i<=4;i++){
-    const r=maxR*i/4; ctx.beginPath(); ctx.arc(cx,cy,r,0,Math.PI*2); ctx.stroke();
-    ctx.fillText((maxSOG*i/4).toFixed(1)+'kn', cx+3, cy-r-2);
+  ctx.strokeStyle='#1f1f1f'; ctx.lineWidth=1; ctx.font='9px '+mono; ctx.fillStyle='#4a4a4a';
+  for(let i=1;i<=4;i++){ const r=maxR*i/4; ctx.beginPath(); ctx.arc(cx,cy,r,0,Math.PI*2); ctx.stroke(); ctx.fillText((maxSOG*i/4).toFixed(1)+'kn', cx+3, cy-r-2); }
+  // sektorisäteet: datarajat (15/175) ja keskireach (90) himmeinä opasteina,
+  // varsinaiset SEKTORIRAJAT (50 = upwind/reach, 140 = reach/downwind) korostettuina
+  [15,90,175].forEach(deg=>{ [1,-1].forEach(s=>{ const a=deg*Math.PI/180; ctx.beginPath(); ctx.moveTo(cx,cy); ctx.lineTo(cx+s*Math.sin(a)*maxR, cy-Math.cos(a)*maxR); ctx.strokeStyle='#161616'; ctx.lineWidth=1; ctx.stroke(); }); });
+  [50,140].forEach(deg=>{ [1,-1].forEach(s=>{ const a=deg*Math.PI/180; ctx.beginPath(); ctx.moveTo(cx,cy); ctx.lineTo(cx+s*Math.sin(a)*(maxR+4), cy-Math.cos(a)*(maxR+4)); ctx.strokeStyle='#3a3a3a'; ctx.lineWidth=1.5; ctx.stroke(); }); });
+  ctx.lineWidth=1;
+
+  // sektorien nimet kehällä — kartoittuvat suoraan yläkortteihin (UPWIND/REACH/DOWNWIND)
+  ctx.fillStyle='#9a9a9a'; ctx.font='9px '+mono; ctx.textBaseline='middle';
+  const pad=8;
+  const placeLabel=(twa, side, text)=>{
+    const a=twa*Math.PI/180;
+    let x=cx+side*Math.sin(a)*(maxR+pad), y=cy-Math.cos(a)*(maxR+pad);
+    if(side<0){ ctx.textAlign='left';  x=Math.max(pad, x); }
+    else if(side>0){ ctx.textAlign='right'; x=Math.min(size-pad, x); }
+    else ctx.textAlign='center';
+    ctx.fillText(text, x, y);
+  };
+  placeLabel(33,-1,'UPWIND');  placeLabel(33,1,'UPWIND');
+  placeLabel(95,-1,'REACH');   placeLabel(95,1,'REACH');
+  ctx.textAlign='center'; ctx.textBaseline='top';
+  ctx.fillText('DOWNWIND', cx, cy+maxR+pad);
+  ctx.textBaseline='alphabetic';
+
+  const CYAN=getComputedStyle(document.body).getPropertyValue('--cyan')||'#19e0e0';
+  const GREEN=getComputedStyle(document.body).getPropertyValue('--green')||'#19e26a';
+  const YELLOW=getComputedStyle(document.body).getPropertyValue('--yellow')||'#ffd11a';
+  const RED=getComputedStyle(document.body).getPropertyValue('--red')||'#ff2b2b';
+  const curveXY=(twa,sog,stb)=>{ const r=Math.min(sog/maxSOG,1)*maxR; const a=twa*Math.PI/180; const s=stb?1:-1; return [cx+s*Math.sin(a)*r, cy-Math.cos(a)*r]; };
+
+  // Taustakaaret: aiemmat sessiot himmeinä (vanhin himmein). Vain lepotilassa.
+  if(ssAnim.frac>=1 && ssAnim.pastCurves && ssAnim.pastCurves.length){
+    const n=ssAnim.pastCurves.length;
+    ssAnim.pastCurves.forEach((cc,idx)=>{
+      const alpha=0.06+0.10*(idx+1)/n; // vanhin himmein
+      ctx.strokeStyle=`rgba(120,120,120,${alpha})`; ctx.lineWidth=1; ctx.setLineDash([3,3]);
+      [true,false].forEach(stb=>{ ssStrokeCurve(ctx,cc,stb,curveXY); });
+    });
+    ctx.setLineDash([]);
   }
-  // sektorisäteet
-  [15,50,90,140,175].forEach(deg=>{
-    [1,-1].forEach(s=>{ const a=deg*Math.PI/180; ctx.beginPath(); ctx.moveTo(cx,cy); ctx.lineTo(cx+s*Math.sin(a)*maxR, cy-Math.cos(a)*maxR); ctx.strokeStyle='#161616'; ctx.stroke(); });
-  });
 
-  // pisteet — kevyt tekstuuri
+  // pisteet paljastuvat kronologisesti fracin mukaan
+  const shown = Math.max(1, Math.floor(pts.length*ssAnim.frac));
   ctx.fillStyle='rgba(25,224,224,.35)';
-  for(const p of pts){ const [x,y]=toXY(p.twa,p.sog,p.stb); ctx.beginPath(); ctx.arc(x,y,1.4,0,Math.PI*2); ctx.fill(); }
+  for(let i=0;i<shown;i++){ const p=pts[i]; const [x,y]=toXY(p.twa,p.sog,p.stb); ctx.beginPath(); ctx.arc(x,y,1.4,0,Math.PI*2); ctx.fill(); }
+  // uusin näytetty piste korostettuna, jotta ajan eteneminen näkyy
+  if(ssAnim.frac<1 && shown>0){ const p=pts[shown-1]; const [x,y]=toXY(p.twa,p.sog,p.stb); ctx.fillStyle=CYAN; ctx.beginPath(); ctx.arc(x,y,3,0,Math.PI*2); ctx.fill(); }
 
-  // Yhtenäinen P90-kaari ja animaatio tulevat Vaihe E:ssä. Vaihe B näyttää
-  // sektorinopeudet (lukuina yllä) ja raakapisteet muotona — se riittää
-  // todistamaan että data luetaan oikein omalle canvasille.
+  // Yhtenäinen P90-käyrä segmenttiväritettynä — vain lepotilassa (frac>=1),
+  // jottei sitä tarvitse laskea joka animaatioframessa (kevyt toisto).
+  if(ssAnim.frac>=1 && ssAnim.curCurve){
+    const cc=ssAnim.curCurve, pc=ssAnim.prevCurve;
+    const colorAt=(i)=>{
+      if(!pc) return CYAN; // ei edellistä sessiota: neutraali
+      const a=cc.results[i], q=cc.queries[i];
+      // etsi lähin edellisen käyrän kulma
+      let bi=-1,bd=1e9; pc.queries.forEach((pq,j)=>{ const d=Math.abs(pq-q); if(d<bd&&pc.results[j].p90!=null){bd=d;bi=j;} });
+      if(a.p90==null||bi<0||pc.results[bi].p90==null||pc.results[bi].p90<=0) return CYAN;
+      const r=a.p90/pc.results[bi].p90;
+      return r>1.03?GREEN:r<0.97?RED:YELLOW;
+    };
+    ctx.lineWidth=2.5; ctx.shadowColor=CYAN; ctx.shadowBlur=6;
+    [true,false].forEach(stb=>{ ssStrokeCurveColored(ctx,cc,stb,curveXY,colorAt); });
+    ctx.shadowBlur=0;
+  }
+}
+
+// Piirtää yhtenäisen (yksivärisen) käyräviivan toiselle halssille
+function ssStrokeCurve(ctx,curve,stb,curveXY){
+  let started=false; ctx.beginPath();
+  for(let i=0;i<curve.queries.length;i++){
+    const r=curve.results[i]; if(r.p90==null||r.mass<0.5){ started=false; continue; }
+    const [x,y]=curveXY(curve.queries[i], r.p90, stb);
+    if(!started){ ctx.moveTo(x,y); started=true; } else ctx.lineTo(x,y);
+  }
+  ctx.stroke();
+}
+// Piirtää käyrän segmentteinä, kukin väritettynä colorAt(i):n mukaan
+function ssStrokeCurveColored(ctx,curve,stb,curveXY,colorAt){
+  for(let i=0;i<curve.queries.length-1;i++){
+    const a=curve.results[i], b=curve.results[i+1];
+    if(a.p90==null||b.p90==null||a.mass<0.5||b.mass<0.5) continue;
+    const [x1,y1]=curveXY(curve.queries[i], a.p90, stb);
+    const [x2,y2]=curveXY(curve.queries[i+1], b.p90, stb);
+    ctx.strokeStyle=colorAt(i);
+    ctx.beginPath(); ctx.moveTo(x1,y1); ctx.lineTo(x2,y2); ctx.stroke();
+  }
+}
+
+function ssUpdateScrub(){
+  const s=$("ssScrub"), tl=$("ssTime"); if(!s||!tl) return;
+  s.value=Math.round(ssAnim.frac*1000);
+  const span=ssAnim.geom?ssAnim.geom.span:0;
+  const cur=Math.round(span*ssAnim.frac), tot=Math.round(span);
+  const mmss=x=>Math.floor(x/60)+':'+String(x%60).padStart(2,'0');
+  tl.textContent=mmss(cur)+' / '+mmss(tot);
+}
+
+function ssTick(ts){
+  if(!ssAnim.playing) return;
+  if(!ssAnim.t0) ssAnim.t0=ts;
+  const ANIM_MS=6000; // koko session animaatio ~6 s riippumatta kestosta
+  ssAnim.frac=Math.min(1,(ts-ssAnim.t0)/ANIM_MS);
+  ssDrawFrame(); ssUpdateScrub();
+  if(ssAnim.frac>=1){ ssStopAnim(); return; }
+  ssAnim.raf=requestAnimationFrame(ssTick);
+}
+
+function ssPlayPause(){
+  if(ssAnim.playing){ ssStopAnim(); return; }
+  if(ssAnim.frac>=1) ssAnim.frac=0; // lopusta: aloita alusta
+  ssAnim.playing=true; ssAnim.t0=0;
+  const startFrac=ssAnim.frac;
+  // sovita t0 niin että jatkuu nykyisestä fracista
+  ssAnim.raf=requestAnimationFrame(function first(ts){ ssAnim.t0=ts-startFrac*6000; ssTick(ts); });
+  const b=$("ssPlay"); if(b) b.textContent='⏸';
 }
 
 // pienet kulma-apurit summarylle (samat kaavat kuin Polarin sisäiset, mutta
 // omat, jottei tarvitse altistaa Polarin yksityisiä funktioita)
 function _cmDeg(a,b){ const ar=a*Math.PI/180,br=b*Math.PI/180; return Math.atan2((Math.sin(ar)+Math.sin(br))/2,(Math.cos(ar)+Math.cos(br))/2)*180/Math.PI; }
 function _naDeg(d){ let r=d%360; if(r>180)r-=360; if(r<-180)r+=360; return r; }
+
+// Session accept/reject -tila (Vaihe F). Oma localStorage-nimiavaruus,
+// EI törmää raakalokiin (tackcall_polar_log_v1) eikä meaneihin. Tallentaa
+// vain hylättyjen sessioiden startTs-tunnisteet. Hylätty sessio ei toimi
+// vertailun "edellisenä sessiona", mutta säilyy datana (ei poisteta pisteitä).
+const SS_EXCL_KEY = 'tackcall_session_excluded_v1';
+function ssLoadExcluded(){
+  try{ const r=localStorage.getItem(SS_EXCL_KEY); const a=r?JSON.parse(r):[]; return Array.isArray(a)?a:[]; }
+  catch(e){ return []; }
+}
+function ssSaveExcluded(arr){
+  try{ localStorage.setItem(SS_EXCL_KEY, JSON.stringify(arr)); }catch(e){ /* storage estetty — ei kaadeta */ }
+}
+function ssIsExcluded(startTs){ return ssLoadExcluded().indexOf(startTs)>=0; }
+function ssSetExcluded(startTs, excl){
+  const a=ssLoadExcluded(); const i=a.indexOf(startTs);
+  if(excl && i<0) a.push(startTs);
+  else if(!excl && i>=0) a.splice(i,1);
+  ssSaveExcluded(a);
+}
 $("btnHelp").addEventListener("click", ()=>$("help").classList.remove("hidden"));
 $("btnCloseHelp").addEventListener("click", ()=>$("help").classList.add("hidden"));
 $("btnReset").addEventListener("click", ()=>{ S.meanStb=null; S.meanBb=null; Polar.onReset(); });
@@ -2054,7 +2321,7 @@ document.querySelectorAll(".stepper").forEach(st=>{
 });
 
 /* ---------- init ---------- */
-const APP_VERSION="mittari v0.73";
+const APP_VERSION="mittari v0.74";
 (function(){
   const e=$("verEnable"); if(e) e.textContent=APP_VERSION;
   const n=$("verNote"); if(n) n.textContent=APP_VERSION+" · shares engine with index.html";
