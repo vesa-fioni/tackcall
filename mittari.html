@@ -153,6 +153,24 @@ display:flex; align-items:center; justify-content:center;}
 /* btnMean on näkymätön napautusalue ison heading-luvun päällä; sen sijainti/koko on sidottu
    render()-funktion hero-numeron portrait-sijoitteluun (keskitetty n. H*0.36 kohdalle). */
 body.portrait #btnMean{top:22%; height:22%;}
+/* Session summary (Vaihe B) — käyttää mittarin omia muuttujia (--mono, --cyan) */
+.ssRow{display:flex; gap:6px; margin:4px 0 6px; width:100%;}
+.ssCard{flex:1 1 0; min-width:0; text-align:center; border:1px solid #1f1f1f; border-radius:10px; padding:10px 2px;}
+.ssLbl{font-family:var(--mono); font-size:8px; letter-spacing:.06em; color:#7a7a7a;}
+.ssNum{font-family:var(--mono); font-size:17px; font-weight:700; color:var(--cyan); margin-top:6px;
+  text-shadow:0 0 12px rgba(25,224,224,.5); white-space:nowrap;}
+.ssHint{font-size:11px; line-height:1.5; color:#7a7a7a; margin:6px 0 10px; font-family:var(--sans);}
+#ssCanvas{display:block; width:100%; height:auto; margin:6px auto; max-width:360px;}
+.ssSub{font-family:var(--mono); font-size:10px; letter-spacing:.1em; color:var(--cyan);
+  text-transform:uppercase; text-align:center; margin:14px 0 8px;}
+.ssDelta{font-family:var(--mono); font-size:16px; font-weight:700; margin-top:6px;}
+.ssDelta.good{color:var(--green); text-shadow:0 0 10px rgba(25,226,106,.5);}
+.ssDelta.warn{color:var(--red); text-shadow:0 0 10px rgba(255,43,43,.5);}
+.ssBreak{font-family:var(--mono); font-size:11px; margin-top:5px;}
+.ssBreak .g{color:var(--green);} .ssBreak .a{color:var(--yellow);} .ssBreak .w{color:var(--red);}
+.ssBreak .sep{color:#4a4a4a;}
+.ssNote{font-size:12px; line-height:1.5; color:#cfcfcf; text-align:center; margin:10px 4px 4px; font-family:var(--sans);}
+.ssNote b{color:#fff;}
 </style>
 </head>
 <body>
@@ -191,6 +209,7 @@ body.portrait #btnMean{top:22%; height:22%;}
 <div class="row"><div class="lbl">GPS<small>SOG speed · polar performance learning</small></div><div class="tog" data-key="gps"></div></div>
 <div class="row"><div class="lbl">Offshore (COG)<small>Replaces compass with GPS course over ground. Ignores leeway — best above ~3 kn. Turns GPS on automatically.</small></div><div class="tog" data-key="offshoreCog"></div></div>
 <div class="row"><div class="lbl">Auto mean refresh<small>Learns your close-hauled angle and quietly refreshes both tack means from matched pairs of good upwind legs. Manual Set Mean always works. Off by default.</small></div><div class="tog" data-key="autoMeanRefresh"></div></div>
+<div class="row"><div class="lbl">Session summary<small>After-sail recap: sector speeds and how today compared to before. Opens from a button in Settings. Off by default.</small></div><div class="tog" data-key="sessionSummary"></div></div>
 <div class="row"><div class="lbl">Display mode<small>Off: Heading · enlarged main number<br>On: Instruments · enlarged secondary data</small></div><div class="tog" data-key="headingFocus"></div></div>
 <div class="row"><div class="lbl">Duotone (sunlight)<small>Off: full colour<br>On: white / grey — max contrast in bright sun</small></div><div class="tog" data-key="monoScheme"></div></div>
 <div class="row"><div class="lbl">Keep screen awake</div><div class="tog" data-key="wake"></div></div>
@@ -214,6 +233,7 @@ body.portrait #btnMean{top:22%; height:22%;}
 <button data-val="auto">Automatic</button>
 </div>
 <button class="close" id="btnPolarUpdate">Update polar</button>
+<button class="close hidden" id="btnOpenSummary">Session summary →</button>
 <button class="close reset" id="btnReset">Reset means</button>
 <a class="link" href="index.html">Switch to classic view →</a>
 <div class="note" id="verNote"></div>
@@ -249,6 +269,35 @@ body.portrait #btnMean{top:22%; height:22%;}
 <p class="helpp">Re-set the mean whenever the average wind direction shifts, or use "Reset means" in Settings to start over.</p>
 <button class="close" id="btnMountFlow">Test mounting</button>
 <button class="close" id="btnCloseHelp">Got it</button>
+</div>
+</div>
+
+<!-- purjehduksen jälkeinen yhteenveto (Session Summary — ks. Purjehdusyhteenveto white paper v1)
+     Vaihe B0: pelkkä tyhjä runko + asetuskytkin. Ei dataa, ei laskentaa, ei omaa canvasia vielä.
+     Additiivinen kerros: ei kosketa Polar-moduuliin, raakalokiin eikä piirtosilmukkaan. -->
+<div class="sheet hidden" id="sessionSummary">
+<div class="panel">
+<h2>Session summary</h2>
+<div class="ssRow" id="ssSpeeds">
+  <div class="ssCard"><div class="ssLbl">UPWIND</div><div class="ssNum" id="ssUp">—</div></div>
+  <div class="ssCard"><div class="ssLbl">REACH</div><div class="ssNum" id="ssReach">—</div></div>
+  <div class="ssCard"><div class="ssLbl">DOWNWIND</div><div class="ssNum" id="ssDown">—</div></div>
+  <div class="ssCard"><div class="ssLbl">OVERALL</div><div class="ssNum" id="ssOverall">—</div></div>
+</div>
+<div class="ssHint">Top 10% speed per sector — the pace only your fastest moments beat, not their average.</div>
+<canvas id="ssCanvas"></canvas>
+<div class="ssHint" id="ssEmpty"></div>
+<div id="ssCompare" style="display:none;">
+<div class="ssSub">Performance comparison</div>
+<div class="ssRow">
+  <div class="ssCard"><div class="ssLbl">UPWIND</div><div class="ssDelta" id="ssUpD">—</div><div class="ssBreak" id="ssUpB">—</div></div>
+  <div class="ssCard"><div class="ssLbl">REACH</div><div class="ssDelta" id="ssReachD">—</div><div class="ssBreak" id="ssReachB">—</div></div>
+  <div class="ssCard"><div class="ssLbl">DOWNWIND</div><div class="ssDelta" id="ssDownD">—</div><div class="ssBreak" id="ssDownB">—</div></div>
+</div>
+<div class="ssHint">Small numbers: share of 5° slots better · similar · worse than your last session.</div>
+<div class="ssNote" id="ssNote"></div>
+</div>
+<button class="close" id="btnCloseSummary">Done</button>
 </div>
 </div>
 
@@ -288,7 +337,7 @@ const S = {
   gps:{cog:null, sog:null, on:false, watch:null},
   wakeLock:null,
   demo:false, demoT:0,
-  settings:{ deadband:3, tackThresh:20, tackAngle:90, gps:true, wake:false, smooth:5, audio:false, gaugeScale:20, headingFocus:false, headingOffset:0, orientationLock:'auto', offshoreCog:false, monoScheme:false, autoMeanRefresh:false }, // tackThresh oletus = skaalan max, käyttäjä kiristää itse; headingOffset = asennuskorjaus, orientationLock = Portrait/Landscape/Automatic; offshoreCog = korvaa kompassin GPS-COG:lla; monoScheme = valkoinen/harmaa duotone-väriskeema kirkkaaseen aurinkoon; autoMeanRefresh = tuulennollapisteen automaattinen virkistys käännöspareista (oletus pois, ks. valmistusohjeet)
+  settings:{ deadband:3, tackThresh:20, tackAngle:90, gps:true, wake:false, smooth:5, audio:false, gaugeScale:20, headingFocus:false, headingOffset:0, orientationLock:'auto', offshoreCog:false, monoScheme:false, autoMeanRefresh:false, sessionSummary:false }, // tackThresh oletus = skaalan max, käyttäjä kiristää itse; headingOffset = asennuskorjaus, orientationLock = Portrait/Landscape/Automatic; offshoreCog = korvaa kompassin GPS-COG:lla; monoScheme = valkoinen/harmaa duotone-väriskeema kirkkaaseen aurinkoon; autoMeanRefresh = tuulennollapisteen automaattinen virkistys käännöspareista (oletus pois, ks. valmistusohjeet)
   source:null, compassOk:false, liveSince:0,
   audio:{ state:'nomean', cand:'nomean', candSince:0, tackSince:null, tackArmed:true, tackLockUntil:0 },
 };
@@ -761,6 +810,88 @@ const Polar = (function(){
       const pct=Math.round((sog/r.p90)*100);
       const state=r.mass<PERF_MASS_DIM?'none':r.mass<PERF_MASS_BRIGHT?'dim':'bright';
       return{pct,mass:r.mass,state};
+    },
+    // Session summary (Vaihe B): sektorikohtainen P90 raakalokista.
+    // Käyttää samaa _twa/_sw-logiikkaa kuin polaari — yksi totuuden lähde.
+    // Painotettu P90 (paino _sw:stä), sama periaate kuin white paper §6.1.
+    // Palauttaa { upwind, reach, downwind, overall } jokainen {p90, n} tai
+    // {p90:null, n} jos liian vähän dataa. Puhdas lukija, ei muuta tilaa.
+    sectorSpeeds(rawlog){
+      const src = rawlog || log;
+      const bands = {
+        upwind:[15,50], reach:[50,140], downwind:[140,175], overall:[15,175],
+      };
+      const out = {};
+      for(const [name,[lo,hi]] of Object.entries(bands)){
+        const wp = [];
+        for(const p of src){
+          const t = _twa(p);
+          if(t==null || t<lo || t>=hi) continue;
+          const w = _sw(p.sog);
+          if(w<=0) continue;
+          wp.push({sog:p.sog, w});
+        }
+        if(wp.length < 2){ out[name] = {p90:null, n:wp.length}; continue; }
+        // painotettu P90
+        const tot = wp.reduce((s,x)=>s+x.w,0);
+        wp.sort((a,b)=>a.sog-b.sog);
+        const thr = 0.9*tot; let cum=0, p90=wp[wp.length-1].sog;
+        for(const x of wp){ cum+=x.w; if(cum>=thr){ p90=x.sog; break; } }
+        out[name] = {p90, n:wp.length};
+      }
+      return out;
+    },
+    rawLog(){ return log.slice(); },
+    // Session summary (Vaihe C): jaa raakaloki sessioihin.
+    // Uusi sessio alkaa kun peräkkäisten pisteiden ts-ero ylittää katkon.
+    // Katko lasketaan KAIKISTA lokin pisteistä (myös TWA-alueen ulkopuoliset
+    // ja matalan SOG:n), jotta pitkä pysähdys rannassa katkaisee session
+    // oikein — ks. Purjehdusyhteenveto white paper O-SS-3.
+    // Palauttaa taulukon sessioita, kukin { points:[...], startTs, endTs }.
+    // Uusin sessio viimeisenä. Puhdas lukija.
+    splitSessions(gapMs){
+      const GAP = gapMs || 30*60*1000; // 30 min oletus (O-SS-3)
+      const sorted = log.slice().sort((a,b)=>a.ts-b.ts);
+      const sessions = [];
+      let cur = null;
+      for(const p of sorted){
+        if(cur && (p.ts - cur.endTs) > GAP){ sessions.push(cur); cur=null; }
+        if(!cur) cur = {points:[], startTs:p.ts, endTs:p.ts};
+        cur.points.push(p);
+        cur.endTs = p.ts;
+      }
+      if(cur) sessions.push(cur);
+      return sessions;
+    },
+    // Session summary (Vaihe D): hahlojako sektoreittain kahden session välillä.
+    // Jakaa sektorin 5° erillisiin (ei-limittyviin) hahloihin, vertaa kunkin
+    // hahlon painotettua P90:tä nyt vs. ref. Luokittelee better/similar/worse.
+    // ±3% kynnys (O-SS-4, provisorinen). Palauttaa per sektori {b,s,w,n}.
+    // Puhdas lukija. curLog/refLog ovat pistetaulukoita (session.points).
+    sectorCounts(curLog, refLog){
+      const SLOT=5, TH=0.03;
+      const bands = { upwind:[15,50], reach:[50,140], downwind:[140,175] };
+      const binP90 = (pts,lo,hi)=>{
+        const wp=[];
+        for(const p of pts){ const t=_twa(p); if(t==null||t<lo||t>=hi) continue; const w=_sw(p.sog); if(w<=0) continue; wp.push({sog:p.sog,w}); }
+        if(wp.length<2) return null;
+        const tot=wp.reduce((s,x)=>s+x.w,0); wp.sort((a,b)=>a.sog-b.sog);
+        const thr=0.9*tot; let cum=0,v=wp[wp.length-1].sog;
+        for(const x of wp){ cum+=x.w; if(cum>=thr){ v=x.sog; break; } }
+        return v;
+      };
+      const out={};
+      for(const [name,[lo,hi]] of Object.entries(bands)){
+        let b=0,s=0,w=0,n=0;
+        for(let a=lo;a<hi;a+=SLOT){
+          const cur=binP90(curLog,a,a+SLOT), ref=binP90(refLog,a,a+SLOT);
+          if(cur==null||ref==null||ref<=0) continue;
+          n++; const r=cur/ref;
+          if(r>1+TH) b++; else if(r<1-TH) w++; else s++;
+        }
+        out[name]={b,s,w,n};
+      }
+      return out;
     }
   };
 })();
@@ -1751,6 +1882,129 @@ $("btnSetMean").addEventListener("click", setMean);
 /* ---------- asetukset ---------- */
 $("btnGear").addEventListener("click", ()=>$("sheet").classList.remove("hidden"));
 $("btnCloseSheet").addEventListener("click", ()=>$("sheet").classList.add("hidden"));
+$("btnOpenSummary").addEventListener("click", ()=>{ $("sheet").classList.add("hidden"); $("sessionSummary").classList.remove("hidden"); renderSessionSummary(); });
+$("btnCloseSummary").addEventListener("click", ()=>$("sessionSummary").classList.add("hidden"));
+
+// Session summary (Vaihe C+D): session-tietoinen näkymä + vertailu edelliseen.
+// Puhdas lukija — Polar.splitSessions/sectorSpeeds/sectorCounts, ei kirjoita mitään.
+// Oma canvas (#ssCanvas), ei mittarin piirtosilmukkaa. Piirretään kerran avattaessa.
+function renderSessionSummary(){
+  const sessions = Polar.splitSessions();
+  const cur = sessions.length ? sessions[sessions.length-1] : null;
+  const prev = sessions.length>1 ? sessions[sessions.length-2] : null;
+
+  // Nykyisen session sektorinopeudet (viimeisin sessio, ei koko loki)
+  const secs = cur ? Polar.sectorSpeeds(cur.points) : {};
+  const fmt = s => (s && s.p90!=null) ? s.p90.toFixed(1)+' kn' : '—';
+  $("ssUp").textContent      = fmt(secs.upwind);
+  $("ssReach").textContent   = fmt(secs.reach);
+  $("ssDown").textContent    = fmt(secs.downwind);
+  $("ssOverall").textContent = fmt(secs.overall);
+
+  // Vertailu edelliseen sessioon (Vaihe D) — vain jos edellinen on olemassa
+  const cmp = $("ssCompare");
+  if(cur && prev){
+    cmp.style.display = 'block';
+    const prevSecs = Polar.sectorSpeeds(prev.points);
+    const counts = Polar.sectorCounts(cur.points, prev.points);
+    const rel = {}; // suhteellinen delta yhtenäisyysheuristiikkaa varten
+    [['upwind','ssUpD','ssUpB'],['reach','ssReachD','ssReachB'],['downwind','ssDownD','ssDownB']].forEach(([name,dId,bId])=>{
+      const c=secs[name], p=prevSecs[name];
+      const dEl=$(dId), bEl=$(bId);
+      if(c&&c.p90!=null&&p&&p.p90!=null&&p.p90>0){
+        const d=c.p90-p.p90;
+        dEl.textContent=(d>=0?'+':'')+d.toFixed(1)+' kn';
+        dEl.classList.remove('good','warn'); dEl.classList.add(d>=0?'good':'warn');
+        rel[name]=d/p.p90;
+      } else { dEl.textContent='—'; dEl.classList.remove('good','warn'); }
+      const k=counts[name];
+      bEl.innerHTML = (k&&k.n>0)
+        ? `<span class="g">${Math.round(100*k.b/k.n)}</span><span class="sep"> · </span><span class="a">${Math.round(100*k.s/k.n)}</span><span class="sep"> · </span><span class="w">${Math.round(100*k.w/k.n)}</span>`
+        : '—';
+    });
+    // Dynaaminen huomautus (S1/S2, ks. white paper §6)
+    const vals=Object.values(rel);
+    const noteEl=$("ssNote");
+    if(vals.length===3){
+      const sameSign = vals.every(v=>v>=0)||vals.every(v=>v<=0);
+      const spread = Math.max(...vals)-Math.min(...vals);
+      if(sameSign && spread<0.08){
+        const up = vals.reduce((a,b)=>a+b,0)>=0;
+        noteEl.innerHTML = up
+          ? `All three sectors moved <b>together</b> — more likely a windier day than a real change. Compare with caution.`
+          : `All three sectors dropped <b>together</b> — could be lighter wind today, not necessarily your sailing.`;
+      } else {
+        noteEl.innerHTML = `Sectors moved <b>differently</b> from each other — more likely a real change (trim, technique) than just wind strength.`;
+      }
+    } else { noteEl.textContent=''; }
+  } else {
+    cmp.style.display = 'none';
+  }
+
+  ssDrawPolar(cur);
+}
+
+function ssDrawPolar(session){
+  const cv = $("ssCanvas"); if(!cv) return;
+  const raw = session ? session.points : Polar.rawLog();
+  const pts = [];
+  for(const p of raw){
+    if(p.meanStb==null || p.meanBb==null) continue;
+    // TWA lennossa, sama logiikka kuin Polar._twa (mutta emme altista sisäistä)
+    const cm = _cmDeg(p.meanStb, p.meanBb);
+    let t = Math.abs(_naDeg(p.heading - cm));
+    if(t<15 || t>175) continue;
+    // halssi tuulen puolen mukaan: rel>0 = stb-puoli
+    const rel = _naDeg(p.heading - cm);
+    pts.push({twa:t, sog:p.sog, stb: rel>=0});
+  }
+  const empty = $("ssEmpty");
+  if(pts.length < 2){
+    cv.style.display = 'none';
+    if(empty) empty.textContent = 'Not enough data yet — sail with both means set and GPS on.';
+    return;
+  }
+  cv.style.display = 'block';
+  if(empty) empty.textContent = '';
+
+  const dpr = Math.min(window.devicePixelRatio||1, 2);
+  const cssW = Math.min((cv.parentElement.clientWidth||360), 360);
+  const size = cssW;
+  cv.style.width = size+'px'; cv.style.height = size+'px';
+  cv.width = size*dpr; cv.height = size*dpr;
+  const ctx = cv.getContext('2d');
+  ctx.setTransform(dpr,0,0,dpr,0,0);
+  ctx.clearRect(0,0,size,size);
+
+  const cx=size/2, cy=size/2, maxR=size*0.40;
+  const maxSOG = Math.max(...pts.map(p=>p.sog))*1.05 || 1;
+  const toXY=(twa,sog,stb)=>{ const r=Math.min(sog/maxSOG,1)*maxR; const a=twa*Math.PI/180; const s=stb?1:-1; return [cx+s*Math.sin(a)*r, cy-Math.cos(a)*r]; };
+
+  // renkaat
+  ctx.strokeStyle='#1f1f1f'; ctx.lineWidth=1; ctx.font='9px '+getComputedStyle(document.body).getPropertyValue('--mono');
+  ctx.fillStyle='#4a4a4a';
+  for(let i=1;i<=4;i++){
+    const r=maxR*i/4; ctx.beginPath(); ctx.arc(cx,cy,r,0,Math.PI*2); ctx.stroke();
+    ctx.fillText((maxSOG*i/4).toFixed(1)+'kn', cx+3, cy-r-2);
+  }
+  // sektorisäteet
+  [15,50,90,140,175].forEach(deg=>{
+    [1,-1].forEach(s=>{ const a=deg*Math.PI/180; ctx.beginPath(); ctx.moveTo(cx,cy); ctx.lineTo(cx+s*Math.sin(a)*maxR, cy-Math.cos(a)*maxR); ctx.strokeStyle='#161616'; ctx.stroke(); });
+  });
+
+  // pisteet — kevyt tekstuuri
+  ctx.fillStyle='rgba(25,224,224,.35)';
+  for(const p of pts){ const [x,y]=toXY(p.twa,p.sog,p.stb); ctx.beginPath(); ctx.arc(x,y,1.4,0,Math.PI*2); ctx.fill(); }
+
+  // Yhtenäinen P90-kaari ja animaatio tulevat Vaihe E:ssä. Vaihe B näyttää
+  // sektorinopeudet (lukuina yllä) ja raakapisteet muotona — se riittää
+  // todistamaan että data luetaan oikein omalle canvasille.
+}
+
+// pienet kulma-apurit summarylle (samat kaavat kuin Polarin sisäiset, mutta
+// omat, jottei tarvitse altistaa Polarin yksityisiä funktioita)
+function _cmDeg(a,b){ const ar=a*Math.PI/180,br=b*Math.PI/180; return Math.atan2((Math.sin(ar)+Math.sin(br))/2,(Math.cos(ar)+Math.cos(br))/2)*180/Math.PI; }
+function _naDeg(d){ let r=d%360; if(r>180)r-=360; if(r<-180)r+=360; return r; }
 $("btnHelp").addEventListener("click", ()=>$("help").classList.remove("hidden"));
 $("btnCloseHelp").addEventListener("click", ()=>$("help").classList.add("hidden"));
 $("btnReset").addEventListener("click", ()=>{ S.meanStb=null; S.meanBb=null; Polar.onReset(); });
@@ -1762,6 +2016,8 @@ $("btnPolarUpdate").addEventListener("click", ()=>{
 });
 function syncToggles(){
   document.querySelectorAll(".tog").forEach(t=>{ t.classList.toggle("on", !!S.settings[t.dataset.key]); });
+  // Session summary -avausnappi näkyy vain kun asetus on päällä (Vaihe B0)
+  const bs=$("btnOpenSummary"); if(bs) bs.classList.toggle("hidden", !S.settings.sessionSummary);
 }
 document.querySelectorAll(".tog").forEach(t=>{
   t.addEventListener("click", ()=>{
