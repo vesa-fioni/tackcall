@@ -116,7 +116,7 @@ display:flex; align-items:flex-end; justify-content:center;}
 .panel{width:100%; max-width:460px; background:#0c0c0c; border:1px solid #1f1f1f;
 border-radius:18px 18px 0 0; padding:18px 18px calc(18px + env(safe-area-inset-bottom));
 max-height:88vh; overflow:auto;}
-.panel h2{font-size:15px; letter-spacing:.06em; text-transform:uppercase; color:#cfcfcf; margin:0 0 14px;}
+.panel h2{font-size:15px; letter-spacing:.06em; text-transform:uppercase; color:#cfcfcf; margin:0 0 14px; text-align:center;}
 .row{display:flex; align-items:center; justify-content:space-between; padding:11px 0; border-bottom:1px solid #161616;}
 .row .lbl{font-size:14px; color:#e6e6e6;}
 .row .lbl small{display:block; color:#777; font-size:12px; margin-top:2px;}
@@ -160,7 +160,7 @@ body.portrait #btnMean{top:22%; height:22%;}
 .ssLbl{font-family:var(--mono); font-size:8px; letter-spacing:.06em; color:#7a7a7a;}
 .ssNum{font-family:var(--mono); font-size:17px; font-weight:700; color:var(--cyan); margin-top:6px;
   text-shadow:0 0 12px rgba(25,224,224,.5); white-space:nowrap;}
-.ssHint{font-size:11px; line-height:1.5; color:#7a7a7a; margin:6px 0 10px; font-family:var(--sans);}
+.ssHint{font-size:11px; line-height:1.5; color:#7a7a7a; margin:6px 0 10px; font-family:var(--sans); text-align:center;}
 #ssCanvas{display:block; width:100%; height:auto; margin:6px auto; max-width:360px;}
 .ssTransport{display:flex; align-items:center; gap:10px; max-width:360px; margin:2px auto 4px; padding:0 4px;}
 .ssPlay{flex:0 0 auto; width:34px; height:34px; border-radius:50%; border:1px solid #2a2a2a;
@@ -172,12 +172,14 @@ body.portrait #btnMean{top:22%; height:22%;}
 .ssLegend i{width:12px; height:2px; display:inline-block;}
 .ssLegend i.dash{background:linear-gradient(90deg,#787878 0 50%,transparent 50%); background-size:6px 2px;}
 .ssSub{font-family:var(--mono); font-size:10px; letter-spacing:.1em; color:var(--cyan);
-  text-transform:uppercase; text-align:center; margin:14px 0 8px;}
+  text-transform:uppercase; text-align:center; margin:24px 0 10px; padding-top:18px;
+  border-top:1px solid #1c1c1c;}
 .ssDelta{font-family:var(--mono); font-size:16px; font-weight:700; margin-top:6px;}
 .ssDelta.good{color:var(--green); text-shadow:0 0 10px rgba(25,226,106,.5);}
 .ssDelta.warn{color:var(--red); text-shadow:0 0 10px rgba(255,43,43,.5);}
 .ssBreak{font-family:var(--mono); font-size:11px; margin-top:5px;}
 .ssBreak .g{color:var(--green);} .ssBreak .a{color:var(--yellow);} .ssBreak .w{color:var(--red);}
+.ssHint .g{color:var(--green);} .ssHint .a{color:var(--yellow);} .ssHint .w{color:var(--red);}
 .ssBreak .sep{color:#4a4a4a;}
 .ssNote{font-size:12px; line-height:1.5; color:#cfcfcf; text-align:center; margin:10px 4px 4px; font-family:var(--sans);}
 .ssNote b{color:#fff;}
@@ -290,14 +292,15 @@ body.portrait #btnMean{top:22%; height:22%;}
 <div class="sheet hidden" id="sessionSummary">
 <div class="panel">
 <h2>Session summary</h2>
-<div class="ssSub">Top 10% speed</div>
+<div class="ssSub">Your pace today</div>
 <div class="ssRow" id="ssSpeeds">
   <div class="ssCard"><div class="ssLbl">UPWIND</div><div class="ssNum" id="ssUp">—</div></div>
   <div class="ssCard"><div class="ssLbl">REACH</div><div class="ssNum" id="ssReach">—</div></div>
   <div class="ssCard"><div class="ssLbl">DOWNWIND</div><div class="ssNum" id="ssDown">—</div></div>
   <div class="ssCard"><div class="ssLbl">OVERALL</div><div class="ssNum" id="ssOverall">—</div></div>
 </div>
-<div class="ssHint">Your repeatable top speed — a pace you hit again and again, not one lucky gust.</div>
+<div class="ssHint">Top 10% speed — a pace you hit again and again, not one lucky gust.</div>
+<div class="ssSub" id="ssPolarTitle">Today vs. your history</div>
 <canvas id="ssCanvas"></canvas>
 <div class="ssTransport" id="ssTransport" style="display:none;">
   <button class="ssPlay" id="ssPlay">▶</button>
@@ -312,13 +315,14 @@ body.portrait #btnMean{top:22%; height:22%;}
 </div>
 <div class="ssHint" id="ssEmpty"></div>
 <div id="ssCompare" style="display:none;">
-<div class="ssSub">Performance comparison</div>
+<div class="ssSub">Today vs. your last sail</div>
 <div class="ssRow">
   <div class="ssCard"><div class="ssLbl">UPWIND</div><div class="ssDelta" id="ssUpD">—</div><div class="ssBreak" id="ssUpB">—</div></div>
   <div class="ssCard"><div class="ssLbl">REACH</div><div class="ssDelta" id="ssReachD">—</div><div class="ssBreak" id="ssReachB">—</div></div>
   <div class="ssCard"><div class="ssLbl">DOWNWIND</div><div class="ssDelta" id="ssDownD">—</div><div class="ssBreak" id="ssDownB">—</div></div>
 </div>
-<div class="ssHint">Small numbers: share of 5° slots better · similar · worse than your last session.</div>
+<div class="ssHint">How much of this windrange was <span class="g">faster</span> · <span class="a">same</span> · <span class="w">slower</span> than last session.</div>
+<div class="ssSub" id="ssNoteTitle" style="display:none;">Wind or real change?</div>
 <div class="ssNote" id="ssNote"></div>
 </div>
 <div class="ssKeep" id="ssKeep">
@@ -2036,13 +2040,15 @@ function renderSessionSummary(){
       } else { dEl.textContent='—'; dEl.classList.remove('good','warn'); }
       const k=counts[name];
       bEl.innerHTML = (k&&k.n>0)
-        ? `<span class="g">${Math.round(100*k.b/k.n)}</span><span class="sep"> · </span><span class="a">${Math.round(100*k.s/k.n)}</span><span class="sep"> · </span><span class="w">${Math.round(100*k.w/k.n)}</span>`
+        ? `<span class="g">${Math.round(100*k.b/k.n)}%</span><span class="sep"> · </span><span class="a">${Math.round(100*k.s/k.n)}%</span><span class="sep"> · </span><span class="w">${Math.round(100*k.w/k.n)}%</span>`
         : '—';
     });
     // Dynaaminen huomautus (S1/S2, ks. white paper §6)
     const vals=Object.values(rel);
     const noteEl=$("ssNote");
+    const noteTitle=$("ssNoteTitle");
     if(vals.length===3){
+      if(noteTitle) noteTitle.style.display='block';
       const sameSign = vals.every(v=>v>=0)||vals.every(v=>v<=0);
       const spread = Math.max(...vals)-Math.min(...vals);
       if(sameSign && spread<0.08){
@@ -2053,7 +2059,7 @@ function renderSessionSummary(){
       } else {
         noteEl.innerHTML = `Sectors moved <b>differently</b> from each other — more likely a real change (trim, technique) than just wind strength.`;
       }
-    } else { noteEl.textContent=''; }
+    } else { noteEl.textContent=''; if(noteTitle) noteTitle.style.display='none'; }
   } else {
     cmp.style.display = 'none';
   }
@@ -2092,11 +2098,13 @@ function ssDrawPolar(session, prevSession, pastSessions){
     ssStopAnim();
     cv.style.display='none'; if(transport) transport.style.display='none';
     const lg=$("ssLegend"); if(lg) lg.style.display='none';
+    const pt=$("ssPolarTitle"); if(pt) pt.style.display='none';
     if(empty) empty.textContent='Not enough data yet — sail with both means set and GPS on.';
     return;
   }
   cv.style.display='block'; if(transport) transport.style.display='flex';
   if(empty) empty.textContent='';
+  const pt=$("ssPolarTitle"); if(pt) pt.style.display='block';
   // Legenda näkyy vain kun värjätty vertailu on mielekäs (edellinen sessio on)
   const legend=$("ssLegend"); if(legend) legend.style.display = prevSession ? 'flex' : 'none';
 
@@ -2105,7 +2113,7 @@ function ssDrawPolar(session, prevSession, pastSessions){
   cv.style.width=size+'px'; cv.style.height=size+'px';
   cv.width=size*dpr; cv.height=size*dpr;
   const ctx = cv.getContext('2d'); ctx.setTransform(dpr,0,0,dpr,0,0);
-  const cx=size/2, cy=size/2, maxR=size*0.40;
+  const cx=size/2, cy=size/2, maxR=size*0.36;
   const maxSOG = Math.max(...pts.map(p=>p.sog))*1.05 || 1;
   const span = pts[pts.length-1].dt || 1; // session kesto sekunteina
 
@@ -2134,24 +2142,23 @@ function ssDrawFrame(){
   // sektorisäteet: datarajat (15/175) ja keskireach (90) himmeinä opasteina,
   // varsinaiset SEKTORIRAJAT (50 = upwind/reach, 140 = reach/downwind) korostettuina
   [15,90,175].forEach(deg=>{ [1,-1].forEach(s=>{ const a=deg*Math.PI/180; ctx.beginPath(); ctx.moveTo(cx,cy); ctx.lineTo(cx+s*Math.sin(a)*maxR, cy-Math.cos(a)*maxR); ctx.strokeStyle='#161616'; ctx.lineWidth=1; ctx.stroke(); }); });
-  [50,140].forEach(deg=>{ [1,-1].forEach(s=>{ const a=deg*Math.PI/180; ctx.beginPath(); ctx.moveTo(cx,cy); ctx.lineTo(cx+s*Math.sin(a)*(maxR+4), cy-Math.cos(a)*(maxR+4)); ctx.strokeStyle='#3a3a3a'; ctx.lineWidth=1.5; ctx.stroke(); }); });
+  [50,140].forEach(deg=>{ [1,-1].forEach(s=>{ const a=deg*Math.PI/180; ctx.beginPath(); ctx.moveTo(cx,cy); ctx.lineTo(cx+s*Math.sin(a)*maxR, cy-Math.cos(a)*maxR); ctx.strokeStyle='#3a3a3a'; ctx.lineWidth=1.5; ctx.stroke(); }); });
   ctx.lineWidth=1;
 
-  // sektorien nimet kehällä — kartoittuvat suoraan yläkortteihin (UPWIND/REACH/DOWNWIND)
-  ctx.fillStyle='#9a9a9a'; ctx.font='9px '+mono; ctx.textBaseline='middle';
-  const pad=8;
-  const placeLabel=(twa, side, text)=>{
-    const a=twa*Math.PI/180;
-    let x=cx+side*Math.sin(a)*(maxR+pad), y=cy-Math.cos(a)*(maxR+pad);
-    if(side<0){ ctx.textAlign='left';  x=Math.max(pad, x); }
-    else if(side>0){ ctx.textAlign='right'; x=Math.min(size-pad, x); }
-    else ctx.textAlign='center';
-    ctx.fillText(text, x, y);
-  };
-  placeLabel(33,-1,'UPWIND');  placeLabel(33,1,'UPWIND');
-  placeLabel(95,-1,'REACH');   placeLabel(95,1,'REACH');
-  ctx.textAlign='center'; ctx.textBaseline='top';
-  ctx.fillText('DOWNWIND', cx, cy+maxR+pad);
+  // sektorien nimet: sijoiteltu niin että ne EIVÄT osu käyrään. REACH on veneen
+  // nopein kurssi (käyrä pullistuu sivuille), joten REACH-nimet ankkuroidaan
+  // canvasin sivureunoihin pullistuman ulkopuolelle. UPWIND työnnetään ylös
+  // ulospäin, DOWNWIND alakeskelle. Kirkkaat, akseliotsikkomaiset.
+  const d=Math.PI/180;
+  ctx.fillStyle='#cfcfcf'; ctx.font='600 10px '+mono; ctx.textBaseline='middle';
+  // UPWIND (ylhäällä, kohdistettu ulospäin keskustasta)
+  ctx.textAlign='right'; ctx.fillText('UPWIND', cx - Math.sin(32*d)*(maxR+18), cy - Math.cos(32*d)*(maxR+18));
+  ctx.textAlign='left';  ctx.fillText('UPWIND', cx + Math.sin(32*d)*(maxR+18), cy - Math.cos(32*d)*(maxR+18));
+  // REACH (sivureunoihin, keskikorkeudelle)
+  ctx.textAlign='left';  ctx.fillText('REACH', 2, cy);
+  ctx.textAlign='right'; ctx.fillText('REACH', size-2, cy);
+  // DOWNWIND (alakeskelle)
+  ctx.textAlign='center'; ctx.textBaseline='top'; ctx.fillText('DOWNWIND', cx, cy+maxR+10);
   ctx.textBaseline='alphabetic';
 
   const CYAN=getComputedStyle(document.body).getPropertyValue('--cyan')||'#19e0e0';
