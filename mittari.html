@@ -109,6 +109,13 @@ padding:12px; font-size:13px; line-height:1.5; margin-top:6px; text-align:left;}
 .hidden{display:none;}
 .panel .close.hidden{display:none;}
 .ver{font-family:var(--mono); font-size:11px; color:#4a4a4a; letter-spacing:.16em; margin-top:16px;}
+.disclaimer{font-size:11px; line-height:1.5; color:#5a5a5a; margin-top:20px; text-align:left;
+border-top:1px solid #1c1c1c; padding-top:14px;}
+.credit{font-family:var(--mono); font-size:10px; color:#3a3a3a; letter-spacing:.03em; line-height:1.6; margin-top:6px;}
+.consentTtl{font-size:20px; font-weight:800; letter-spacing:.02em; margin:0 0 16px; color:#eaeaea;}
+.consentBody{text-align:left; color:#a0a0a0; font-size:14px; line-height:1.55;
+max-height:52vh; overflow-y:auto; margin-bottom:20px;}
+.consentBody p{margin:0 0 12px;}
 /* ---- asetukset ---- */
 .sheet{position:fixed; inset:0; z-index:40; background:rgba(0,0,0,.6);
 display:flex; align-items:flex-end; justify-content:center;}
@@ -212,7 +219,23 @@ body.portrait #btnMean{top:22%; height:22%;}
 <button class="ghost" id="btnHelp">How to use →</button>
 <a class="ghost" href="index.html">Classic view →</a>
 <div class="err hidden" id="errBox"></div>
+<div class="disclaimer">Tactical reference only — not a substitute for proper lookout, seamanship, or navigation equipment. To the maximum extent permitted by law, the developer accepts no liability for its use. By using this app, you accept these terms.</div>
 <div class="ver" id="verEnable"></div>
+<div class="credit">🇫🇮 Tackcall<br>Vesa Lindqvist<br>Joonas Sandholm (contributor)</div>
+</div>
+</div>
+
+<!-- kertakuittaus (näytetään kerran, tallennetaan localStorageen) -->
+<div class="overlay hidden" id="consent">
+<div class="card">
+<h2 class="consentTtl">Before you sail</h2>
+<div class="consentBody">
+<p>Tackcall is a tactical aid, not a navigation or safety device. Compass and GPS readings can be wrong or delayed, especially at low speed or when the phone is not securely mounted. Wind direction and speed are not measured directly — they are estimated from heading and speed data, and that estimate can be off or lag behind reality.</p>
+<p>It is not a substitute for keeping a proper lookout, good seamanship, or dedicated navigation equipment. You remain fully responsible for the safe handling of your boat at all times.</p>
+<p>To the maximum extent permitted by applicable law, the developer accepts no liability for any loss, damage, or injury arising from the use of this app. The software is provided "as is", without warranty of any kind.</p>
+<p>By tapping "I understand", you accept these terms.</p>
+</div>
+<button class="big" id="btnConsent">I understand</button>
 </div>
 </div>
 
@@ -1898,8 +1921,27 @@ setInterval(()=>{
 },500);
 
 /* ---------- napit ---------- */
-$("btnEnable").addEventListener("click", enableSensors);
-$("btnDemo").addEventListener("click", startDemo);
+/* Kertakuittaus (vastuuvapaus): näytetään kerran ennen ensimmäistä käyttöä.
+   Hyväksyntä tallennetaan localStorageen. Gate:aa sekä sensorit että demon.
+   Jos storage on estetty, gate menee silti läpi napin painalluksella (ei
+   jää jumiin) — kuittaus vain näytetään uudelleen seuraavalla kerralla. */
+const CONSENT_KEY='tackcall_consent_v1';
+function hasConsent(){ try{ return localStorage.getItem(CONSENT_KEY)==='1'; }catch(e){ return false; } }
+function saveConsent(){ try{ localStorage.setItem(CONSENT_KEY,'1'); }catch(e){ /* estetty — ei kaadeta */ } }
+let pendingConsentAction=null;
+function gateConsent(action){
+  if(hasConsent()){ action(); return; }
+  pendingConsentAction=action;
+  $("consent").classList.remove("hidden");
+}
+$("btnConsent").addEventListener("click", ()=>{
+  saveConsent();
+  $("consent").classList.add("hidden");
+  const act=pendingConsentAction; pendingConsentAction=null;
+  if(act) act();
+});
+$("btnEnable").addEventListener("click", ()=>gateConsent(enableSensors));
+$("btnDemo").addEventListener("click", ()=>gateConsent(startDemo));
 $("btnStb").addEventListener("click", ()=>{ if(S.tack!=='stb'){ S.tack='stb'; resetAudioOnTack(); } syncToggles(); });
 $("btnBb").addEventListener("click", ()=>{ if(S.tack!=='bb'){ S.tack='bb'; resetAudioOnTack(); } syncToggles(); });
 function setMean(){
