@@ -85,6 +85,7 @@
   <button class="secondary" onclick="exportLog()">Näytä koko loki tekstina</button>
   <button class="danger" onclick="clearAll()">Tyhjennä polar-data</button>
   <div id="exportArea" style="display:none;margin-top:10px;">
+    <button class="secondary" onclick="selectAllLog()" style="margin-bottom:8px;">Select all</button>
     <textarea id="exportText" readonly></textarea>
   </div>
   <div class="warn">"Tyhjennä" poistaa pysyvästi meanit + aikaleimat + koko raakalokin tältä laitteelta. Ei vaikuta mittarin muuhun toimintaan.</div>
@@ -787,6 +788,22 @@ function exportLog(){
   const area=document.getElementById('exportArea');
   document.getElementById('exportText').value = JSON.stringify(log);
   area.style.display='block';
+}
+
+function selectAllLog(){
+  const ta=document.getElementById('exportText');
+  ta.focus();
+  ta.select();
+  // iOS Safari: pelkkä select() ei aina valitse readonly-kentässä
+  try{ ta.setSelectionRange(0, ta.value.length); }catch(e){}
+  // Yritetään myös suora leikepöydälle-kopiointi (jos selain tukee)
+  const btn=document.querySelector('#exportArea button');
+  const done=()=>{ if(btn){ const t=btn.textContent; btn.textContent='Kopioitu ✓'; setTimeout(()=>btn.textContent=t,1500);} };
+  if(navigator.clipboard&&navigator.clipboard.writeText){
+    navigator.clipboard.writeText(ta.value).then(done).catch(()=>{});
+  } else {
+    try{ document.execCommand('copy'); done(); }catch(e){}
+  }
 }
 
 function clearAll(){
