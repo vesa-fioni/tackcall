@@ -391,10 +391,10 @@ const S = {
   demo:false, demoT:0,
   settings:{ deadband:3, tackThresh:20, tackAngle:90, gps:true, wake:false, smooth:5, audio:false, gaugeScale:20, headingFocus:false, headingOffset:0, orientationLock:'auto', offshoreCog:false, monoScheme:false, autoMeanRefresh:false, sessionSummary:false }, // tackThresh oletus = skaalan max, käyttäjä kiristää itse; headingOffset = asennuskorjaus, orientationLock = Portrait/Landscape/Automatic; offshoreCog = korvaa kompassin GPS-COG:lla; monoScheme = valkoinen/harmaa duotone-väriskeema kirkkaaseen aurinkoon; autoMeanRefresh = tuulennollapisteen automaattinen virkistys käännöspareista (oletus pois, ks. valmistusohjeet)
   source:null, compassOk:false, liveSince:0,
-  audio:{ state:'nomean', cand:'nomean', candSince:0, tackSince:null, tackArmed:true, tackLockUntil:0 },
+  audio:{ state:'nomean', cand:'nomean', candSince:0, tackSince:null, tackArmed:true, tackLockUntil:0, tackAlertSince:null }, // tackAlertSince = TACK-hälytyksen alkuhetki, ohjaa gaugen vilkun huomioikkunaa (synkassa äänimerkin kanssa, toimii myös äänet pois)
 };
 const HIST_MS = 4*60*1000;
-const AUDIO_DWELL_MS=800, TACK_HOLD_MS=4000, TACK_LOCK_MS=12000;
+const AUDIO_DWELL_MS=800, TACK_HOLD_MS=4000, TACK_LOCK_MS=12000, TACK_BLINK_MS=2400; // TACK-vilkun huomioikkuna: hetkellinen (~4 välähdystä @300ms), ei pysyvä
 // Käännöksen visuaalinen vaimennus: kun heading on tämän verran tuulesta, gauge himmenee.
 // Toimii vain kun molemmat meanit asetettu (estWind() palauttaa null muuten → ei vaimennusta).
 // Säädettävissä kenttädatan perusteella — tyypillinen no-go-vyöhyke ~25–40°.
@@ -987,17 +987,22 @@ async function enableAudio(){
   if(Audio.ctx){ Audio.master.gain.setValueAtTime(0.9,Audio.ctx.currentTime); Audio.enabled=true; Audio.tone(880,0.08,'triangle',0,0.3); }
 }
 function disableAudio(){ Audio.enabled=false; }
-function resetAudioOnTack(){ S.audio.tackArmed=true; S.audio.tackSince=null; S.audio.tackLockUntil=0; }
+function resetAudioOnTack(){ S.audio.tackArmed=true; S.audio.tackSince=null; S.audio.tackLockUntil=0; S.audio.tackAlertSince=null; }
 function handleAudio(status, lifted){
-  if(!Audio.enabled){ S.audio.state=status; return; }
   const now=Date.now();
-  // TACK: header joka ylittää kynnyksen, lukolla ettei toistu
+  // TACK: header ylittää kynnyksen. Sama kertahälytys (tackArmed + lukko) ohjaa
+  // SEKÄ äänimerkin ETTÄ gaugen vilkun huomioikkunan → aina synkassa. Hälytyshetki
+  // (tackAlertSince) kirjataan riippumatta äänistä, jotta visuaalinen vilkku toimii
+  // myös äänet pois päältä. Äänimerkki soitetaan vain jos äänet ovat päällä.
   if(status==='header' && Math.abs(lifted)>=S.settings.tackThresh){
     if(S.audio.tackArmed && now>S.audio.tackLockUntil){
-      Audio.tack(); S.audio.tackArmed=false; S.audio.tackLockUntil=now+TACK_LOCK_MS;
+      S.audio.tackAlertSince=now;                 // käynnistä vilkun huomioikkuna (hetkellinen)
+      S.audio.tackArmed=false; S.audio.tackLockUntil=now+TACK_LOCK_MS;
+      if(Audio.enabled) Audio.tack();
     }
     S.audio.state='tack'; return;
   }
+  if(!Audio.enabled){ S.audio.state=status; return; }
   if(status==='lift' || status==='header'){
     if(status!==S.audio.cand){ S.audio.cand=status; S.audio.candSince=now; }
     else if(now-S.audio.candSince>=AUDIO_DWELL_MS && status!==S.audio.state){
@@ -1565,7 +1570,11 @@ function drawGauge(lifted,status,dim){
   const halfWidth=W*0.44;
   const step=halfWidth/nBars;
   const barW=Math.max(5, step*0.55);
-  const blink=(Math.floor(Date.now()/300)%2===0);
+  const blink=(Math.floor(Date.now()/300)%2===0); // raaka 300ms-vaihe (pegged-pulssi käyttää tätä)
+  // TACK-vilkku on hetkellinen huomion herätys, ei pysyvä: palkit vilkkuvat vain
+  // lyhyen huomioikkunan ajan hälytyksen alusta (synkassa TACK-äänimerkin kanssa),
+  // minkä jälkeen ne jäävät kirkkaina palamaan (tackBlink) ilman vilkuntaa.
+  const tackAlertActive = S.audio.tackAlertSince!=null && (Date.now()-S.audio.tackAlertSince) < TACK_BLINK_MS;
   // palkin korkeus kaaren muodossa: matala keskellä, kasvu kiihtyy reunoja kohti (paraabeli)
   const barHFor = i => { const t=Math.abs(i)/nBars; return minBarH + (maxBarH-minBarH)*(t*t); };
   // Sijoitus reaalimaailman mukaan: oikea = suunta kasvaa, vasen = suunta pienenee.
@@ -1591,7 +1600,7 @@ function drawGauge(lifted,status,dim){
       if(targetI>0 && i>0 && i<=targetI) lit=true;
       if(targetI<0 && i<0 && i>=targetI) lit=true;
     }
-    if(tackSide && lit){ col = blink? PAL.tackBlink : PAL.tackDim; }
+    if(tackSide && lit){ col = (tackAlertActive && !blink) ? PAL.tackDim : PAL.tackBlink; }
     if(pegged && lit && Math.abs(i)===nBars && !blink){ col=PAL.peggedDim; }
     // mono: sammuneet palkit neutraalilla lepotila-sävyllä MOLEMMILLA puolilla,
     // jotta tyhjä gauge näyttää symmetriseltä eikä "aina puolikkaalta". Väritila ennallaan.
@@ -2373,7 +2382,7 @@ document.querySelectorAll(".stepper").forEach(st=>{
 });
 
 /* ---------- init ---------- */
-const APP_VERSION="🇫🇮 Tackcall v0.75";
+const APP_VERSION="🇫🇮 Tackcall v0.76";
 (function(){
   const e=$("verEnable"); if(e) e.textContent=APP_VERSION;
   const n=$("verNote"); if(n) n.textContent=APP_VERSION+" · shares engine with index.html";
