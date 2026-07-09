@@ -303,6 +303,10 @@ body.portrait #btnMean{top:22%; height:22%;}
 <p class="helpp">The large red number is your current heading. STB / BB shows the tack you're on — automatically or manually, set in Settings.</p>
 <div class="helph">VMG</div>
 <p class="helpp">Speed made good along the wind axis, in knots — how fast you're progressing to windward (upwind) or to leeward (downwind). It's derived from your speed and the angle to the estimated wind, so it needs both means set and GPS on. Shown in coral, with SOG in amber, since SOG is the direct reading and VMG is computed.</p>
+<!-- PERF-ohje (v0.82): selkokielinen luku-ohje. 100% = oma P90-referenssi samassa kulmassa; >100 on validi (P90 on ylitettävä ~10% ajasta, ei cappia). Kolmiportainen kirkkaus = datavarmuus (--/dim/bright), ks. Polar.perf() ja PERF_MASS_DIM/BRIGHT. -->
+<div class="helph">PERF</div>
+<p class="helpp">Shows your current speed compared to your own good speed at the same wind angle. The app learns this as you sail — nothing to enter. <b>100%</b> means you're going as well as you normally do at your best in this angle; <b>over 100%</b> means better than usual (this is good — the number is allowed to go above 100, it's not an error); <b>under 100%</b> means there's speed to gain, so try your trim or a small course change.</p>
+<p class="helpp">The brightness tells you how much to trust it: <b>"--"</b> means this angle hasn't been measured yet — the meter isn't broken, just keep sailing and the number appears; a <b>dim</b> number means the app is still learning this angle, so treat it as a rough guide; a <b>bright</b> number means there's enough data to trust. Sail different angles and wind strengths and PERF learns faster, turning from dim to bright.</p>
 <div class="helph">Offshore (COG)</div>
 <p class="helpp">In Settings, turn on <b>Offshore (COG)</b> to replace the compass with GPS course over ground — useful if you want to avoid compass mounting/tilt issues entirely. The heading number turns pink/violet to show it's GPS-based. GPS switches on automatically if it wasn't already. Below 3 kn SOG, GPS course is unreliable, so the display shows "WAITING FOR SPEED" until you're back up to speed. Note that COG includes leeway (it's not exactly the boat's true heading), and it lags a few seconds after each tack while the GPS fix settles.</p>
 <div class="helph">Sounds</div>
@@ -2436,7 +2440,7 @@ document.querySelectorAll(".stepper").forEach(st=>{
 });
 
 /* ---------- init ---------- */
-const APP_VERSION="🇫🇮 Tackcall v0.81";
+const APP_VERSION="🇫🇮 Tackcall v0.82";
 (function(){
   const e=$("verEnable"); if(e) e.textContent=APP_VERSION;
   const n=$("verNote"); if(n) n.textContent=APP_VERSION+" · shares engine with index.html";
