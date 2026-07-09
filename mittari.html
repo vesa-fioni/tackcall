@@ -37,15 +37,19 @@ border-radius:12px; cursor:pointer; backdrop-filter:blur(2px); -webkit-backdrop-
 #btnStb,#btnBb{bottom:max(4px,env(safe-area-inset-bottom)); width:96px; height:54px;
 font-size:14px; font-weight:700; display:flex; flex-direction:column;
 align-items:center; justify-content:center; gap:1px; line-height:1.1;}
-#btnStb{left:max(10px,env(safe-area-inset-left));}
-#btnBb{right:max(10px,env(safe-area-inset-right));}
-/* Väistämissääntöjen mukainen värikoodaus: STB = haale vihreä (etuajo-oikeus), BB = haale punainen (väistää).
-   Haaleina jotta ei kilpaile pääluvun kanssa. */
-#btnStb.active{color:#eafff0; border-color:#33cc66; border-width:2px; background:rgba(51,204,102,.16);
-box-shadow:0 0 0 1px #33cc66 inset, 0 0 18px rgba(51,204,102,.45);}
-#btnBb.active{color:#ffecec; border-color:#ff4444; border-width:2px; background:rgba(255,68,68,.16);
-box-shadow:0 0 0 1px #ff4444 inset, 0 0 18px rgba(255,68,68,.45);}
-#btnStb.active .btn-mean-val,#btnBb.active .btn-mean-val{color:#e8e8e8;}
+#btnStb{left:max(10px,env(safe-area-inset-left)); border-color:rgba(25,226,106,.30);}
+#btnBb{right:max(10px,env(safe-area-inset-right)); border-color:rgba(255,43,43,.30);}
+/* Väistämissääntöjen mukainen värikoodaus: STB = vihreä (etuajo-oikeus), BB = punainen (väistää).
+   Aktiivinen halssi täytetään TÄYSVÄRISENÄ (ei enää haalea läpikuultava täyttö). Signaali on
+   pinta-ala + luminanssikontrasti, ei ohut reunushehku — jotta se erottuu kirkkaassa auringossa
+   ja polarisoitujen aurinkolasien läpi. Tumma teksti vihreällä, valkoinen punaisella = paras
+   kontrasti kummallekin. (v0.77: vaihdettu haaleasta täytöstä täysväriseen aurinkoluettavuuden takia.) */
+#btnStb.active{color:#04240f; border-color:#19e26a; border-width:2px; background:var(--green);
+box-shadow:0 0 0 2px #19e26a inset, 0 0 22px rgba(25,226,106,.55);}
+#btnBb.active{color:#fff; border-color:#ff2b2b; border-width:2px; background:var(--red);
+box-shadow:0 0 0 2px #ff2b2b inset, 0 0 22px rgba(255,43,43,.55);}
+#btnStb.active .btn-mean-val{color:#0c3d1e;}
+#btnBb.active .btn-mean-val{color:#ffe4e4;}
 /* STB/BB nappien sisäiset span-elementit: halssikirjain + asetettu mean-arvo */
 .btn-tack{font-size:15px; font-weight:800; letter-spacing:.04em;}
 .btn-mean-val{font-size:11px; font-weight:600; color:#8a8a8a; letter-spacing:.03em;}
@@ -78,7 +82,11 @@ backdrop-filter:none; -webkit-backdrop-filter:none;} /* invisible tap-alue: ei s
 height:46px; padding:0 22px; font-size:15px; font-weight:800; letter-spacing:.10em;
 color:#ffd9d9; border-color:#6a1f1f; background:rgba(255,43,43,.10);}
 #btnSetMean:active{background:rgba(255,43,43,.22);}
-#btnSetMean.flash{color:#000; background:var(--green); border-color:var(--green);}
+/* Set Mean -vahvistusvälähdys: neutraali VALKOINEN (ei --green, joka on nyt STB-halssin oma väri —
+   vihreä välähdys keskellä STB-ruudun vieressä luettaisiin hetkeksi "STB":ksi). Valkoinen = "otettu
+   talteen" kamerasalaman tapaan, ei väitä halssia. Punainen/keltainen/turkoosi ovat myös varattuja
+   (BB / needs-mean / tack-kynnys), joten valkoinen on ainoa törmäämätön kuittausväri. (v0.78) */
+#btnSetMean.flash{color:#000; background:#fff; border-color:#fff; box-shadow:0 0 22px rgba(255,255,255,.55);}
 /* Pulsointi: osoittaa kumpi mean vielä puuttuu. Keltainen = aina "puuttuu", riippumatta halssin
    omasta väristä (STB=vihreä/BB=punainen), jotta se ei sekoitu active-tilan hehkuun. */
 @keyframes pulse-mean{
@@ -2382,7 +2390,7 @@ document.querySelectorAll(".stepper").forEach(st=>{
 });
 
 /* ---------- init ---------- */
-const APP_VERSION="🇫🇮 Tackcall v0.76";
+const APP_VERSION="🇫🇮 Tackcall v0.78";
 (function(){
   const e=$("verEnable"); if(e) e.textContent=APP_VERSION;
   const n=$("verNote"); if(n) n.textContent=APP_VERSION+" · shares engine with index.html";
