@@ -1983,7 +1983,8 @@ $("btnOpenSummary").addEventListener("click", ()=>{ $("sheet").classList.add("hi
 $("btnCloseSummary").addEventListener("click", ()=>{ ssStopAnim(); $("sessionSummary").classList.add("hidden"); });
 $("btnToggleKeep").addEventListener("click", ()=>{
   const sessions = Polar.splitSessions();
-  const cur = sessions.length ? sessions[sessions.length-1] : null;
+  const ci = ssCurrentIdx(sessions);
+  const cur = ci>=0 ? sessions[ci] : null;
   if(!cur) return;
   ssSetExcluded(cur.startTs, !ssIsExcluded(cur.startTs));
   renderSessionSummary(); // päivitä status + vertailu (prev voi muuttua)
@@ -2048,14 +2049,20 @@ function renderSessionSummary(){
     if(cur)out.push(cur); return out;
   };
   const sessions = demo ? splitDemo(demoPts) : Polar.splitSessions();
-  const cur = sessions.length ? sessions[sessions.length-1] : null;
-  // Edellinen sessio vertailuun: viimeisin cur:ia edeltävä joka EI ole hylätty
-  // (Vaihe F). Demossa ei sovelleta hylkäyksiä — demo on aina puhdas kahden
-  // session tapaus.
+  // Nykyinen sessio = viimeisin KÄYTTÖKELPOINEN (ei kirjaimellisesti viimeisin):
+  // appin avaus tai laituriblippi ei saa syrjäyttää oikeaa purjehdusta (v0.79).
+  const curIdx = ssCurrentIdx(sessions);
+  const cur = curIdx>=0 ? sessions[curIdx] : null;
+  // Edellinen sessio vertailuun: viimeisin cur:ia edeltävä joka on
+  // KÄYTTÖKELPOINEN eikä hylätty (Vaihe F). Aiemmin portti puuttui, jolloin
+  // liikkumaton laituripätkä kelpasi "last sailiksi" ja delta jäi tyhjäksi.
+  // Demossa ei sovelleta hylkäyksiä — demo on aina puhdas kahden session tapaus.
   let prev = null;
   if(cur){
-    for(let i=sessions.length-2;i>=0;i--){
-      if(demo || !ssIsExcluded(sessions[i].startTs)){ prev=sessions[i]; break; }
+    for(let i=curIdx-1;i>=0;i--){
+      if(!ssUsable(sessions[i])) continue;
+      if(!demo && ssIsExcluded(sessions[i].startTs)) continue;
+      prev=sessions[i]; break;
     }
   }
 
@@ -2125,8 +2132,10 @@ function renderSessionSummary(){
     cmp.style.display = 'none';
   }
 
-  // Käyrät E2:lle: nykyinen (segmenttiväritys prev vastaan) + taustakaaret
-  const past = sessions.slice(0, -1).slice(-5); // enintään 5 edellistä taustalle
+  // Käyrät E2:lle: nykyinen (segmenttiväritys prev vastaan) + taustakaaret.
+  // Taustaksi vain KÄYTTÖKELPOISET sessiot ennen cur:ia (v0.79) — muuten roskaa
+  // laimensi ainoan ehyen historiakaaren näkymättömiin.
+  const past = curIdx>0 ? sessions.slice(0,curIdx).filter(ssUsable).slice(-5) : [];
   ssDrawPolar(cur, prev, past);
 }
 
@@ -2233,7 +2242,7 @@ function ssDrawFrame(){
   if(ssAnim.frac>=1 && ssAnim.pastCurves && ssAnim.pastCurves.length){
     const n=ssAnim.pastCurves.length;
     ssAnim.pastCurves.forEach((cc,idx)=>{
-      const alpha=0.06+0.10*(idx+1)/n; // vanhin himmein
+      const alpha=0.18+0.16*(idx+1)/n; // vanhin himmein; nostettu näkyväksi (v0.79)
       ctx.strokeStyle=`rgba(120,120,120,${alpha})`; ctx.lineWidth=1; ctx.setLineDash([3,3]);
       [true,false].forEach(stb=>{ ssStrokeCurve(ctx,cc,stb,curveXY); });
     });
@@ -2341,6 +2350,26 @@ function ssSetExcluded(startTs, excl){
   else if(!excl && i>=0) a.splice(i,1);
   ssSaveExcluded(a);
 }
+
+// Käyttökelpoisuusportti (v0.79). splitSessions katkoo pelkän 30 min ts-aukon
+// perusteella (O-SS-3), joten se tuottaa myös roskasessioita: laituriblippi,
+// appin avaus exportia varten, purjehdus ilman asetettua meania. Ilman tätä
+// porttia cur/prev/past tarttuivat niihin — "current" saattoi olla 6 pisteen
+// blippi ja "last sail" liikkumaton laituripätkä, jolloin vertailu ja historia
+// näyttivät tyhjää vaikka dataa oli. Sessio on käyttökelpoinen vasta kun siltä
+// saa polaarin overall-P90:n (≥ SS_MIN_PTS nopeuspainotettua pistettä).
+// Kynnys provisorinen (O-SS-3/O-SS-4) — kalibroidaan kenttädatalla, ei yhdestä lokista.
+const SS_MIN_PTS = 5;
+function ssUsable(s){
+  if(!s || !s.points || s.points.length < SS_MIN_PTS) return false;
+  const o = Polar.sectorSpeeds(s.points).overall;
+  return o.p90 != null && o.n >= SS_MIN_PTS;
+}
+// Viimeisimmän KÄYTTÖKELPOISEN session indeksi (ei kirjaimellisesti viimeisin).
+function ssCurrentIdx(sessions){
+  for(let i=sessions.length-1;i>=0;i--){ if(ssUsable(sessions[i])) return i; }
+  return -1;
+}
 $("btnHelp").addEventListener("click", ()=>$("help").classList.remove("hidden"));
 $("btnCloseHelp").addEventListener("click", ()=>$("help").classList.add("hidden"));
 $("btnReset").addEventListener("click", ()=>{ S.meanStb=null; S.meanBb=null; Polar.onReset(); });
@@ -2390,7 +2419,7 @@ document.querySelectorAll(".stepper").forEach(st=>{
 });
 
 /* ---------- init ---------- */
-const APP_VERSION="🇫🇮 Tackcall v0.78";
+const APP_VERSION="🇫🇮 Tackcall v0.79";
 (function(){
   const e=$("verEnable"); if(e) e.textContent=APP_VERSION;
   const n=$("verNote"); if(n) n.textContent=APP_VERSION+" · shares engine with index.html";
