@@ -302,7 +302,7 @@ body.portrait #btnMean{top:22%; height:22%;}
 <div class="helph">Compass</div>
 <p class="helpp">The large red number is your current heading. STB / BB shows the tack you're on — automatically or manually, set in Settings.</p>
 <div class="helph">VMG</div>
-<p class="helpp">Speed made good along the wind axis, in knots — how fast you're progressing to windward (upwind) or to leeward (downwind). It's derived from your speed and the angle to the estimated wind, so it needs both means set and GPS on. Shown in amber to set it apart from SOG.</p>
+<p class="helpp">Speed made good along the wind axis, in knots — how fast you're progressing to windward (upwind) or to leeward (downwind). It's derived from your speed and the angle to the estimated wind, so it needs both means set and GPS on. Shown in coral, with SOG in amber, since SOG is the direct reading and VMG is computed.</p>
 <div class="helph">Offshore (COG)</div>
 <p class="helpp">In Settings, turn on <b>Offshore (COG)</b> to replace the compass with GPS course over ground — useful if you want to avoid compass mounting/tilt issues entirely. The heading number turns pink/violet to show it's GPS-based. GPS switches on automatically if it wasn't already. Below 3 kn SOG, GPS course is unreliable, so the display shows "WAITING FOR SPEED" until you're back up to speed. Note that COG includes leeway (it's not exactly the boat's true heading), and it lags a few seconds after each tack while the GPS fix settles.</p>
 <div class="helph">Sounds</div>
@@ -470,12 +470,12 @@ const PAL_COLOR = {
   perfDim:      '#7a4040',        // vähän dataa (himmeä)
   perfBright:   '#ff7a7a',        // riittävästi dataa
 
-  // --- SOG ---
-  sog:          '#ff7a7a',
+  // --- SOG (suoraa dataa, kuten HDG) ---
+  sog:          '#ffb020',        // meripihka (v0.81: vaihdettu VMG:n kanssa — SOG erottuu kirkkaampana)
   sogNone:      '#3a3a3a',
 
-  // --- VMG (nopeus tuulen akselilla) ---
-  vmg:          '#ffb020',        // meripihka
+  // --- VMG (laskettua, kuten PERF) ---
+  vmg:          '#ff7a7a',        // korallinpunainen (v0.81: SOG:n entinen sävy)
   vmgNone:      '#3a3a3a',
 
   // --- meanFlash (✓ kun mean asetetaan) ---
@@ -1843,13 +1843,14 @@ function render(){
           heroLblSize, PAL.heroLabel,'right');
   }
 
-  // Yläriviluvun sarakkeet (2c): portraitissa 3 saraketta (VMG putoaa heron alle),
-  // landscapessa 4 saraketta VMG äärioikealla — uloin/ylivuotava luku, joka
-  // portraitissa relokoituu tilan puutteessa pääluvun alle (yhtenäinen mielikuva).
-  // LIFT pysyy 0.16:ssa molemmissa; PERF ja SOG siirtyvät sisemmäs landscapessa.
-  const colPerf = P ? W*0.50 : W*0.39;
-  const colSog  = P ? W*0.84 : W*0.61;
-  const colVmg  = W*0.84; // vain landscape-ylärivi; portraitissa VMG piirretään heron alle
+  // Yläriviluvun sarakkeet (2c → v0.81 SOG/VMG-roolinvaihto): SOG on suoraa dataa
+  // (kuten HDG-pääluku), joten se saa korostetun ylivuotopaikan — portraitissa heron
+  // alle, landscapessa äärioikealle. VMG on laskettua (kuten PERF), joten se on
+  // tavallinen ylärivin luku. LIFT pysyy 0.16:ssa molemmissa; PERF ja VMG siirtyvät
+  // sisemmäs landscapessa.
+  const colPerf     = P ? W*0.50 : W*0.39;
+  const colTopRight = P ? W*0.84 : W*0.61;  // ylärivin oikea sarake — VMG
+  const colOverflow = W*0.84;               // landscapen uloin sarake — SOG (portraitissa SOG piirtyy heron alle)
 
   // --- vasen: LIFT/HEADER/GROOVE/TACK (ennallaan, himmennetään myötätuulella) ---
   ctx.save();
@@ -1891,31 +1892,32 @@ function render(){
   label('PERF', colPerf, yEy, Math.max(10,small*0.024*sScale), PAL.label,'center');
   drawNumber(perfStr, colPerf, yVal, small*0.092*sScale, perfCol, false);
 
-  // --- oikea: SOG (ensisijainen — saatavilla heti GPS:n kanssa) ---
-  const sogStr = _sogNow!=null ? _sogNow.toFixed(1) : '--';
-  const sogCol = _sogNow!=null ? PAL.sog : PAL.sogNone;
-  label('SOG', colSog, yEy, Math.max(10,small*0.024*sScale), PAL.label,'center');
-  drawNumber(sogStr, colSog, yVal, small*0.092*sScale, sogCol, false);
-
-  // --- VMG (2c): |SOG·cos(TWA)| — nopeus tuulen akselilla, meripihka #ffb020 ---
-  // Näkyy aina kun windDir (molemmat meanit) + SOG saatavilla, sekä nousulla
-  // että myötäisellä: itseisarvo antaa oikean suuruuden molemmilla kursseilla
-  // (nousulla eteneminen ylätuuleen, myötäisellä alatuuleen). Landscapessa
-  // 4. sarake äärioikealla, portraitissa putoaa heron alle gaugen laaksoon.
+  // --- VMG (laskettua, kuten PERF): tavallinen ylärivin luku oikeassa sarakkeessa ---
+  // |SOG·cos(TWA)| — nopeus tuulen akselilla. Näkyy kun windDir (molemmat meanit) +
+  // SOG saatavilla, sekä nousulla että myötäisellä (itseisarvo antaa oikean suuruuden
+  // molemmilla kursseilla). Väri v0.81: SOG:n entinen korallinpunainen (PAL.vmg).
   const _vmg = (_twaNow!=null && _sogNow!=null)
              ? Math.abs(_sogNow*Math.cos(_twaNow*Math.PI/180)) : null;
   const vmgStr = _vmg!=null ? _vmg.toFixed(1) : '--';
   const vmgCol = _vmg!=null ? PAL.vmg : PAL.vmgNone;
+  label('VMG', colTopRight, yEy, Math.max(10,small*0.024*sScale), PAL.label,'center');
+  drawNumber(vmgStr, colTopRight, yVal, small*0.092*sScale, vmgCol, false);
+
+  // --- SOG (suoraa dataa, kuten HDG-pääluku): korostettu ylivuotopaikka ---
+  // Landscapessa uloin sarake äärioikealla (colOverflow), portraitissa pääluvun alla
+  // gaugen laaksossa. Väri v0.81: VMG:n entinen meripihka (PAL.sog) → erottuu kirkkaampana.
+  const sogStr = _sogNow!=null ? _sogNow.toFixed(1) : '--';
+  const sogCol = _sogNow!=null ? PAL.sog : PAL.sogNone;
   if(P){
     // portrait: heron alla, gaugen keskilaaksossa (keskipalkit aina matalia)
-    const vmgLabelY = heroY + heroSize/2 + H*0.05;
-    const vmgNumY   = vmgLabelY + H*0.06;
-    label('VMG', W*0.50, vmgLabelY, Math.max(10,small*0.024*sScale), PAL.label,'center');
-    drawNumber(vmgStr, W*0.50, vmgNumY, small*0.092*sScale, vmgCol, false);
+    const sogLabelY = heroY + heroSize/2 + H*0.05;
+    const sogNumY   = sogLabelY + H*0.06;
+    label('SOG', W*0.50, sogLabelY, Math.max(10,small*0.024*sScale), PAL.label,'center');
+    drawNumber(sogStr, W*0.50, sogNumY, small*0.092*sScale, sogCol, false);
   } else {
-    // landscape: 4. sarake äärioikealla
-    label('VMG', colVmg, yEy, Math.max(10,small*0.024*sScale), PAL.label,'center');
-    drawNumber(vmgStr, colVmg, yVal, small*0.092*sScale, vmgCol, false);
+    // landscape: uloin sarake äärioikealla
+    label('SOG', colOverflow, yEy, Math.max(10,small*0.024*sScale), PAL.label,'center');
+    drawNumber(sogStr, colOverflow, yVal, small*0.092*sScale, sogCol, false);
   }
 
   // --- kaaripalkki tai onboarding-ohje ---
@@ -2434,7 +2436,7 @@ document.querySelectorAll(".stepper").forEach(st=>{
 });
 
 /* ---------- init ---------- */
-const APP_VERSION="🇫🇮 Tackcall v0.80";
+const APP_VERSION="🇫🇮 Tackcall v0.81";
 (function(){
   const e=$("verEnable"); if(e) e.textContent=APP_VERSION;
   const n=$("verNote"); if(n) n.textContent=APP_VERSION+" · shares engine with index.html";
