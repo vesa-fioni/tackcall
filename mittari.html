@@ -400,6 +400,11 @@ const AUDIO_DWELL_MS=800, TACK_HOLD_MS=4000, TACK_LOCK_MS=12000;
 // Säädettävissä kenttädatan perusteella — tyypillinen no-go-vyöhyke ~25–40°.
 const NO_GO_DEG = 10;
 const OFFSHORE_MIN_KN = 3; // COG epäluotettava alle tämän — koko näyttö odotustilassa Offshore-tilassa
+// Näyttökynnys: tämän alle SOG näytetään "ei nopeutta" (--), ei harhaanjohtavaa 0.0.
+// Nappaa GPS:n coords.speed===0 -dropoutit (ja alle 0.05 kn kohinan, joka pyöristyisi 0.0:ksi).
+// Vain näyttö — raakalokia, polaarikeräystä ja O1 rangeBufia ei kosketa (white paper 9.2).
+// PROVISORINEN, kalibroidaan kenttädatalla.
+const SOG_DISPLAY_MIN = 0.05;
 
 /* ============================================================
    PALETIT — keskitetty värimääritys canvas-piirrolle
@@ -1845,7 +1850,7 @@ function render(){
   // SOG on oikealla koska se on ensisijaista jatkuvaa dataa.
   const _wind=estWind();
   const _twaNow=(_wind!=null&&S.heading!=null)?Math.abs(angDiff(_wind,S.heading)):null;
-  const _sogNow=(S.gps.on&&S.gps.sog!=null)?S.gps.sog:null;
+  const _sogNow=(S.gps.on&&S.gps.sog!=null&&S.gps.sog>=SOG_DISPLAY_MIN)?S.gps.sog:null;
   const _pd=Polar.perf(_twaNow,_sogNow);
   let perfStr,perfCol;
   if(!_pd||_pd.state==='none'){ perfStr='--'; perfCol=PAL.perfNone; }
@@ -1855,8 +1860,8 @@ function render(){
   drawNumber(perfStr, colPerf, yVal, small*0.092*sScale, perfCol, false);
 
   // --- oikea: SOG (ensisijainen — saatavilla heti GPS:n kanssa) ---
-  const sogStr = (S.gps.on && S.gps.sog!=null) ? S.gps.sog.toFixed(1) : '--';
-  const sogCol = (S.gps.on && S.gps.sog!=null) ? PAL.sog : PAL.sogNone;
+  const sogStr = _sogNow!=null ? _sogNow.toFixed(1) : '--';
+  const sogCol = _sogNow!=null ? PAL.sog : PAL.sogNone;
   label('SOG', colSog, yEy, Math.max(10,small*0.024*sScale), PAL.label,'center');
   drawNumber(sogStr, colSog, yVal, small*0.092*sScale, sogCol, false);
 
@@ -2129,6 +2134,7 @@ function ssDrawPolar(session, prevSession, pastSessions){
     const cm = _cmDeg(p.meanStb, p.meanBb);
     let t = Math.abs(_naDeg(p.heading - cm));
     if(t<15 || t>175) continue;
+    if(p.sog < SOG_DISPLAY_MIN) continue; // näyttö: ohita GPS-dropout-nollat (raakaloki koskematon)
     const rel = _naDeg(p.heading - cm);
     pts.push({twa:t, sog:p.sog, stb: rel>=0, dt:(p.ts-t0)/1000});
   }
@@ -2367,7 +2373,7 @@ document.querySelectorAll(".stepper").forEach(st=>{
 });
 
 /* ---------- init ---------- */
-const APP_VERSION="🇫🇮 Tackcall v0.74";
+const APP_VERSION="🇫🇮 Tackcall v0.75";
 (function(){
   const e=$("verEnable"); if(e) e.textContent=APP_VERSION;
   const n=$("verNote"); if(n) n.textContent=APP_VERSION+" · shares engine with index.html";
