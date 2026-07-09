@@ -399,10 +399,11 @@ const S = {
   demo:false, demoT:0,
   settings:{ deadband:3, tackThresh:20, tackAngle:90, gps:true, wake:false, smooth:5, audio:false, gaugeScale:20, headingFocus:false, headingOffset:0, orientationLock:'auto', offshoreCog:false, monoScheme:false, autoMeanRefresh:false, sessionSummary:false }, // tackThresh oletus = skaalan max, käyttäjä kiristää itse; headingOffset = asennuskorjaus, orientationLock = Portrait/Landscape/Automatic; offshoreCog = korvaa kompassin GPS-COG:lla; monoScheme = valkoinen/harmaa duotone-väriskeema kirkkaaseen aurinkoon; autoMeanRefresh = tuulennollapisteen automaattinen virkistys käännöspareista (oletus pois, ks. valmistusohjeet)
   source:null, compassOk:false, liveSince:0,
-  audio:{ state:'nomean', cand:'nomean', candSince:0, tackSince:null, tackArmed:true, tackLockUntil:0, tackAlertSince:null }, // tackAlertSince = TACK-hälytyksen alkuhetki, ohjaa gaugen vilkun huomioikkunaa (synkassa äänimerkin kanssa, toimii myös äänet pois)
+  audio:{ state:'nomean', cand:'nomean', candSince:0, tackSince:null, tackArmed:true, tackLockUntil:0, tackAlertSince:null, settled:false, grooveSince:null }, // tackAlertSince = TACK-hälytyksen alkuhetki, ohjaa gaugen vilkun huomioikkunaa (synkassa äänimerkin kanssa, toimii myös äänet pois). settled/grooveSince = asettumissalpa (v0.80): TACK sallitaan vasta kun halssille on ASETUTTU (groove pysynyt SETTLE_DWELL_MS). Estää TACKin reachilta noustessa. Nollautuu käännöksessä (resetAudioOnTack).
 };
 const HIST_MS = 4*60*1000;
 const AUDIO_DWELL_MS=800, TACK_HOLD_MS=4000, TACK_LOCK_MS=12000, TACK_BLINK_MS=2400; // TACK-vilkun huomioikkuna: hetkellinen (~4 välähdystä @300ms), ei pysyvä
+const SETTLE_DWELL_MS=3000; // asettumissalpa (v0.80): groove on pysyttävä tämän verran ennen kuin TACK sallitaan halssilla — "ensin asetutaan halssille". Alustava arvo, kalibroitavissa kenttädatalla.
 // Käännöksen visuaalinen vaimennus: kun heading on tämän verran tuulesta, gauge himmenee.
 // Toimii vain kun molemmat meanit asetettu (estWind() palauttaa null muuten → ei vaimennusta).
 // Säädettävissä kenttädatan perusteella — tyypillinen no-go-vyöhyke ~25–40°.
@@ -995,14 +996,28 @@ async function enableAudio(){
   if(Audio.ctx){ Audio.master.gain.setValueAtTime(0.9,Audio.ctx.currentTime); Audio.enabled=true; Audio.tone(880,0.08,'triangle',0,0.3); }
 }
 function disableAudio(){ Audio.enabled=false; }
-function resetAudioOnTack(){ S.audio.tackArmed=true; S.audio.tackSince=null; S.audio.tackLockUntil=0; S.audio.tackAlertSince=null; }
+function resetAudioOnTack(){ S.audio.tackArmed=true; S.audio.tackSince=null; S.audio.tackLockUntil=0; S.audio.tackAlertSince=null; S.audio.settled=false; S.audio.grooveSince=null; }
 function handleAudio(status, lifted){
   const now=Date.now();
+  // Asettumissalpa (v0.80): TACK sallitaan vasta kun halssille on asetuttu, ts.
+  // groove on pysynyt SETTLE_DWELL_MS. Groove (|lifted|<=deadband) = ollaan meanin
+  // päällä = varmasti close-hauled. Salpa nollautuu käännöksessä (resetAudioOnTack),
+  // joten jokainen uusi halssi alkaa asettumattomana. Kun kerran asetuttu, header ei
+  // pura salpaa — aito header on juuri se mikä TACKin laukaisee. Ei pura reachille
+  // laskeutumista (jatko-ongelma, harkitaan kenttäkokemuksen perusteella).
+  if(status==='groove'){
+    if(S.audio.grooveSince==null) S.audio.grooveSince=now;
+    if(now - S.audio.grooveSince >= SETTLE_DWELL_MS) S.audio.settled=true;
+  } else {
+    S.audio.grooveSince=null;
+  }
   // TACK: header ylittää kynnyksen. Sama kertahälytys (tackArmed + lukko) ohjaa
   // SEKÄ äänimerkin ETTÄ gaugen vilkun huomioikkunan → aina synkassa. Hälytyshetki
   // (tackAlertSince) kirjataan riippumatta äänistä, jotta visuaalinen vilkku toimii
   // myös äänet pois päältä. Äänimerkki soitetaan vain jos äänet ovat päällä.
-  if(status==='header' && Math.abs(lifted)>=S.settings.tackThresh){
+  // Vaatii lisäksi settled=true (asettumissalpa) — sama ehto myös näytön tilasanassa
+  // (render) ja gaugen palkeissa (drawGauge), jotta kaikki kolme pysyvät synkassa.
+  if(status==='header' && Math.abs(lifted)>=S.settings.tackThresh && S.audio.settled){
     if(S.audio.tackArmed && now>S.audio.tackLockUntil){
       S.audio.tackAlertSince=now;                 // käynnistä vilkun huomioikkuna (hetkellinen)
       S.audio.tackArmed=false; S.audio.tackLockUntil=now+TACK_LOCK_MS;
@@ -1595,7 +1610,7 @@ function drawGauge(lifted,status,dim){
     if(f>nBars){f=nBars; pegged=true;} if(f<-nBars){f=-nBars; pegged=true;}
     targetI=Math.round(f);
   }
-  const tackSide = (status==='header' && Math.abs(lifted)>=S.settings.tackThresh);
+  const tackSide = (status==='header' && Math.abs(lifted)>=S.settings.tackThresh && S.audio.settled);  // settled: sama asettumissalpa kuin äänessä ja tilasanassa (v0.80) — ennen asettumista palkit näyttävät headerin kiihtyvän värin, eivät turkoosia
   for(let i=-nBars;i<=nBars;i++){
     if(i===0) continue;
     const x=cx+i*step;
@@ -1844,7 +1859,7 @@ function render(){
     if(dispStatus==='lift'){ devCol=PAL.stLift; stateTxt='LIFT'; }
     else if(dispStatus==='groove'){ devCol=PAL.stGroove; stateTxt='GROOVE'; }
     else { // header
-      if(Math.abs(dispLifted)>=S.settings.tackThresh){ devCol=PAL.stTack; stateTxt='TACK'; }
+      if(Math.abs(dispLifted)>=S.settings.tackThresh && S.audio.settled){ devCol=PAL.stTack; stateTxt='TACK'; }  // settled: sama asettumissalpa kuin äänessä (v0.80) — ennen asettumista näytetään HEADER, ei TACK
       else { devCol=PAL.stHeader; stateTxt='HEADER'; }
     }
   }
@@ -2419,7 +2434,7 @@ document.querySelectorAll(".stepper").forEach(st=>{
 });
 
 /* ---------- init ---------- */
-const APP_VERSION="🇫🇮 Tackcall v0.79";
+const APP_VERSION="🇫🇮 Tackcall v0.80";
 (function(){
   const e=$("verEnable"); if(e) e.textContent=APP_VERSION;
   const n=$("verNote"); if(n) n.textContent=APP_VERSION+" · shares engine with index.html";
