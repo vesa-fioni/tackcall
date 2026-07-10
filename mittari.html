@@ -96,6 +96,10 @@ color:#ffd9d9; border-color:#6a1f1f; background:rgba(255,43,43,.10);}
 #btnBb.needs-mean,#btnStb.needs-mean{border-color:#ffb020; border-width:2px; background:rgba(255,176,32,.10);
 color:#ffe4ad; animation:pulse-mean 2s ease-in-out infinite;}
 #btnBb.needs-mean .btn-mean-val,#btnStb.needs-mean .btn-mean-val{color:#e0b070;}
+/* v2: tuulenkäännösehdotus odottaa hyväksyntää — sama keltainen pulssi kuin needs-mean,
+   sovellettuna keskisuunta-nappiin (joka näyttää tällöin otsikon UPDATE WIND). */
+#btnSetMean.amr-pending{border-color:#ffb020; border-width:2px; background:rgba(255,176,32,.12);
+color:#ffe4ad; animation:pulse-mean 2s ease-in-out infinite;}
 /* ---- aloitusoverlay ---- */
 .overlay{position:fixed; inset:0; z-index:30; background:#000; display:flex;
 align-items:center; justify-content:center; padding:24px;}
@@ -251,7 +255,7 @@ body.portrait #btnMean{top:22%; height:22%;}
 <h2>Settings</h2>
 <div class="row"><div class="lbl">GPS<small>SOG speed · polar performance learning</small></div><div class="tog" data-key="gps"></div></div>
 <div class="row"><div class="lbl">Offshore (COG)<small>Replaces compass with GPS course over ground. Ignores leeway — best above ~3 kn. Turns GPS on automatically.</small></div><div class="tog" data-key="offshoreCog"></div></div>
-<div class="row"><div class="lbl">Auto mean refresh<small>Learns your close-hauled angle and quietly refreshes both tack means from matched pairs of good upwind legs. Manual Set Mean always works. Off by default.</small></div><div class="tog" data-key="autoMeanRefresh"></div></div>
+<div class="row"><div class="lbl">Auto mean refresh<small>Watches for wind shifts and asks you to confirm each one it spots. Manual Set Mean always works. Off by default.</small></div><div class="tog" data-key="autoMeanRefresh"></div></div>
 <div class="row"><div class="lbl">Display mode<small>Off: Heading · enlarged main number<br>On: Instruments · enlarged secondary data</small></div><div class="tog" data-key="headingFocus"></div></div>
 <div class="row"><div class="lbl">Duotone (sunlight)<small>Off: full colour<br>On: white / grey — max contrast in bright sun</small></div><div class="tog" data-key="monoScheme"></div></div>
 <div class="row"><div class="lbl">Keep screen awake</div><div class="tog" data-key="wake"></div></div>
@@ -358,6 +362,7 @@ body.portrait #btnMean{top:22%; height:22%;}
 <div class="ssNote" id="ssNote"></div>
 </div>
 <div class="ssKeep" id="ssKeep">
+  <div class="ssKeepStatus" id="ssAutoMean" style="display:none;"></div>
   <div class="ssKeepStatus" id="ssKeepStatus">—</div>
   <button class="close" id="btnToggleKeep">Exclude this session</button>
 </div>
@@ -585,6 +590,7 @@ function applyColorScheme(){ PAL = S.settings.monoScheme ? PAL_MONO : PAL_COLOR;
 const Polar = (function(){
   const MEANS_KEY = 'tackcall_polar_means_v1';
   const LOG_KEY   = 'tackcall_polar_log_v1';
+  const AUTOLOG_KEY = 'tackcall_automean_log_v1'; // v2: luottamusloki (accept/dismiss/pause)
   // "Vanhaa meaniä ei saa ladata hiljaa aktiiviseksi" — muutaman tunnin
   // raja: tuore mean on luultavasti vielä validi, eilisen tuuli ei ole.
   const MEAN_MAX_AGE_MS = 3*60*60*1000; // 3h
@@ -593,6 +599,8 @@ const Polar = (function(){
   // tarkennettavissa kenttädatan perusteella (ks. O4/O5 white paperissa).
   const STABILITY_WINDOW_MS = 10*1000;
   let log = [];
+  let _autoLog = [];              // v2: luottamusloki (rullaava)
+  const AUTOLOG_MAX = 20;         // viimeiset N tapahtumaa
 
   // ============================================================
   // Tuulennollapisteen automaattinen virkistys (valinnainen, oletus pois)
@@ -606,9 +614,16 @@ const Polar = (function(){
   const AMR_CH_TOL        = 18;    // sallittu poikkeama opitusta puolikulmasta (°)
   const AMR_SOG_RATIO     = 0.85;  // min. SOG-suhde halssin P90:een
   const AMR_MAX_PAIR_GAP_MS = 6*60*1000; // kuinka vanha pariehdokas saa olla (6 min)
+  // Vaihe 2 (valmistusohje v5): näkyvä ehdotus + tappaamalla hyväksyntä, itsensä
+  // irtikytkentä, TTL. Additiivista; kynnykset alustavia — kalibroitava kenttädatalla.
+  const AMR_DISENGAGE_STREAK = 3;        // vakaita ei-luovi-jaksoja peräkkäin ⇒ tauko
+  const AMR_PENDING_TTL_MS   = 90*1000;  // kuinka kauan kuittaamaton ehdotus elää
   let learnedTackAngle = null;     // opittu täysi kulma meanStb↔meanBb
   let _segment = {active:false, startT:null, samples:[]};
   let _candStb = null, _candBb = null; // {hdg,sog,ts,stability,sogRatio}
+  let _pendingRefresh = null;      // v2: odottava ehdotus {from/to/ts..., created} | null
+  let _notSailingStreak = 0;       // v2: peräkkäiset vakaat mutta ei-luovi-jaksot
+  let _amrPaused = false;          // v2: itsensä irtikytkennän tila (UI-signaali)
 
   function loadLog(){
     try{
@@ -620,6 +635,22 @@ const Polar = (function(){
   function saveLog(){
     try{ localStorage.setItem(LOG_KEY, JSON.stringify(log)); }
     catch(e){ /* storage täynnä tai estetty — ei kaadeta sovellusta */ }
+  }
+
+  // v2 — luottamusloki: kevyt, rullaava. Kirjaa hyväksynnät, väistymiset ja tauot.
+  function loadAutoLog(){
+    try{ const raw=localStorage.getItem(AUTOLOG_KEY); _autoLog=raw?JSON.parse(raw):[];
+      if(!Array.isArray(_autoLog)) _autoLog=[]; }catch(e){ _autoLog=[]; }
+  }
+  function saveAutoLog(){ try{ localStorage.setItem(AUTOLOG_KEY, JSON.stringify(_autoLog)); }catch(e){} }
+  function _logAuto(type, p){
+    const sogR = (p&&p.sogStb!=null&&p.sogBb!=null) ? Math.min(p.sogStb,p.sogBb)
+               : (p&&p.sogStb!=null) ? p.sogStb : (p&&p.sogBb!=null) ? p.sogBb : null;
+    _autoLog.push({ ts:Date.now(), type:type,
+      fromStb:p?p.fromStb:null, toStb:p?p.toStb:null,
+      fromBb:p?p.fromBb:null,   toBb:p?p.toBb:null, sogRatio:sogR });
+    if(_autoLog.length>AUTOLOG_MAX) _autoLog=_autoLog.slice(-AUTOLOG_MAX);
+    saveAutoLog();
   }
 
   // Osa A — meanit + aikaleima + vakaus + SOG-ristivalidointi (O1)
@@ -721,6 +752,10 @@ const Polar = (function(){
   // on lepotilassa kun asetus on pois — ei kerää, ei laske, ei koske meaneihin.
   function tickSegment(){
     if(!S.settings.autoMeanRefresh) return;
+    // TTL: väistä kuittaamaton ehdotus (§5.5) — tarjoaa, ei vaadi
+    if(_pendingRefresh && Date.now()-_pendingRefresh.created > AMR_PENDING_TTL_MS){
+      _logAuto('dismiss', _pendingRefresh); _pendingRefresh=null;
+    }
     if(S.heading==null) return;
     const stab = computeStability();
     const now = Date.now();
@@ -746,7 +781,15 @@ const Polar = (function(){
     const windAxis = _cm2(S.meanStb, S.meanBb);
     const d = Math.abs(_na(avgHdg - windAxis));
     const expected = learnedTackAngle/2;
-    if(Math.abs(d-expected) > AMR_CH_TOL) return;
+    if(Math.abs(d-expected) > AMR_CH_TOL){
+      // vakaa jakso mutta geometria ei luovilta (esim. moottorivene vastatuuleen):
+      // itsensä irtikytkentä kun näin käy peräkkäin (§6) — automaatti myöntää ettei tiedä
+      _notSailingStreak++;
+      if(_notSailingStreak >= AMR_DISENGAGE_STREAK && !_amrPaused){ _amrPaused = true; _logAuto('pause', null); }
+      return;
+    }
+    // läpäisi close hauled -portin ⇒ näyttää luovilta: herää irtikytkennästä
+    _notSailingStreak = 0; _amrPaused = false;
     const tack = Math.abs(_na(avgHdg-S.meanStb)) <= Math.abs(_na(avgHdg-S.meanBb)) ? 'stb':'bb';
     // Suodatin 2: kulkiko vene hyvin? (sama halssikohtainen SOG-P90 kuin O1)
     const p90 = tackSogP90(tack);
@@ -766,19 +809,37 @@ const Polar = (function(){
       if(_candStb.ts < _candBb.ts) _candStb=null; else _candBb=null;
       return;
     }
-    S.meanStb=_candStb.hdg; S.meanStbTs=_candStb.ts;
-    S.meanStbStability=_candStb.stability; S.meanStbSogRatio=_candStb.sogRatio;
-    S.meanBb=_candBb.hdg; S.meanBbTs=_candBb.ts;
-    S.meanBbStability=_candBb.stability; S.meanBbSogRatio=_candBb.sogRatio;
-    learnedTackAngle = Math.abs(_na(S.meanStb - S.meanBb)); // v1: kova korvaus
-    saveMeans();
+    // v2 (valmistusohje): EI kirjoiteta hiljaa. Parkkeerataan ehdotus — käyttäjä
+    // hyväksyy tappaamalla (acceptRefresh). Pari on tuulenkäännöksen havainnon portti;
+    // tuoreempi pari korvaa vanhemman odottavan. Kirjoitus vain _commitPending():ssä.
+    _pendingRefresh = {
+      fromStb:S.meanStb, toStb:_candStb.hdg, tsStb:_candStb.ts,
+      fromBb:S.meanBb,   toBb:_candBb.hdg,   tsBb:_candBb.ts,
+      stabStb:_candStb.stability, sogStb:_candStb.sogRatio,
+      stabBb:_candBb.stability,   sogBb:_candBb.sogRatio,
+      created: Date.now()
+    };
     _candStb=null; _candBb=null;
+  }
+
+  // Kirjoittaa odottavan ehdotuksen (molemmat meanit kerralla). Kutsutaan VAIN
+  // käyttäjän hyväksynnästä (acceptRefresh ← setMean-haara). Vastaa vanhaa _tryCommit-kirjoitusta.
+  function _commitPending(){
+    if(!_pendingRefresh) return;
+    const p = _pendingRefresh;
+    S.meanStb=p.toStb; S.meanStbTs=p.tsStb; S.meanStbStability=p.stabStb; S.meanStbSogRatio=p.sogStb;
+    S.meanBb=p.toBb;   S.meanBbTs=p.tsBb;   S.meanBbStability=p.stabBb;   S.meanBbSogRatio=p.sogBb;
+    learnedTackAngle = Math.abs(_na(S.meanStb - S.meanBb));
+    saveMeans();
+    _logAuto('accept', p);
+    _pendingRefresh = null;
   }
 
   // Nollataan kesken oleva tila kun ominaisuus kytketään pois (kutsutaan togglesta).
   function amrReset(){
     _segment = {active:false, startT:null, samples:[]};
     _candStb=null; _candBb=null;
+    _pendingRefresh=null; _notSailingStreak=0; _amrPaused=false;
   }
 
   // Osa B — append-only raakahavaintoloki
@@ -841,7 +902,7 @@ const Polar = (function(){
   function _perfAt(polar,twa){ if(!polar||twa==null)return null; let best=null,bd=Infinity; polar.queries.forEach((q,i)=>{ const d=Math.abs(q-twa); if(d<bd&&polar.results[i].p90!=null){bd=d;best=i;} }); if(best==null||bd>_STEP*1.5)return null; return{p90:polar.results[best].p90,mass:polar.results[best].mass}; }
 
   return {
-    init(){ loadMeans(); loadLog(); setInterval(collectPoint,LOG_INTERVAL_MS); setInterval(tickSegment,LOG_INTERVAL_MS); _polar=_computePolar(log); },
+    init(){ loadMeans(); loadLog(); loadAutoLog(); setInterval(collectPoint,LOG_INTERVAL_MS); setInterval(tickSegment,LOG_INTERVAL_MS); _polar=_computePolar(log); },
     onMeanSet(){
       // Vaihe 1: lasketaan vakaus juuri ennen tallennusta — kuvaa kuinka
       // tasainen heading oli viimeisten STABILITY_WINDOW_MS millisekunnin ajan.
@@ -859,6 +920,8 @@ const Polar = (function(){
       if(S.meanStb!=null && S.meanBb!=null){
         learnedTackAngle = Math.abs(_na(S.meanStb - S.meanBb));
       }
+      // Manuaalinen asetus ottaa ohjat: väistä odottava ehdotus, herää irtikytkennästä.
+      _pendingRefresh=null; _notSailingStreak=0; _amrPaused=false;
       saveMeans();
     },
     onReset(){
@@ -869,6 +932,24 @@ const Polar = (function(){
       clearMeans();
     },
     amrOff(){ amrReset(); },
+    // v2 — näkyvä ehdotus + tappaamalla hyväksyntä + itsensä irtikytkentä
+    pendingRefresh(){ return _pendingRefresh; },
+    acceptRefresh(){ _commitPending(); },
+    isPaused(){ return _amrPaused; },
+    refreshTtlFrac(){
+      if(!_pendingRefresh) return 0;
+      return Math.max(0, Math.min(1, 1-(Date.now()-_pendingRefresh.created)/AMR_PENDING_TTL_MS));
+    },
+    autoLog(){ return _autoLog.slice(); },
+    // Odottavan ehdotuksen kiertymä: {deg, dir:'RIGHT'|'LEFT'} tuuliakselin muutoksesta.
+    refreshDelta(){
+      if(!_pendingRefresh) return null;
+      const p=_pendingRefresh;
+      if(p.fromStb==null||p.fromBb==null) return null;
+      const oldAxis=_cm2(p.fromStb,p.fromBb), newAxis=_cm2(p.toStb,p.toBb);
+      const dd=_na(newAxis-oldAxis);
+      return { deg:Math.round(Math.abs(dd)), dir:(dd>=0?'RIGHT':'LEFT') };
+    },
     logLength(){ return log.length; },
     hasData(){ return _polar!=null; },
     recompute(){ _polar=_computePolar(log); return _polar?_polar.nPts:0; },
@@ -1677,6 +1758,10 @@ function pointOfSail(){
 function render(){
   ctx.clearRect(0,0,W,H);
 
+  // v2: odottava tuulenkäännösehdotus + itsensä irtikytkennän tila (vain kun asetus päällä)
+  const pending   = S.settings.autoMeanRefresh ? Polar.pendingRefresh() : null;
+  const amrPaused = !pending && S.settings.autoMeanRefresh && Polar.isPaused();
+
   // alanappien korostus aina nykyisen halssin mukaan (myös autoSelectTackin jälkeen)
   $("btnStb").classList.toggle("active", S.tack==='stb');
   $("btnBb").classList.toggle("active", S.tack==='bb');
@@ -1693,8 +1778,10 @@ function render(){
   if($("btnBb").innerHTML  !== newBbHtml)  $("btnBb").innerHTML  = newBbHtml;
   // Mean-napin teksti: "SET STB" / "SET BB" — lyhyt, toimintaorientoitunut.
   // Kompassiluku poistettu (toisteinen: STB/BB-napit näyttävät jo asetetut meanit).
-  const meanLbl = S.tack==='bb' ? 'SET BB' : S.tack==='stb' ? 'SET STB' : 'SET MEAN';
+  const meanLbl = pending ? 'UPDATE WIND'
+                : S.tack==='bb' ? 'SET BB' : S.tack==='stb' ? 'SET STB' : 'SET MEAN';
   { const bm=$("btnSetMean"); if(bm.textContent!==meanLbl) bm.textContent=meanLbl; }
+  $("btnSetMean").classList.toggle("amr-pending", !!pending);
   // Pulsointi: keltainen kun tällä halssilla ei ole meania — joko koska se on nyt aktiivinen
   // halssi vailla meania, tai koska toinen halssi on jo asetettu ja tämä puuttuu vielä.
   $("btnBb").classList.toggle("needs-mean", S.meanBb==null && (S.tack==='bb' || S.meanStb!=null));
@@ -1761,7 +1848,7 @@ function render(){
   const windDir = estWind();
   const inNoGo = windDir!=null && S.heading!=null &&
                  Math.abs(angDiff(windDir, S.heading)) < NO_GO_DEG;
-  const dim = downwind ? 0.12 : inNoGo ? 0.35 : 1;
+  const dim = pending ? 0.15 : downwind ? 0.12 : inNoGo ? 0.35 : 1;
   // myötätuulella tai no-go-vyöhykkeellä shiftiarvio ei ole mielekäs
   const dispStatus = (downwind || inNoGo) ? 'nomean' : status;
   const dispLifted = (downwind || inNoGo) ? null : liftedDeg;
@@ -1944,6 +2031,35 @@ function render(){
   } else {
     drawGauge(dispLifted, dispStatus, dim);
   }
+
+  // --- v2: tuulenkäännösehdotus — yksi iso rivi, gauge himmennetty (§5.2) ---
+  if(pending){
+    const rd = Polar.refreshDelta();
+    if(rd){
+      const cy = (gz.topForEdge + gz.baselineY)/2;
+      ctx.save(); ctx.textAlign='center'; ctx.textBaseline='middle';
+      ctx.fillStyle = PAL.instruction;
+      ctx.font = `800 ${small*0.05}px ${getCSS('--mono')}`;
+      ctx.fillText(`WIND ${rd.deg}° ${rd.dir}`, W/2, cy);
+      // ohut hiipuva TTL-palkki (graafinen, ei toinen lukema)
+      const frac = Polar.refreshTtlFrac();
+      const barW=W*0.34, barX=W/2-barW/2, barY=cy+small*0.09;
+      ctx.strokeStyle='rgba(122,217,255,0.25)'; ctx.lineWidth=2;
+      ctx.beginPath(); ctx.moveTo(barX,barY); ctx.lineTo(barX+barW,barY); ctx.stroke();
+      ctx.strokeStyle=PAL.waitOffshore;
+      ctx.beginPath(); ctx.moveTo(barX,barY); ctx.lineTo(barX+barW*frac,barY); ctx.stroke();
+      ctx.restore();
+    }
+  }
+
+  // --- v2: itsensä irtikytkentä — hiljainen pysyvä merkki (§6) ---
+  if(amrPaused){
+    ctx.save(); ctx.textAlign='center'; ctx.textBaseline='middle';
+    ctx.fillStyle = PAL.waitSub;
+    ctx.font = `800 ${Math.max(10,small*0.026)}px ${getCSS('--mono')}`;
+    ctx.fillText('· AUTO-MEAN PAUSED ·', W/2, H*0.055);
+    ctx.restore();
+  }
 }
 
 /* ---------- silmukat ---------- */
@@ -1985,6 +2101,15 @@ $("btnDemo").addEventListener("click", ()=>gateConsent(startDemo));
 $("btnStb").addEventListener("click", ()=>{ if(S.tack!=='stb'){ S.tack='stb'; resetAudioOnTack(); } syncToggles(); });
 $("btnBb").addEventListener("click", ()=>{ if(S.tack!=='bb'){ S.tack='bb'; resetAudioOnTack(); } syncToggles(); });
 function setMean(){
+  // Jos automatiikalla on odottava tuulenkäännösehdotus, tämä tappaus HYVÄKSYY sen
+  // (sitoo molemmat meanit kerralla) — eri toiminto kuin manuaalinen per-halssi-asetus.
+  if(Polar.pendingRefresh && Polar.pendingRefresh()){
+    Polar.acceptRefresh();
+    meanFlash=1.0;
+    const b=$("btnSetMean"); b.classList.add("flash"); setTimeout(()=>b.classList.remove("flash"),700);
+    syncToggles();
+    return;
+  }
   if(S.heading==null) return;
   if(!S.tack) S.tack='stb';
   if(S.tack==='stb'){ S.meanStb=norm(S.heading); S.meanStbTs=Date.now(); }
@@ -2063,6 +2188,19 @@ function ssDemoLog(){
 function renderSessionSummary(){
   // Demossa käytetään synteettistä muistidataa; muuten oikeaa lokia (Polarin sisällä).
   const demo = S.demo;
+  // v2: luottamusloki -tiivistelmä (näytä, älä kerro — §7.1). Piilotettu demossa ja tyhjänä.
+  { const el=$("ssAutoMean");
+    if(el){
+      const al = (!demo && Polar.autoLog) ? Polar.autoLog() : [];
+      if(al.length){
+        const a=al.filter(x=>x.type==='accept').length;
+        const d=al.filter(x=>x.type==='dismiss').length;
+        const p=al.filter(x=>x.type==='pause').length;
+        el.textContent = `Auto-mean: ${a} confirmed · ${d} dismissed · ${p} paused`;
+        el.style.display='block';
+      } else { el.textContent=''; el.style.display='none'; }
+    }
+  }
   const demoPts = demo ? ssDemoLog() : null;
   const splitDemo = (log)=>{
     const GAP=30*60*1000, sorted=log.slice().sort((a,b)=>a.ts-b.ts), out=[]; let cur=null;
@@ -2440,7 +2578,7 @@ document.querySelectorAll(".stepper").forEach(st=>{
 });
 
 /* ---------- init ---------- */
-const APP_VERSION="🇫🇮 Tackcall v0.82";
+const APP_VERSION="🇫🇮 Tackcall v0.83";
 (function(){
   const e=$("verEnable"); if(e) e.textContent=APP_VERSION;
   const n=$("verNote"); if(n) n.textContent=APP_VERSION+" · shares engine with index.html";
