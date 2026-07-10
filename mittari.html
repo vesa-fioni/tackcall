@@ -624,6 +624,7 @@ const Polar = (function(){
   let _pendingRefresh = null;      // v2: odottava ehdotus {from/to/ts..., created} | null
   let _notSailingStreak = 0;       // v2: peräkkäiset vakaat mutta ei-luovi-jaksot
   let _amrPaused = false;          // v2: itsensä irtikytkennän tila (UI-signaali)
+  let _demoShiftSign = -1;         // demo-esittely: vuorottelee oikea/vasen
 
   function loadLog(){
     try{
@@ -751,9 +752,10 @@ const Polar = (function(){
   // Kutsutaan 1×/s samasta syklistä kuin collectPoint. Portti: koko mekanismi
   // on lepotilassa kun asetus on pois — ei kerää, ei laske, ei koske meaneihin.
   function tickSegment(){
+    if(S.demo) return; // demossa oikea havaitsin ei aja synteettistä dataa (ks. demoInjectRefresh)
     if(!S.settings.autoMeanRefresh) return;
     // TTL: väistä kuittaamaton ehdotus (§5.5) — tarjoaa, ei vaadi
-    if(_pendingRefresh && Date.now()-_pendingRefresh.created > AMR_PENDING_TTL_MS){
+    if(_pendingRefresh && Date.now()-_pendingRefresh.created > (_pendingRefresh.ttlMs||AMR_PENDING_TTL_MS)){
       _logAuto('dismiss', _pendingRefresh); _pendingRefresh=null;
     }
     if(S.heading==null) return;
@@ -830,8 +832,7 @@ const Polar = (function(){
     S.meanStb=p.toStb; S.meanStbTs=p.tsStb; S.meanStbStability=p.stabStb; S.meanStbSogRatio=p.sogStb;
     S.meanBb=p.toBb;   S.meanBbTs=p.tsBb;   S.meanBbStability=p.stabBb;   S.meanBbSogRatio=p.sogBb;
     learnedTackAngle = Math.abs(_na(S.meanStb - S.meanBb));
-    saveMeans();
-    _logAuto('accept', p);
+    if(!S.demo){ saveMeans(); _logAuto('accept', p); } // demossa ei kirjoiteta pysyvästi eikä lokiin
     _pendingRefresh = null;
   }
 
@@ -938,8 +939,22 @@ const Polar = (function(){
     isPaused(){ return _amrPaused; },
     refreshTtlFrac(){
       if(!_pendingRefresh) return 0;
-      return Math.max(0, Math.min(1, 1-(Date.now()-_pendingRefresh.created)/AMR_PENDING_TTL_MS));
+      const ttl=_pendingRefresh.ttlMs||AMR_PENDING_TTL_MS;
+      return Math.max(0, Math.min(1, 1-(Date.now()-_pendingRefresh.created)/ttl));
     },
+    // Demo-esittely (scriptattu, EI oikea havaitsin): parkkeeraa synteettisen ehdotuksen,
+    // jotta ehdotusnäkymän voi nähdä paikallaan. Vuorottelee oikea/vasen. Lyhyt TTL demossa.
+    demoInjectRefresh(){
+      if(!S.demo || S.meanStb==null || S.meanBb==null) return;
+      _demoShiftSign = -_demoShiftSign;
+      const sh = 8*_demoShiftSign;
+      _pendingRefresh = {
+        fromStb:S.meanStb, toStb:norm(S.meanStb+sh), tsStb:Date.now(),
+        fromBb:S.meanBb,   toBb:norm(S.meanBb+sh),   tsBb:Date.now(),
+        stabStb:1, sogStb:1, stabBb:1, sogBb:1, created:Date.now(), ttlMs:9000
+      };
+    },
+    demoClearRefresh(){ if(S.demo) _pendingRefresh=null; },
     autoLog(){ return _autoLog.slice(); },
     // Odottavan ehdotuksen kiertymä: {deg, dir:'RIGHT'|'LEFT'} tuuliakselin muutoksesta.
     refreshDelta(){
@@ -1409,11 +1424,12 @@ $("btnMountFlow").addEventListener("click", ()=>{ $("help").classList.add("hidde
 
 /* ---------- demo ---------- */
 function startDemo(){
-  S.demo=true; S.source='demo'; S.demoT=0; S.demoTourT=0;
+  S.demo=true; S.source='demo'; S.demoT=0; S.demoTourT=0; S.demoAmrGap=0; S.demoAmrShown=false;
   S.meanStb=null; S.meanBb=null; // käyttäjä asettaa keskisuunnat itse (tämä on demon idea)
   S.tack='stb';
   S.demoWind=20;
   S.demoHdg=norm(S.demoWind - S.settings.tackAngle/2); // lähtee styyrpuurin luovisuunnasta
+  Polar.demoClearRefresh();
   hideOverlay();
 }
 function stepDemo(){
@@ -1434,6 +1450,16 @@ function stepDemo(){
     else if(phase===1){ target=norm(wind+half); S.tack='bb'; }   // UPWIND BB
     else if(phase===2){ target=norm(wind+180-dwHalf); S.tack='bb'; } // DOWNWIND BB
     else { target=norm(wind+180+dwHalf); S.tack='stb'; }         // DOWNWIND STB
+    // Demo-only: tuulenkäännösehdotuksen esittely (scriptattu, EI oikea havaitsin).
+    // Näytetään VAIN KERRAN demosession aikana — ei jatkuvaa uusien tuulensuuntien virtaa.
+    // Ilmestyy nousulla pienen viiveen jälkeen, elää TTL:nsä loppuun (palkki hiipuu) ja poistuu.
+    // Uuden näkee käynnistämällä demon uudelleen.
+    if(Polar.pendingRefresh()){
+      if(Polar.refreshTtlFrac() <= 0) Polar.demoClearRefresh(); // palkki tyhjä ⇒ poista
+    } else if(!S.demoAmrShown){
+      S.demoAmrGap = (S.demoAmrGap||0) + 1/60;
+      if(S.demoAmrGap > 6 && (phase===0 || phase===1)){ Polar.demoInjectRefresh(); S.demoAmrShown = true; }
+    }
   }
   // loiva kääntyminen kohti tavoitesuuntaa
   S.demoHdg=norm(S.demoHdg + angDiff(target, S.demoHdg)*0.03);
@@ -1743,6 +1769,11 @@ function label(txt,x,y,size,color,align){
   ctx.save(); ctx.fillStyle=color; ctx.textAlign=align||'center'; ctx.textBaseline='alphabetic';
   ctx.font=`700 ${size}px ${getCSS('--mono')}`; ctx.fillText(txt,x,y); ctx.restore();
 }
+// §4: yksi kaukoluettavan viestin taso — SAMA sijainti kaikille isoille gauge-alueen
+// viesteille (onboarding-ohje, tuulenkäännösilmoitus). Sijainti määritellään vain tässä,
+// jottei sitä toisteta joka kutsupaikassa. Toimii sekä portrait- että landscape-asennossa.
+const BIG_MSG_Y = 0.72; // osuus H:sta — heron alapuolella molemmissa asennoissa
+function drawBigMessage(txt, size){ label(txt, W/2, H*BIG_MSG_Y, size, PAL.instruction, 'center'); }
 
 /* purjehdustila tuulen perusteella: vaatii molemmat keskisuunnat (estWind).
    rel = tuulen suunta suhteessa keulaan; + = tuuli oikealla (stb), − = vasemmalla (bb).
@@ -1759,7 +1790,7 @@ function render(){
   ctx.clearRect(0,0,W,H);
 
   // v2: odottava tuulenkäännösehdotus + itsensä irtikytkennän tila (vain kun asetus päällä)
-  const pending   = S.settings.autoMeanRefresh ? Polar.pendingRefresh() : null;
+  const pending   = (S.settings.autoMeanRefresh || S.demo) ? Polar.pendingRefresh() : null;
   const amrPaused = !pending && S.settings.autoMeanRefresh && Polar.isPaused();
 
   // alanappien korostus aina nykyisen halssin mukaan (myös autoSelectTackin jälkeen)
@@ -2027,8 +2058,10 @@ function render(){
       instrLine = 'TACK ON STB  ·  SETTLE  ·  TAP SET STB';
     }
     const fs = Math.max(11, small*0.026);
-    label(instrLine, W/2, H*0.72, fs, PAL.instruction, 'center');
-  } else {
+    drawBigMessage(instrLine, fs);
+  } else if(!pending){
+    // Ehdotuksen aikana gaugea EI piirretä: lift/header on laskettu vanhaa (vanhentuvaa)
+    // meaniä vasten, ja tyhjä tila pitää tuulenkäännösviestin siistinä (kuten WAITING-ruutu).
     drawGauge(dispLifted, dispStatus, dim);
   }
 
@@ -2036,14 +2069,12 @@ function render(){
   if(pending){
     const rd = Polar.refreshDelta();
     if(rd){
-      const cy = (gz.topForEdge + gz.baselineY)/2;
-      ctx.save(); ctx.textAlign='center'; ctx.textBaseline='middle';
-      ctx.fillStyle = PAL.instruction;
-      ctx.font = `800 ${small*0.05}px ${getCSS('--mono')}`;
-      ctx.fillText(`WIND ${rd.deg}° ${rd.dir}`, W/2, cy);
-      // ohut hiipuva TTL-palkki (graafinen, ei toinen lukema)
+      // Sama sijainti kuin ohjerivillä (drawBigMessage / §4) — ei omaa laskentaa.
+      drawBigMessage(`WIND ${rd.deg}° ${rd.dir}`, small*0.05);
+      // ohut hiipuva TTL-palkki viestin alapuolelle (graafinen, ei toinen lukema)
       const frac = Polar.refreshTtlFrac();
-      const barW=W*0.34, barX=W/2-barW/2, barY=cy+small*0.09;
+      const barW=W*0.34, barX=W/2-barW/2, barY=H*BIG_MSG_Y+small*0.06;
+      ctx.save();
       ctx.strokeStyle='rgba(122,217,255,0.25)'; ctx.lineWidth=2;
       ctx.beginPath(); ctx.moveTo(barX,barY); ctx.lineTo(barX+barW,barY); ctx.stroke();
       ctx.strokeStyle=PAL.waitOffshore;
@@ -2578,7 +2609,7 @@ document.querySelectorAll(".stepper").forEach(st=>{
 });
 
 /* ---------- init ---------- */
-const APP_VERSION="🇫🇮 Tackcall v0.83";
+const APP_VERSION="🇫🇮 Tackcall v0.89";
 (function(){
   const e=$("verEnable"); if(e) e.textContent=APP_VERSION;
   const n=$("verNote"); if(n) n.textContent=APP_VERSION+" · shares engine with index.html";
