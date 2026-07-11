@@ -30,7 +30,7 @@
 </head>
 <body>
 <h1>Tackcall — Polar debug</h1>
-<div class="sub">Lukee samat localStorage-avaimet kuin mittari.html (sama origin vaaditaan).</div>
+<div class="sub">Lukee meanit localStoragesta ja raakalokin IndexedDB:stä — sama origin kuin mittari.html vaaditaan.</div>
 
 <div class="card">
   <div class="label">Means (tackcall_polar_means_v1)</div>
@@ -38,7 +38,7 @@
 </div>
 
 <div class="card">
-  <div class="label">Raakaloki (tackcall_polar_log_v1)</div>
+  <div class="label">Raakaloki (tackcall_polar_db_v1 · IndexedDB)</div>
   <div class="row">
     <div class="stat"><div class="n" id="logCount">0</div><div class="l">pistettä</div></div>
     <div class="stat"><div class="n" id="logSize">0 KB</div><div class="l">koko</div></div>
@@ -93,6 +93,51 @@
 
 <script>
 const MEANS_KEY='tackcall_polar_means_v1', LOG_KEY='tackcall_polar_log_v1';
+// v0.90: raakaloki luetaan IndexedDB:stä (sama DB/store kuin mittari.html kirjoittaa).
+// Sama origin vaaditaan. Meanit ovat yhä localStoragessa (MEANS_KEY) — ne eivät siirtyneet.
+const IDB_DB='tackcall_polar_db_v1', IDB_STORE='points';
+let _dbgDb=null;
+function _dbgOpenOnce(){
+  return new Promise(function(resolve,reject){
+    let req;
+    try{ req=indexedDB.open(IDB_DB,1); }catch(e){ reject(e); return; }
+    // Sama out-of-line autoIncrement-store kuin mittarissa; luodaan jos debug avataan ennen mittaria.
+    req.onupgradeneeded=function(){ const db=req.result; if(!db.objectStoreNames.contains(IDB_STORE)) db.createObjectStore(IDB_STORE,{autoIncrement:true}); };
+    req.onsuccess=function(){ resolve(req.result); };
+    req.onerror  =function(){ reject(req.error||new Error('idb open error')); };
+    req.onblocked=function(){ reject(new Error('idb blocked')); };
+  });
+}
+function _dbgOpenDb(){
+  if(_dbgDb) return Promise.resolve(_dbgDb);
+  return _dbgOpenOnce().catch(function(){ return new Promise(function(r){setTimeout(r,300);}).then(_dbgOpenOnce); })
+    .then(function(db){ _dbgDb=db; return db; });
+}
+// Lukee koko raakalokin IndexedDB:stä. Palauttaa aina taulukon (tyhjä jos ei dataa/virhe).
+function readAllPoints(){
+  return _dbgOpenDb().then(function(db){
+    return new Promise(function(resolve){
+      try{
+        const req=db.transaction(IDB_STORE,'readonly').objectStore(IDB_STORE).getAll();
+        req.onsuccess=function(){ const a=req.result; resolve(Array.isArray(a)?a:[]); };
+        req.onerror  =function(){ resolve([]); };
+      }catch(e){ resolve([]); }
+    });
+  }).catch(function(){ return []; });
+}
+// Tyhjentää raakalokin IndexedDB-storen (clearAll:ta varten).
+function clearPoints(){
+  return _dbgOpenDb().then(function(db){
+    return new Promise(function(resolve){
+      try{
+        const tx=db.transaction(IDB_STORE,'readwrite');
+        tx.objectStore(IDB_STORE).clear();
+        tx.oncomplete=function(){ resolve(true); };
+        tx.onerror   =function(){ resolve(false); };
+      }catch(e){ resolve(false); }
+    });
+  }).catch(function(){ return false; });
+}
 let autoTimer=null;
 
 function fmtAge(ts){
@@ -755,39 +800,35 @@ function refresh(){
   }catch(e){ meansOut='VIRHE luettaessa: '+e.message; }
   document.getElementById('meansOut').textContent=meansOut;
 
-  let log=[];
-  try{
-    const raw=localStorage.getItem(LOG_KEY);
-    log = raw ? JSON.parse(raw) : [];
-    if(!Array.isArray(log)) log=[];
-  }catch(e){ log=[]; }
+  // Raakaloki nyt IndexedDB:stä (asynkroninen). Lokiriippuvat DOM-päivitykset .then():ssä.
+  readAllPoints().then(function(log){
+    document.getElementById('logCount').textContent=log.length;
+    const sizeKB = log.length ? (JSON.stringify(log).length/1024).toFixed(1)+' KB' : '0 KB';
+    document.getElementById('logSize').textContent=sizeKB;
 
-  document.getElementById('logCount').textContent=log.length;
-  const sizeKB = log.length ? (JSON.stringify(log).length/1024).toFixed(1)+' KB' : '0 KB';
-  document.getElementById('logSize').textContent=sizeKB;
+    if(log.length){
+      const span=(log[log.length-1].ts - log[0].ts)/1000;
+      document.getElementById('logSpan').textContent =
+        span<60 ? Math.round(span)+'s' : Math.round(span/60)+'min';
+    } else {
+      document.getElementById('logSpan').textContent='—';
+    }
 
-  if(log.length){
-    const span=(log[log.length-1].ts - log[0].ts)/1000;
-    document.getElementById('logSpan').textContent =
-      span<60 ? Math.round(span)+'s' : Math.round(span/60)+'min';
-  } else {
-    document.getElementById('logSpan').textContent='—';
-  }
+    const last5 = log.slice(-5).reverse();
+    document.getElementById('logOut').textContent = last5.length
+      ? last5.map(p=>JSON.stringify(p)).join('\n')
+      : '(ei pisteitä — varmista että GPS on päällä mittarissa ja SOG saatavilla)';
 
-  const last5 = log.slice(-5).reverse();
-  document.getElementById('logOut').textContent = last5.length
-    ? last5.map(p=>JSON.stringify(p)).join('\n')
-    : '(ei pisteitä — varmista että GPS on päällä mittarissa ja SOG saatavilla)';
-
-  refreshPolar(log);
+    refreshPolar(log);
+  });
 }
 
 function exportLog(){
-  let log=[];
-  try{ log=JSON.parse(localStorage.getItem(LOG_KEY)||'[]'); }catch(e){}
-  const area=document.getElementById('exportArea');
-  document.getElementById('exportText').value = JSON.stringify(log);
-  area.style.display='block';
+  readAllPoints().then(function(log){
+    const area=document.getElementById('exportArea');
+    document.getElementById('exportText').value = JSON.stringify(log);
+    area.style.display='block';
+  });
 }
 
 function selectAllLog(){
@@ -809,8 +850,10 @@ function selectAllLog(){
 function clearAll(){
   if(!confirm('Poistetaanko meanit + raakaloki pysyvästi tästä selaimesta?')) return;
   try{ localStorage.removeItem(MEANS_KEY); }catch(e){}
+  // Raakaloki on nyt IndexedDB:ssä; tyhjennetään store. Poistetaan myös vanha localStorage-avain
+  // jos siihen jäi migraatiota edeltävää dataa (siivous, ei toiminnallisesti pakollinen).
   try{ localStorage.removeItem(LOG_KEY); }catch(e){}
-  refresh();
+  clearPoints().then(refresh);
 }
 
 function autoToggle(){
