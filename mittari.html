@@ -155,6 +155,17 @@ border:1px solid #2a2a2a; font-size:13px; font-weight:700; cursor:pointer;}
 border:none; font-weight:700; font-size:15px; cursor:pointer; background:#1a1a1a; color:#fff;}
 .panel .reset{background:transparent; border:1px solid #5a1f1f; color:#ff9b9b;}
 .panel .note{font-size:12px; color:#6c6c6c; line-height:1.5; margin-top:14px;}
+/* Session summary -pikalinkki asetusten kärjessä (v0.92): navigaatio, ei kytkin. Erotettu
+   varsinaisista asetuksista syaanilla (+hehku, sama --cyan kuin summary-paneelissa) ja
+   alareunan viivalla. Aina näkyvissä — SS on aina päällä, ei enää kytkintä. */
+.panelLink{display:flex; align-items:center; justify-content:space-between; gap:10px;
+  width:100%; margin:0 0 8px; padding:12px 0 14px; background:none; border:none;
+  border-bottom:1px solid #1c1c1c; cursor:pointer; text-align:left;}
+.panelLink .plTxt{font-size:15px; font-weight:700; color:var(--cyan); letter-spacing:.02em;
+  text-shadow:0 0 12px rgba(25,224,224,.4);}
+.panelLink .plTxt small{display:block; font-weight:400; color:#777; font-size:12px;
+  margin-top:3px; letter-spacing:0; text-shadow:none;}
+.panelLink .plArrow{flex:0 0 auto; color:var(--cyan); font-size:18px; text-shadow:0 0 12px rgba(25,224,224,.4);}
 /* ---- käyttöohje ---- */
 .helpsteps{margin:0 0 6px; padding:0; list-style:none; counter-reset:hs;}
 .helpsteps li{position:relative; padding:0 0 14px 38px; color:#d6d6d6; font-size:14px; line-height:1.5;}
@@ -203,6 +214,31 @@ body.portrait #btnMean{top:22%; height:22%;}
 .ssNote b{color:#fff;}
 .ssKeep{margin:14px 0 4px; text-align:center;}
 .ssKeepStatus{font-size:12px; line-height:1.5; color:#7a7a7a; margin-bottom:8px; font-family:var(--sans);}
+/* v0.91 — Upwind angle & speed (§6) + Tack performance (§7). Mockupista, mittarin paletilla. */
+.lqMeta,.tpMeta{font-family:var(--mono); font-size:10px; color:#6a6a6a; text-align:center; margin:0 0 12px;}
+.lqMeta b,.tpMeta b{color:#9a9a9a;}
+.lqList,.tpList{display:flex; flex-direction:column; gap:8px;}
+.lqCard,.tpCard{border:1px solid #1f1f1f; border-radius:12px; padding:10px 12px; display:flex; align-items:center; gap:10px;}
+.lqTack{font-family:var(--mono); font-size:11px; font-weight:700; display:flex; flex-direction:column; align-items:center; gap:4px; min-width:44px;}
+.lqTack small{font-family:var(--sans); font-size:9px; color:#6a6a6a; font-weight:400;}
+.lqGauge{flex:1 1 auto; min-width:0;}
+.lqGauge svg{display:block; width:100%; height:auto;}
+.lqReadout{font-family:var(--mono); font-size:9.5px; color:#7a7a7a; text-align:center; margin-top:2px;}
+.lqMetric{flex:0 0 auto; text-align:right; min-width:52px;}
+.lqPct{font-family:var(--mono); font-size:17px; font-weight:700; color:var(--cyan);}
+.lqLbl{font-family:var(--mono); font-size:8px; letter-spacing:.05em; color:#6a6a6a; margin-top:2px;}
+.tpTack{font-family:var(--mono); font-size:11px; font-weight:700; display:flex; flex-direction:column; align-items:center; gap:3px; min-width:46px;}
+.tpTack .arrow{color:#5a5a5a; font-size:9px;}
+.tpFrom,.tpTo{padding:1px 5px; border-radius:4px; font-size:10px;}
+.stb{color:#04240f; background:var(--green);}
+.bb{color:#fff; background:var(--red);}
+.tpSpark{flex:0 0 auto;}
+.tpSpark svg{display:block;}
+.tpMetric{flex:1 1 auto; text-align:right; min-width:0;}
+.tpTime{font-family:var(--mono); font-size:18px; font-weight:700; color:#fff;}
+.tpTime small{font-size:10px; color:#6a6a6a; font-weight:400; margin-left:3px;}
+.tpLoss{font-family:var(--mono); font-size:10.5px; color:#8a8a8a; margin-top:2px;}
+.tpFoot{font-size:11px; line-height:1.55; color:#6c6c6c; text-align:center; margin:14px 6px 4px; font-family:var(--sans);}
 </style>
 </head>
 <body>
@@ -253,6 +289,9 @@ body.portrait #btnMean{top:22%; height:22%;}
 <div class="sheet hidden" id="sheet">
 <div class="panel">
 <h2>Settings</h2>
+<!-- v0.92: Session summary aina päällä; avaus suorana, visuaalisesti erotettuna linkkinä
+     asetusten kärjessä (ks. Purjehdusyhteenveto §8). Vanha kytkin+piilonappi poistettu alempaa. -->
+<button class="panelLink" id="btnOpenSummary"><span class="plTxt">Session summary<small>After-sail recap — sector speeds vs. your history</small></span><span class="plArrow">→</span></button>
 <div class="row"><div class="lbl">GPS<small>SOG speed · polar performance learning</small></div><div class="tog" data-key="gps"></div></div>
 <div class="row"><div class="lbl">Offshore (COG)<small>Replaces compass with GPS course over ground. Ignores leeway — best above ~3 kn. Turns GPS on automatically.</small></div><div class="tog" data-key="offshoreCog"></div></div>
 <div class="row"><div class="lbl">Auto mean refresh<small>Watches for wind shifts and asks you to confirm each one it spots. Manual Set Mean always works. Off by default.</small></div><div class="tog" data-key="autoMeanRefresh"></div></div>
@@ -279,8 +318,6 @@ body.portrait #btnMean{top:22%; height:22%;}
 <button data-val="auto">Automatic</button>
 </div>
 <button class="close" id="btnPolarUpdate">Update polar</button>
-<div class="row"><div class="lbl">Session summary<small>After-sail recap: sector speeds and how today compared to before. Turn on to reveal the button below. Off by default.</small></div><div class="tog" data-key="sessionSummary"></div></div>
-<button class="close hidden" id="btnOpenSummary">Session summary →</button>
 <button class="close reset" id="btnReset">Reset means</button>
 <div class="note" id="verNote"></div>
 <button class="close" id="btnCloseSheet">Done</button>
@@ -328,6 +365,7 @@ body.portrait #btnMean{top:22%; height:22%;}
 <div class="sheet hidden" id="sessionSummary">
 <div class="panel">
 <h2>Session summary</h2>
+<div class="ssHint" id="ssLoading" style="display:none;">Loading…</div>
 <div class="ssSub">Your pace today</div>
 <div class="ssRow" id="ssSpeeds">
   <div class="ssCard"><div class="ssLbl">UPWIND</div><div class="ssNum" id="ssUp">—</div></div>
@@ -360,6 +398,21 @@ body.portrait #btnMean{top:22%; height:22%;}
 <div class="ssHint">How much of this windrange was <span class="g">faster</span> · <span class="a">same</span> · <span class="w">slower</span> than last session.</div>
 <div class="ssSub" id="ssNoteTitle" style="display:none;">Wind or real change?</div>
 <div class="ssNote" id="ssNote"></div>
+</div>
+<!-- v0.91 (SS-laajennus §6): halssin ajaminen — pinch/target/foot -->
+<div id="ssLeg" style="display:none;">
+<div class="ssSub">Upwind angle &amp; speed</div>
+<div class="ssHint" style="margin-top:-4px;">Where you sailed relative to your best-VMG angle — pinching (too high) vs. footing (too low).</div>
+<div class="lqMeta" id="ssLegMeta"></div>
+<div class="lqList" id="ssLegList"></div>
+<div class="tpFoot" id="ssLegFoot"></div>
+</div>
+<!-- v0.91 (SS-laajennus §7): käännösanalyysi — rakentuu §6:n rajojen päälle -->
+<div id="ssTack" style="display:none;">
+<div class="ssSub">Tack performance</div>
+<div class="tpMeta" id="ssTackMeta"></div>
+<div class="tpList" id="ssTackList"></div>
+<div class="tpFoot" id="ssTackFoot"></div>
 </div>
 <div class="ssKeep" id="ssKeep">
   <div class="ssKeepStatus" id="ssAutoMean" style="display:none;"></div>
@@ -406,7 +459,7 @@ const S = {
   gps:{cog:null, sog:null, on:false, watch:null},
   wakeLock:null,
   demo:false, demoT:0,
-  settings:{ deadband:3, tackThresh:20, tackAngle:90, gps:true, wake:false, smooth:5, audio:false, gaugeScale:20, headingFocus:false, headingOffset:0, orientationLock:'auto', offshoreCog:false, monoScheme:false, autoMeanRefresh:false, sessionSummary:false }, // tackThresh oletus = skaalan max, käyttäjä kiristää itse; headingOffset = asennuskorjaus, orientationLock = Portrait/Landscape/Automatic; offshoreCog = korvaa kompassin GPS-COG:lla; monoScheme = valkoinen/harmaa duotone-väriskeema kirkkaaseen aurinkoon; autoMeanRefresh = tuulennollapisteen automaattinen virkistys käännöspareista (oletus pois, ks. valmistusohjeet)
+  settings:{ deadband:3, tackThresh:20, tackAngle:90, gps:true, wake:false, smooth:5, audio:false, gaugeScale:20, headingFocus:false, headingOffset:0, orientationLock:'auto', offshoreCog:false, monoScheme:false, autoMeanRefresh:false }, // tackThresh oletus = skaalan max, käyttäjä kiristää itse; headingOffset = asennuskorjaus, orientationLock = Portrait/Landscape/Automatic; offshoreCog = korvaa kompassin GPS-COG:lla; monoScheme = valkoinen/harmaa duotone-väriskeema kirkkaaseen aurinkoon; autoMeanRefresh = tuulennollapisteen automaattinen virkistys käännöspareista (oletus pois, ks. valmistusohjeet)
   source:null, compassOk:false, liveSince:0,
   audio:{ state:'nomean', cand:'nomean', candSince:0, tackSince:null, tackArmed:true, tackLockUntil:0, tackAlertSince:null, settled:false, grooveSince:null }, // tackAlertSince = TACK-hälytyksen alkuhetki, ohjaa gaugen vilkun huomioikkunaa (synkassa äänimerkin kanssa, toimii myös äänet pois). settled/grooveSince = asettumissalpa (v0.80): TACK sallitaan vasta kun halssille on ASETUTTU (groove pysynyt SETTLE_DWELL_MS). Estää TACKin reachilta noustessa. Nollautuu käännöksessä (resetAudioOnTack).
 };
@@ -598,7 +651,15 @@ const Polar = (function(){
   // Vaihe 1: mean-vakauden arviointi-ikkuna. Lähtöarvo 10s — ei lukittu,
   // tarkennettavissa kenttädatan perusteella (ks. O4/O5 white paperissa).
   const STABILITY_WINDOW_MS = 10*1000;
+  // v0.90: raakaloki siirretty localStoragesta IndexedDB:hen (riittävyys + kirjoitusvakaus).
+  // Kirjoituskerros ja käynnistyslataus muuttuvat; laskentalogiikka ei koske. log pysyy
+  // muistissa write-through-välimuistina, joten kaikki lukijat (computePolar, sectorSpeeds,
+  // rawLog, splitSessions, computeStability) pysyvät koskemattomina. Katso valmistusohje v3.
+  const IDB_DB    = 'tackcall_polar_db_v1';
+  const IDB_STORE = 'points';
+  let _db = null;                 // avattu IndexedDB-kahva tai null (muistivaranto, §10 A)
   let log = [];
+  let _readyPromise = null;       // v0.91: init():n lataus-Promise, paljastetaan ready():llä (SS-laajennus §1)
   let _autoLog = [];              // v2: luottamusloki (rullaava)
   const AUTOLOG_MAX = 20;         // viimeiset N tapahtumaa
 
@@ -626,16 +687,52 @@ const Polar = (function(){
   let _amrPaused = false;          // v2: itsensä irtikytkennän tila (UI-signaali)
   let _demoShiftSign = -1;         // demo-esittely: vuorottelee oikea/vasen
 
-  function loadLog(){
-    try{
-      const raw = localStorage.getItem(LOG_KEY);
-      log = raw ? JSON.parse(raw) : [];
-      if(!Array.isArray(log)) log = [];
-    }catch(e){ log = []; }
+  // Avaa IndexedDB kerran. Out-of-line autoIncrement-avain: generoitu avain EI injektoidu
+  // itse pisteolioon, joten getAll palauttaa puhtaat {ts,heading,...}-oliot ilman lisäkenttiä.
+  function _openOnce(){
+    return new Promise(function(resolve, reject){
+      let req;
+      try{ req = indexedDB.open(IDB_DB, 1); }
+      catch(e){ reject(e); return; }
+      req.onupgradeneeded = function(){
+        const db = req.result;
+        if(!db.objectStoreNames.contains(IDB_STORE)) db.createObjectStore(IDB_STORE, { autoIncrement:true });
+      };
+      req.onsuccess = function(){ resolve(req.result); };
+      req.onerror   = function(){ reject(req.error || new Error('idb open error')); };
+      req.onblocked = function(){ reject(new Error('idb blocked')); };
+    });
   }
-  function saveLog(){
-    try{ localStorage.setItem(LOG_KEY, JSON.stringify(log)); }
-    catch(e){ /* storage täynnä tai estetty — ei kaadeta sovellusta */ }
+  // §10: yksi uudelleenyritys pienellä viiveellä — osuu WebKitin tunnettuun
+  // "ei aukea ensimmäisellä kerralla, toimii reloadilla" -bugiin ilman toista persistenssikerrosta.
+  function _openDb(){
+    return _openOnce().catch(function(){
+      return new Promise(function(res){ setTimeout(res, 300); }).then(_openOnce);
+    });
+  }
+  // Asynkroninen käynnistyslataus: täyttää log-taulukon IndexedDB:stä. Jos avaus epäonnistuu
+  // kahdesti, log jää pelkäksi muistivarannoksi tälle sessiolle (§10 A) — ei localStorage-fallbackia.
+  function loadLogAsync(){
+    return _openDb().then(function(db){
+      _db = db;
+      return new Promise(function(resolve){
+        try{
+          const tx = db.transaction(IDB_STORE, 'readonly');
+          const req = tx.objectStore(IDB_STORE).getAll();
+          req.onsuccess = function(){ const a = req.result; log = Array.isArray(a) ? a : []; resolve(); };
+          req.onerror   = function(){ log = []; resolve(); };
+        }catch(e){ log = []; resolve(); }
+      });
+    }).catch(function(){ _db = null; log = []; /* muistivaranto */ });
+  }
+  // Kirjoittaa yhden pisteen. Ammu ja unohda; virhe nielaistaan (kuten vanha saveLog),
+  // ei kaadeta sovellusta. Muistivarantotilassa (_db==null) ei pysyväistallennusta.
+  function _persistPoint(pt){
+    if(!_db) return;
+    try{
+      const tx = _db.transaction(IDB_STORE, 'readwrite');
+      tx.objectStore(IDB_STORE).add(pt);
+    }catch(e){ /* ei kaadeta */ }
   }
 
   // v2 — luottamusloki: kevyt, rullaava. Kirjaa hyväksynnät, väistymiset ja tauot.
@@ -849,7 +946,7 @@ const Polar = (function(){
   function collectPoint(){
     if(S.heading==null) return;
     if(!S.settings.gps || S.gps.sog==null) return;
-    log.push({
+    const pt = {
       ts: Date.now(),
       heading: S.heading,
       meanStb: S.meanStb,
@@ -857,8 +954,9 @@ const Polar = (function(){
       tack: S.tack,
       sog: Math.round(S.gps.sog*100)/100, // 2 desimaalia tallennukseen (näyttö pyöristää 1:een)
       windAge: windAgeSec() // vaihe 1: sekunteja viimeisimmästä mean-asetuksesta, pelkkä kirjanpito
-    });
-    saveLog();
+    };
+    log.push(pt);       // write-through-välimuisti: lukijat näkevät pisteen heti
+    _persistPoint(pt);  // pysyväistallennus IndexedDB:hen (v0.90)
   }
 
   // ============================================================
@@ -903,7 +1001,24 @@ const Polar = (function(){
   function _perfAt(polar,twa){ if(!polar||twa==null)return null; let best=null,bd=Infinity; polar.queries.forEach((q,i)=>{ const d=Math.abs(q-twa); if(d<bd&&polar.results[i].p90!=null){bd=d;best=i;} }); if(best==null||bd>_STEP*1.5)return null; return{p90:polar.results[best].p90,mass:polar.results[best].mass}; }
 
   return {
-    init(){ loadMeans(); loadLog(); loadAutoLog(); setInterval(collectPoint,LOG_INTERVAL_MS); setInterval(tickSegment,LOG_INTERVAL_MS); _polar=_computePolar(log); },
+    init(){
+      loadMeans(); loadAutoLog();
+      // §5: lataus on nyt asynkroninen. collectPoint/tickSegment KÄYNNISTYVÄT VASTA
+      // latauksen valmistuttua, jotta getAll ei pyyhi ensimmäistä työnnettyä pistettä.
+      _readyPromise = loadLogAsync().then(function(){
+        _polar = _computePolar(log);
+        // §9: pyydetään pysyvää tilaa kertaalleen (tilapainehäätöä vastaan). Ei vaikuta
+        // iOS:n 7 päivän ITP-ajastimeen. Ei UI:ta — selain päättää hiljaa.
+        try{ if(navigator.storage && navigator.storage.persist) navigator.storage.persist(); }catch(e){}
+        setInterval(collectPoint, LOG_INTERVAL_MS);
+        setInterval(tickSegment,  LOG_INTERVAL_MS);
+      });
+      return _readyPromise;
+    },
+    // v0.91 (SS-laajennus §1): paljastaa käynnistyslatauksen valmistumisen, jotta Session
+    // summary ei renderöidy tyhjällä log:lla jos se avataan ennen IndexedDB-latauksen loppua.
+    // Palauttaa init():n Promisen tai valmiiksi ratkaistun, jos init:iä ei (vielä) kutsuttu.
+    ready(){ return _readyPromise || Promise.resolve(); },
     onMeanSet(){
       // Vaihe 1: lasketaan vakaus juuri ennen tallennusta — kuvaa kuinka
       // tasainen heading oli viimeisten STABILITY_WINDOW_MS millisekunnin ajan.
@@ -2156,7 +2271,15 @@ $("btnSetMean").addEventListener("click", setMean);
 /* ---------- asetukset ---------- */
 $("btnGear").addEventListener("click", ()=>$("sheet").classList.remove("hidden"));
 $("btnCloseSheet").addEventListener("click", ()=>$("sheet").classList.add("hidden"));
-$("btnOpenSummary").addEventListener("click", ()=>{ $("sheet").classList.add("hidden"); $("sessionSummary").classList.remove("hidden"); renderSessionSummary(); });
+$("btnOpenSummary").addEventListener("click", ()=>{
+  $("sheet").classList.add("hidden");
+  $("sessionSummary").classList.remove("hidden");
+  // v0.91 (SS-laajennus §1): IndexedDB-lataus voi olla vielä kesken jos paneeli avataan
+  // heti käynnistyksen jälkeen — odota se, ettei renderöidä tyhjällä log:lla. Ikkuna on
+  // kohdealustoilla lyhyt (ms), joten "Loading…" näkyy harvoin. Ei uutta pysyvää tilaa.
+  const ld=$("ssLoading"); if(ld) ld.style.display='block';
+  Polar.ready().then(()=>{ if(ld) ld.style.display='none'; renderSessionSummary(); });
+});
 $("btnCloseSummary").addEventListener("click", ()=>{ ssStopAnim(); $("sessionSummary").classList.add("hidden"); });
 $("btnToggleKeep").addEventListener("click", ()=>{
   const sessions = Polar.splitSessions();
@@ -2180,39 +2303,75 @@ document.addEventListener("visibilitychange", ()=>{ if(document.hidden) ssStopAn
 // koskemattomana. Käytetään vain kun S.demo on tosi, jotta Session summaryn
 // laskenta ja ulkoasu voidaan validoida ilman oikeaa purjehdusdataa.
 function ssDemoLog(){
+  // v0.92: realistinen aikasarja (ei satunnaishajontaa) jotta myös uudet osiot —
+  // Upwind angle & speed (§7) ja Tack performance (§8) — saavat dataa: luovintasarja
+  // kestävillä käännöksillä, käännösten dippi+palautuminen, per-legi pinch/target/foot
+  // -vaihtelu ja pari lyhyttä flikkeriä (suodatettavaksi). Reach + run täyttävät muut
+  // sektorit. Deterministinen (siemenpohjainen), jotta demo on toistettava.
   const pts=[];
-  const wind=20, half=45; // tuulen suunta ja closehauled-puolikulma
-  const meanStb=norm(wind-half), meanBb=norm(wind+half);
-  // Venekohtainen "totuuspolaari" TWA→SOG (karkea, uskottava muoto)
+  const wind=20, half=45;
+  const meanStb=norm(wind-half), meanBb=norm(wind+half); // 335, 65
+  // Venepolaari: upwind saturoituu (matala TWA aidosti hidas → uskottava muoto)
   const trueSog=twa=>{
-    if(twa<30) return 0.06*twa;            // no-go nousee jyrkästi
-    if(twa<50) return 1.8+0.09*(twa-30);   // nousukurssi ~3.6 kn
-    if(twa<100) return 3.6+0.05*(twa-50);  // reach kiihtyy ~6 kn
-    if(twa<140) return 6.1-0.01*(twa-100); // laakea huippu
-    return 5.7-0.03*(twa-140);             // myötä hidastuu
+    if(twa<52){
+      const k=[[14,0.15],[18,0.7],[22,1.5],[26,2.4],[30,3.05],[34,3.45],[38,3.66],[42,3.76],[46,3.82],[50,3.85]];
+      if(twa<=k[0][0]) return 0.1;
+      for(let i=1;i<k.length;i++){ if(twa<=k[i][0]){ const [x0,y0]=k[i-1],[x1,y1]=k[i]; return y0+(y1-y0)*(twa-x0)/(x1-x0); } }
+      return 3.85;
+    }
+    if(twa<100) return 3.6+0.05*(twa-52);   // reach kiihtyy
+    if(twa<140) return 6.0-0.004*(twa-100); // laakea huippu
+    return 5.85-0.03*(twa-140);             // myötä hidastuu
   };
-  // Yksi sessio: satunnaisia pisteitä eri TWA:illa, annetulla nopeuskertoimella
-  const mkSession=(startTs, scale, n)=>{
-    for(let i=0;i<n;i++){
-      const twa=15+Math.random()*160;
-      const stb=Math.random()<0.5;
-      const heading=stb ? norm(wind-twa) : norm(wind+twa);
-      const noise=0.85+Math.random()*0.3;
-      const sog=Math.max(0.3, trueSog(twa)*scale*noise);
-      pts.push({
-        ts:startTs+i*1000, heading,
-        meanStb, meanBb,
-        tack: stb?'stb':'bb',
-        sog:Math.round(sog*100)/100, windAge:5,
-      });
+  const mkSession=(startTs, scale, seed)=>{
+    let s=seed>>>0; const rnd=()=>{ s=(s*1664525+1013904223)>>>0; return s/4294967296; };
+    let t=startTs;
+    const nearer=hd=>{ const ds=Math.abs(((hd-meanStb+540)%360)-180), db=Math.abs(((hd-meanBb+540)%360)-180); return ds<=db?'stb':'bb'; };
+    const push=(twa, side, spd)=>{
+      const heading = side==='stb' ? norm(wind-twa) : norm(wind+twa);
+      pts.push({ts:t, heading, meanStb, meanBb, tack:nearer(heading), sog:Math.round(Math.max(0,spd)*100)/100, windAge:5});
+      t+=1000;
+    };
+    // upwind-legi: TWA oskilloi leveästi keskikulman ympäri, nopeus seuraa hetkellistä
+    // TWA:ta (matala = hidas). angBias<0 = pinch, >0 = foot.
+    const leg=(side, angBias, dur)=>{
+      for(let i=0;i<dur;i++){
+        const twa=35+angBias + 6*Math.sin(i/4.5) + (rnd()*3-1.5);
+        push(twa, side, trueSog(twa)*scale*(0.95+rnd()*0.08));
+      }
+    };
+    // käännös: dippi läpi tuulen, sitten nousu matalasta grooveen nopeuden rakentuessa
+    const tack=(toSide, preSpd, recS)=>{
+      for(let i=0;i<3;i++){ const heading=norm(wind + (i-1)*4);
+        pts.push({ts:t, heading, meanStb, meanBb, tack:nearer(heading), sog:Math.round((0.35+i*0.1)*100)/100, windAge:5}); t+=1000; }
+      for(let i=0;i<recS;i++){ const frac=(i+1)/recS; const twa=22+12*frac+(rnd()*2-1); push(twa, toSide, preSpd*(0.5+0.5*frac)); }
+    };
+    // lyhyt flikkeri (ei kestä TACK_CONFIRM_DWELL_S → suodattuu)
+    const flicker=(otherSide, dur)=>{ for(let i=0;i<dur;i++) push(33, otherSide, trueSog(33)*scale); };
+
+    leg('stb', -1, 55);               // legi 0: on-target STB
+    tack('bb', trueSog(34)*scale, 6);
+    leg('bb', -8, 60);                // legi 1: PINCH (bb)
+    flicker('stb', 2);               // flikkeri
+    leg('bb', -8, 20);
+    tack('stb', trueSog(27)*scale, 9);
+    leg('stb', 7, 50);                // legi 2: FOOT (stb)
+    tack('bb', trueSog(42)*scale, 4);
+    leg('bb', 0, 65);                 // legi 3: on-target BB
+    tack('stb', trueSog(35)*scale, 7);
+    leg('stb', -2, 30);               // legi 4: lyhyt STB ennen bear-awayta
+    // Bear away + laskukierros: pyyhkäise TWA 52°→170° tasaisesti (reach→run),
+    // pari pistettä per kaista kohinalla → TÄYTTÄÄ polaariruusun ehyeksi kuten vanha
+    // demo. Yhdellä halssilla (stb) → ei uusia halssinvaihtoja Tack performanceen.
+    for(let seg=0; seg<25; seg++){
+      const base=52+seg*5;            // 52°…172°
+      const reps=(base>=95&&base<=140)?6:5; // ~10-12 pistettä/10° — tasainen ehyt scatter
+      for(let j=0;j<reps;j++){ const twa=Math.min(174, base+(rnd()*6-3)); push(twa,'stb', trueSog(twa)*scale*(0.93+rnd()*0.12)); }
     }
   };
-  const now=Date.now();
-  const dayMs=24*60*60*1000;
-  // Edellinen sessio: eilen, hieman hitaampi (scale 0.94)
-  mkSession(now-dayMs, 0.94, 200);
-  // Nykyinen sessio: tänään, hieman nopeampi (scale 1.0) — vertailu näyttää parannusta
-  mkSession(now-30*60*1000, 1.0, 200);
+  const now=Date.now(), dayMs=24*60*60*1000;
+  mkSession(now-dayMs, 0.94, 24680);      // edellinen sessio (eilen, hieman hitaampi)
+  mkSession(now-30*60*1000, 1.0, 12345);  // nykyinen sessio (tänään)
   return pts;
 }
 
@@ -2327,6 +2486,11 @@ function renderSessionSummary(){
   // laimensi ainoan ehyen historiakaaren näkymättömiin.
   const past = curIdx>0 ? sessions.slice(0,curIdx).filter(ssUsable).slice(-5) : [];
   ssDrawPolar(cur, prev, past);
+
+  // v0.91 (SS-laajennus §6/§7): halssin ajaminen ensin, käännösanalyysi sen päälle.
+  // Molemmat puhtaita lukijoita cur.points:sta, jakavat saman tackEvents-rajalistan.
+  renderLegQuality(cur);
+  renderTackPerf(cur);
 }
 
 // Session summary polaari + animaatio (Vaihe E1).
@@ -2521,6 +2685,236 @@ function ssPlayPause(){
 function _cmDeg(a,b){ const ar=a*Math.PI/180,br=b*Math.PI/180; return Math.atan2((Math.sin(ar)+Math.sin(br))/2,(Math.cos(ar)+Math.cos(br))/2)*180/Math.PI; }
 function _naDeg(d){ let r=d%360; if(r>180)r-=360; if(r<-180)r+=360; return r; }
 
+// ============================================================
+// v0.91 — Session summary -laajennukset: Upwind angle & speed (§6) + Tack
+// performance (§7). Puhtaita jälkilaskettuja näkymiä cur.points:sta. Ei uutta
+// tallennusta, ei skeemamuutosta. Molemmat nojaavat SAMAAN käännösrajalistaan
+// (tackEvents, §5) — yksi totuuden lähde. Kaikki kynnykset alustavia (valmistusohje §8).
+// ============================================================
+const TACK_CONFIRM_DWELL_S = 15;      // §5: uuden halssin pysyttävä tämän ennen kuin vaihto on "oikea" (ei flikkeri)
+const MIN_CONFIRMED_TACKS  = 2;       // §5: alle tämän kumpikaan osio ei näytä listaa
+const TACK_PRE_WINDOW_MS   = 10*1000; // §7: "ennen"-nopeuden ikkuna — sama arvo kuin Polarin STABILITY_WINDOW_MS (eri scope, siksi oma vakio)
+const TACK_RECOVER_RATIO   = 0.95;    // §7: SOG on "saavuttanut" edellisen tason kun ylittää tämän osuuden ennen-arvosta
+const TACK_RECOVER_DWELL_S = 3;       // §7: ja pysyy siellä tämän ajan (ei hetkellinen piikki)
+const LEG_UPWIND           = [15,50]; // §6: sama upwind-sektori kuin sektorikorteissa
+const LEG_TARGET_MIN_MASS  = 3;       // §6: tavoitekulman min. luottamusmassa — sama kynnys kuin PERF_MASS_DIM (eri scope)
+const LEG_ANG_TOL          = [3,6,9]; // §6: pinch/foot-gaugen värikynnykset (°), symmetriset keskeltä
+
+// TWA yhdestä raakapisteestä — sama kaava kuin ssDrawPolar käyttää (ei kolmatta kopiota).
+function ssTwa(p){
+  if(!p || p.meanStb==null || p.meanBb==null) return null;
+  const t = Math.abs(_naDeg(p.heading - _cmDeg(p.meanStb, p.meanBb)));
+  return (t>=15 && t<=175) ? t : null;
+}
+
+// §5 — vahvistetut käännökset (candidate + confirm). Palauttaa aikajärjestyksessä
+// [{idx, ts, fromTack, toTack}]. Flikkeri (halssi vaihtuu takaisin ennen dwell-kynnystä)
+// hylätään hiljaa — sitä ei lisätä listaan, ja se jää raakalokiin sellaisenaan.
+// Vahvistus perustuu ts-eroon, joten se kestää O11:n heading-jäätymän (jäätyy heading, ei ts).
+function tackEvents(points){
+  const out = [];
+  if(!points || points.length < 2) return out;
+  let lastTack = null;
+  for(const p of points){ if(p.tack==='stb'||p.tack==='bb'){ lastTack=p.tack; break; } }
+  if(lastTack == null) return out;
+  for(let i=1;i<points.length;i++){
+    const b = points[i].tack;
+    if((b!=='stb' && b!=='bb') || b===lastTack) continue;
+    const t0 = points[i].ts;
+    let confirmed=false, broke=false;
+    for(let j=i;j<points.length;j++){
+      const tj = points[j].tack;
+      if(tj==='stb'||tj==='bb'){ if(tj!==b){ broke=true; break; } }
+      if((points[j].ts - t0) >= TACK_CONFIRM_DWELL_S*1000){ confirmed=true; break; }
+    }
+    if(confirmed && !broke){ out.push({idx:i, ts:t0, fromTack:lastTack, toTack:b}); lastTack=b; }
+  }
+  return out;
+}
+
+// Mediaani numerotaulukosta (ei muteeraa alkuperäistä).
+function _ssMedian(arr){
+  if(!arr.length) return null;
+  const a=arr.slice().sort((x,y)=>x-y), m=Math.floor(a.length/2);
+  return a.length%2 ? a[m] : (a[m-1]+a[m])/2;
+}
+
+// §6 — Upwind angle & speed. Puhdas lukija cur.points:sta. Legit johdetaan
+// tackEvents-rajoista; kukin legi = kahden vahvistetun käännöksen välinen span
+// (plus alku→1. ja viimeinen→loppu). Tavoitekulma haetaan session omasta polaarista.
+function renderLegQuality(cur){
+  const wrap=$("ssLeg"); if(!wrap) return;
+  if(!cur){ wrap.style.display='none'; return; }
+  const pts = cur ? cur.points : null;
+  const evs = pts ? tackEvents(pts) : [];
+  const listEl=$("ssLegList"), metaEl=$("ssLegMeta"), footEl=$("ssLegFoot");
+  const clear=()=>{ if(listEl) listEl.innerHTML=''; };
+  if(!pts || evs.length < MIN_CONFIRMED_TACKS){
+    wrap.style.display='block'; clear();
+    if(metaEl) metaEl.textContent='';
+    if(footEl) footEl.textContent='Not enough confirmed tacks this session to analyze upwind legs.';
+    return;
+  }
+  // Session polaari kerran → paras VMG-kulma upwind-sektorissa
+  const curve = Polar.polarCurve(pts);
+  let targetAngle=null, bestVmg=null;
+  const p90At = (twa)=>{
+    if(!curve) return null;
+    let best=null,bd=Infinity;
+    curve.queries.forEach((q,i)=>{ const d=Math.abs(q-twa); if(d<bd && curve.results[i].p90!=null && curve.results[i].mass>=LEG_TARGET_MIN_MASS){ bd=d; best=i; } });
+    return (best!=null && bd<=5*1.5) ? curve.results[best].p90 : null;
+  };
+  if(curve){
+    curve.queries.forEach((q,i)=>{
+      if(q<LEG_UPWIND[0]||q>LEG_UPWIND[1]) return;
+      const r=curve.results[i]; if(r.p90==null||r.mass<LEG_TARGET_MIN_MASS) return;
+      const vmg=r.p90*Math.cos(q*Math.PI/180);
+      if(bestVmg==null||vmg>bestVmg){ bestVmg=vmg; targetAngle=q; }
+    });
+  }
+  // legi-rajat: [start, e0), [e0, e1), ... [eLast, end]
+  const bounds=[]; let prevTs = pts[0].ts;
+  let prevTack = (function(){ for(const p of pts){ if(p.tack==='stb'||p.tack==='bb') return p.tack; } return null; })();
+  for(const e of evs){ bounds.push({t0:prevTs, t1:e.ts, tack:prevTack}); prevTs=e.ts; prevTack=e.toTack; }
+  bounds.push({t0:prevTs, t1:pts[pts.length-1].ts+1, tack:prevTack});
+
+  const rows=[]; let effSum=0, effN=0, nStb=0, nBb=0;
+  for(const lg of bounds){
+    const lp = pts.filter(p=>p.ts>=lg.t0 && p.ts<lg.t1);
+    // upwind-osajoukko, GPS-dropout-nollat pois (raakaloki koskematon)
+    const up = lp.filter(p=>{ const t=ssTwa(p); return t!=null && t>=LEG_UPWIND[0] && t<=LEG_UPWIND[1] && p.sog!=null && p.sog>=SOG_DISPLAY_MIN; });
+    if(up.length < SS_MIN_PTS) continue; // ei tarpeeksi upwind-dataa → ei riviä (sama kynnysperiaate kuin ssUsable)
+    const medTwa=_ssMedian(up.map(p=>ssTwa(p)));
+    const durM = Math.max(1, Math.round((lg.t1-lg.t0)/60000));
+    const tackLbl = lg.tack==='stb'?'STB':(lg.tack==='bb'?'BB':'—');
+    if(lg.tack==='stb') nStb++; else if(lg.tack==='bb') nBb++;
+    let effPct=null, angErr=null;
+    if(targetAngle!=null && bestVmg!=null && bestVmg>0){
+      const p=p90At(medTwa);
+      if(p!=null){ const vmg=p*Math.cos(medTwa*Math.PI/180); effPct=Math.round(vmg/bestVmg*100); }
+      angErr=medTwa-targetAngle;
+    }
+    rows.push({tackLbl,durM,medTwa,targetAngle,angErr,effPct});
+    if(effPct!=null){ effSum+=effPct; effN++; }
+  }
+  clear();
+  if(!rows.length){
+    if(metaEl) metaEl.textContent='';
+    if(footEl) footEl.textContent='No upwind legs with enough data this session.';
+    wrap.style.display='block'; return;
+  }
+  // gauge-sijainti: keskikohta = target; ±(3×toleranssin ylin) täyttää palkin
+  const SPAN=LEG_ANG_TOL[2]*3; // ±27° → koko leveys
+  for(const r of rows){
+    let dot='50', col='#7a7a7a', read='—';
+    if(r.angErr!=null && r.targetAngle!=null){
+      const frac=Math.max(-1,Math.min(1, r.angErr/SPAN));
+      dot=(50+frac*44).toFixed(0); // 6..94 % leveydestä
+      const a=Math.abs(r.angErr);
+      col = a<=LEG_ANG_TOL[0] ? 'var(--green)' : a<=LEG_ANG_TOL[1] ? 'var(--yellow)' : 'var(--orange)';
+      read = Math.round(r.medTwa)+'° (target '+Math.round(r.targetAngle)+'°)';
+    } else if(r.medTwa!=null){ read = Math.round(r.medTwa)+'°'; }
+    const effStr = r.effPct!=null ? r.effPct+'%' : '—';
+    const tcl = r.tackLbl==='STB'?'stb':(r.tackLbl==='BB'?'bb':'');
+    listEl.insertAdjacentHTML('beforeend',
+      '<div class="lqCard">'
+      + '<div class="lqTack"><span class="'+tcl+'" style="padding:1px 5px;border-radius:4px;font-size:10px;">'+r.tackLbl+'</span><small>'+r.durM+'m</small></div>'
+      + '<div class="lqGauge"><svg viewBox="0 0 130 28" preserveAspectRatio="xMidYMid meet">'
+      + '<line x1="6" y1="12" x2="124" y2="12" stroke="#2a2a2a" stroke-width="1"/>'
+      + '<line x1="65" y1="7" x2="65" y2="17" stroke="#5a5a5a" stroke-width="1.5"/>'
+      + '<text x="6" y="26" font-size="7" fill="#5a5a5a" font-family="ui-monospace,monospace">PINCH</text>'
+      + '<text x="124" y="26" font-size="7" fill="#5a5a5a" font-family="ui-monospace,monospace" text-anchor="end">FOOT</text>'
+      + '<circle cx="'+(6+(+dot)/100*118)+'" cy="12" r="4.2" fill="'+col+'"/></svg>'
+      + '<div class="lqReadout">'+read+'</div></div>'
+      + '<div class="lqMetric"><div class="lqPct">'+effStr+'</div><div class="lqLbl">VMG EFF</div></div>'
+      + '</div>');
+  }
+  const avg = effN ? Math.round(effSum/effN) : null;
+  if(metaEl) metaEl.textContent = rows.length+' legs analyzed ('+nStb+' STB, '+nBb+' BB)'+(avg!=null?' · '+avg+'% avg VMG efficiency':'');
+  if(footEl) footEl.textContent = "Target angle comes from this session's own upwind polar — needs a handful of legs before it's steady. Angle only; speed is shown above.";
+  wrap.style.display='block';
+}
+
+// §7 — Tack performance. Rakentuu samojen tackEvents-rajojen päälle. Yksi kortti
+// per vahvistettu käännös: aika edellisen halssin nopeuden saavuttamiseen.
+function renderTackPerf(cur){
+  const wrap=$("ssTack"); if(!wrap) return;
+  if(!cur){ wrap.style.display='none'; return; }
+  const pts = cur ? cur.points : null;
+  const evs = pts ? tackEvents(pts) : [];
+  const listEl=$("ssTackList"), metaEl=$("ssTackMeta"), footEl=$("ssTackFoot");
+  const clear=()=>{ if(listEl) listEl.innerHTML=''; };
+  // laske myös hylätyt (flikkeri) meta-riville: raa'at halssinvaihdot vs. vahvistetut
+  let rawFlips=0;
+  if(pts){ for(let i=1;i<pts.length;i++){ const a=pts[i-1].tack,b=pts[i].tack; if((a==='stb'||a==='bb')&&(b==='stb'||b==='bb')&&a!==b) rawFlips++; } }
+  if(!pts || evs.length < 1){
+    wrap.style.display='block'; clear();
+    if(metaEl) metaEl.textContent='';
+    if(footEl) footEl.textContent='No confirmed tacks this session.';
+    return;
+  }
+  clear();
+  for(let k=0;k<evs.length;k++){
+    const ev=evs[k];
+    const winEnd = (k+1<evs.length) ? evs[k+1].ts : pts[pts.length-1].ts+1;
+    // ennen-nopeus: 10 s ikkuna ennen käännöstä, dropout-nollat pois, min 3 pistettä
+    const pre = pts.filter(p=>p.ts>=ev.ts-TACK_PRE_WINDOW_MS && p.ts<ev.ts && p.sog!=null && p.sog>=SOG_DISPLAY_MIN).map(p=>p.sog);
+    const preSog = pre.length>=3 ? pre.reduce((a,b)=>a+b,0)/pre.length : null;
+    // käännöksen jälkeiset pisteet ikkunan sisällä
+    const after = pts.filter(p=>p.ts>=ev.ts && p.ts<winEnd);
+    // min-SOG käännöksen ympärillä (näyttöä varten; dropout-nollat mukaan tässä, ne kuuluvat kuvaan)
+    const minWin = after.filter(p=>p.sog!=null && p.ts<ev.ts+20000).map(p=>p.sog);
+    const minSog = minWin.length ? Math.min(...minWin) : null;
+    // saavuttaminen: SOG ylittää RATIO×preSog ja pysyy DWELL ajan
+    let recSec=null;
+    if(preSog!=null){
+      const thr=TACK_RECOVER_RATIO*preSog;
+      for(let a=0;a<after.length;a++){
+        if(after[a].sog==null || after[a].sog<thr) continue;
+        const holdUntil=after[a].ts+TACK_RECOVER_DWELL_S*1000;
+        let held=true;
+        for(let b=a;b<after.length && after[b].ts<=holdUntil;b++){ if(after[b].sog!=null && after[b].sog<thr){ held=false; break; } }
+        if(held){ recSec=Math.round((after[a].ts-ev.ts)/1000); break; }
+      }
+    }
+    // sparkline: SOG (ennen-ikkuna → recovery+puskuri), normalisoitu
+    const sparkEnd = recSec!=null ? ev.ts+(recSec+4)*1000 : Math.min(winEnd, ev.ts+40000);
+    const sp = pts.filter(p=>p.ts>=ev.ts-TACK_PRE_WINDOW_MS && p.ts<=sparkEnd && p.sog!=null);
+    let spSvg='';
+    if(sp.length>=2){
+      const t0=sp[0].ts, tE=sp[sp.length-1].ts, span=Math.max(1,tE-t0);
+      const smax=Math.max(preSog!=null?preSog:0, ...sp.map(p=>p.sog))||1;
+      const pref=preSog!=null?preSog:smax;
+      const yPre=(28-6)-((pref/smax)*(28-12));
+      const pl=sp.map(p=>{ const x=(p.ts-t0)/span*120; const y=(28-6)-((p.sog/smax)*(28-12)); return x.toFixed(0)+','+y.toFixed(0); }).join(' ');
+      const col = recSec==null ? 'var(--yellow)' : 'var(--cyan)';
+      spSvg='<svg width="120" height="34" viewBox="0 0 120 34">'
+        + '<line x1="0" y1="'+yPre.toFixed(0)+'" x2="120" y2="'+yPre.toFixed(0)+'" stroke="#3a3a3a" stroke-width="1" stroke-dasharray="3,3"/>'
+        + '<polyline points="'+pl+'" fill="none" stroke="'+col+'" stroke-width="2"/></svg>';
+    }
+    const fL=ev.fromTack==='stb'?'STB':'BB', tL=ev.toTack==='stb'?'STB':'BB';
+    const fCl=ev.fromTack==='stb'?'stb':'bb', tCl=ev.toTack==='stb'?'stb':'bb';
+    const timeHtml = recSec!=null
+      ? '<div class="tpTime">'+recSec+'<small>s</small></div>'
+      : '<div class="tpTime" style="color:#7a7a7a;">—</div>';
+    const lossHtml = (preSog!=null)
+      ? '<div class="tpLoss">'+preSog.toFixed(1)+' → '+(minSog!=null?minSog.toFixed(1):'—')+' → '+preSog.toFixed(1)+' kn</div>'
+      : '<div class="tpLoss" style="color:#6a6a6a;">'+(recSec==null?"didn't return to previous pace before next tack":'no clean pre-tack speed')+'</div>';
+    listEl.insertAdjacentHTML('beforeend',
+      '<div class="tpCard">'
+      + '<div class="tpTack"><span class="tpFrom '+fCl+'">'+fL+'</span><span class="arrow">▼</span><span class="tpTo '+tCl+'">'+tL+'</span></div>'
+      + '<div class="tpSpark">'+spSvg+'</div>'
+      + '<div class="tpMetric">'+timeHtml+lossHtml+'</div>'
+      + '</div>');
+  }
+  const filtered = Math.max(0, rawFlips-evs.length);
+  if(metaEl) metaEl.innerHTML = evs.length+' confirmed tack'+(evs.length===1?'':'s')+' <b>·</b> '+rawFlips+' detected, '+filtered+' filtered as flicker';
+  if(footEl) footEl.textContent = "Time to regain the previous tack's speed. Reflects wind and sea state as well as technique — not crew skill alone.";
+  wrap.style.display='block';
+}
+
+
+
 // Session accept/reject -tila (Vaihe F). Oma localStorage-nimiavaruus,
 // EI törmää raakalokiin (tackcall_polar_log_v1) eikä meaneihin. Tallentaa
 // vain hylättyjen sessioiden startTs-tunnisteet. Hylätty sessio ei toimi
@@ -2571,8 +2965,6 @@ $("btnPolarUpdate").addEventListener("click", ()=>{
 });
 function syncToggles(){
   document.querySelectorAll(".tog").forEach(t=>{ t.classList.toggle("on", !!S.settings[t.dataset.key]); });
-  // Session summary -avausnappi näkyy vain kun asetus on päällä (Vaihe B0)
-  const bs=$("btnOpenSummary"); if(bs) bs.classList.toggle("hidden", !S.settings.sessionSummary);
 }
 document.querySelectorAll(".tog").forEach(t=>{
   t.addEventListener("click", ()=>{
@@ -2609,27 +3001,27 @@ document.querySelectorAll(".stepper").forEach(st=>{
 });
 
 /* ---------- init ---------- */
-const APP_VERSION="🇫🇮 Tackcall v0.89";
+const APP_VERSION="🇫🇮 Tackcall v0.93";
 (function(){
   const e=$("verEnable"); if(e) e.textContent=APP_VERSION;
   const n=$("verNote"); if(n) n.textContent=APP_VERSION+" · shares engine with index.html";
 })();
-// Polaaridatan tilannekatsaus aloitusoverlayhin
-(function(){
+// Polaaridatan tilannekatsaus + Update polar -napin alkutila (§6). Molemmat lukevat
+// polaaritilan, joten ne AJETAAN VASTA latauksen valmistuttua — init oli ennen synkroninen,
+// nyt asynkroninen. Tilateksti lukee Polar.logLength():n suoran localStorage-luvun sijaan.
+Polar.init().then(function(){
   try{
-    const log=JSON.parse(localStorage.getItem('tackcall_polar_log_v1')||'[]');
-    const el=$("polarStatus"); if(!el) return;
-    if(log.length>20) el.textContent=log.length+' data points stored · PERF will show when ready';
-    else if(log.length>0) el.textContent='Building performance data · keep sailing to enable PERF';
-    else el.textContent='PERF learns your boat\'s speed as you sail · starts empty';
+    const el=$("polarStatus");
+    if(el){
+      const n=Polar.logLength();
+      if(n>20) el.textContent=n+' data points stored · PERF will show when ready';
+      else if(n>0) el.textContent='Building performance data · keep sailing to enable PERF';
+      else el.textContent='PERF learns your boat\'s speed as you sail · starts empty';
+    }
   }catch(e){}
-})();
-Polar.init();
-// Update polar -napin alkutila init():n jälkeen
-(function(){
-  const btn=$("btnPolarUpdate"); if(!btn) return;
-  btn.textContent=Polar.hasData()?'Update polar':'No polar data yet';
-})();
+  const btn=$("btnPolarUpdate");
+  if(btn) btn.textContent=Polar.hasData()?'Update polar':'No polar data yet';
+});
 window.addEventListener("resize", resize);
 window.addEventListener("orientationchange", ()=>{ checkOrientation(); setTimeout(resize,250); setTimeout(resize,600); });
 if(screen.orientation && screen.orientation.addEventListener){ screen.orientation.addEventListener("change", ()=>{ checkOrientation(); setTimeout(resize,200); }); }
