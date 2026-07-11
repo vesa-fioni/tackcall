@@ -598,6 +598,13 @@ const Polar = (function(){
   // Vaihe 1: mean-vakauden arviointi-ikkuna. Lähtöarvo 10s — ei lukittu,
   // tarkennettavissa kenttädatan perusteella (ks. O4/O5 white paperissa).
   const STABILITY_WINDOW_MS = 10*1000;
+  // v0.90: raakaloki siirretty localStoragesta IndexedDB:hen (riittävyys + kirjoitusvakaus).
+  // Kirjoituskerros ja käynnistyslataus muuttuvat; laskentalogiikka ei koske. log pysyy
+  // muistissa write-through-välimuistina, joten kaikki lukijat (computePolar, sectorSpeeds,
+  // rawLog, splitSessions, computeStability) pysyvät koskemattomina. Katso valmistusohje v3.
+  const IDB_DB    = 'tackcall_polar_db_v1';
+  const IDB_STORE = 'points';
+  let _db = null;                 // avattu IndexedDB-kahva tai null (muistivaranto, §10 A)
   let log = [];
   let _autoLog = [];              // v2: luottamusloki (rullaava)
   const AUTOLOG_MAX = 20;         // viimeiset N tapahtumaa
@@ -626,16 +633,52 @@ const Polar = (function(){
   let _amrPaused = false;          // v2: itsensä irtikytkennän tila (UI-signaali)
   let _demoShiftSign = -1;         // demo-esittely: vuorottelee oikea/vasen
 
-  function loadLog(){
-    try{
-      const raw = localStorage.getItem(LOG_KEY);
-      log = raw ? JSON.parse(raw) : [];
-      if(!Array.isArray(log)) log = [];
-    }catch(e){ log = []; }
+  // Avaa IndexedDB kerran. Out-of-line autoIncrement-avain: generoitu avain EI injektoidu
+  // itse pisteolioon, joten getAll palauttaa puhtaat {ts,heading,...}-oliot ilman lisäkenttiä.
+  function _openOnce(){
+    return new Promise(function(resolve, reject){
+      let req;
+      try{ req = indexedDB.open(IDB_DB, 1); }
+      catch(e){ reject(e); return; }
+      req.onupgradeneeded = function(){
+        const db = req.result;
+        if(!db.objectStoreNames.contains(IDB_STORE)) db.createObjectStore(IDB_STORE, { autoIncrement:true });
+      };
+      req.onsuccess = function(){ resolve(req.result); };
+      req.onerror   = function(){ reject(req.error || new Error('idb open error')); };
+      req.onblocked = function(){ reject(new Error('idb blocked')); };
+    });
   }
-  function saveLog(){
-    try{ localStorage.setItem(LOG_KEY, JSON.stringify(log)); }
-    catch(e){ /* storage täynnä tai estetty — ei kaadeta sovellusta */ }
+  // §10: yksi uudelleenyritys pienellä viiveellä — osuu WebKitin tunnettuun
+  // "ei aukea ensimmäisellä kerralla, toimii reloadilla" -bugiin ilman toista persistenssikerrosta.
+  function _openDb(){
+    return _openOnce().catch(function(){
+      return new Promise(function(res){ setTimeout(res, 300); }).then(_openOnce);
+    });
+  }
+  // Asynkroninen käynnistyslataus: täyttää log-taulukon IndexedDB:stä. Jos avaus epäonnistuu
+  // kahdesti, log jää pelkäksi muistivarannoksi tälle sessiolle (§10 A) — ei localStorage-fallbackia.
+  function loadLogAsync(){
+    return _openDb().then(function(db){
+      _db = db;
+      return new Promise(function(resolve){
+        try{
+          const tx = db.transaction(IDB_STORE, 'readonly');
+          const req = tx.objectStore(IDB_STORE).getAll();
+          req.onsuccess = function(){ const a = req.result; log = Array.isArray(a) ? a : []; resolve(); };
+          req.onerror   = function(){ log = []; resolve(); };
+        }catch(e){ log = []; resolve(); }
+      });
+    }).catch(function(){ _db = null; log = []; /* muistivaranto */ });
+  }
+  // Kirjoittaa yhden pisteen. Ammu ja unohda; virhe nielaistaan (kuten vanha saveLog),
+  // ei kaadeta sovellusta. Muistivarantotilassa (_db==null) ei pysyväistallennusta.
+  function _persistPoint(pt){
+    if(!_db) return;
+    try{
+      const tx = _db.transaction(IDB_STORE, 'readwrite');
+      tx.objectStore(IDB_STORE).add(pt);
+    }catch(e){ /* ei kaadeta */ }
   }
 
   // v2 — luottamusloki: kevyt, rullaava. Kirjaa hyväksynnät, väistymiset ja tauot.
@@ -849,7 +892,7 @@ const Polar = (function(){
   function collectPoint(){
     if(S.heading==null) return;
     if(!S.settings.gps || S.gps.sog==null) return;
-    log.push({
+    const pt = {
       ts: Date.now(),
       heading: S.heading,
       meanStb: S.meanStb,
@@ -857,8 +900,9 @@ const Polar = (function(){
       tack: S.tack,
       sog: Math.round(S.gps.sog*100)/100, // 2 desimaalia tallennukseen (näyttö pyöristää 1:een)
       windAge: windAgeSec() // vaihe 1: sekunteja viimeisimmästä mean-asetuksesta, pelkkä kirjanpito
-    });
-    saveLog();
+    };
+    log.push(pt);       // write-through-välimuisti: lukijat näkevät pisteen heti
+    _persistPoint(pt);  // pysyväistallennus IndexedDB:hen (v0.90)
   }
 
   // ============================================================
@@ -903,7 +947,19 @@ const Polar = (function(){
   function _perfAt(polar,twa){ if(!polar||twa==null)return null; let best=null,bd=Infinity; polar.queries.forEach((q,i)=>{ const d=Math.abs(q-twa); if(d<bd&&polar.results[i].p90!=null){bd=d;best=i;} }); if(best==null||bd>_STEP*1.5)return null; return{p90:polar.results[best].p90,mass:polar.results[best].mass}; }
 
   return {
-    init(){ loadMeans(); loadLog(); loadAutoLog(); setInterval(collectPoint,LOG_INTERVAL_MS); setInterval(tickSegment,LOG_INTERVAL_MS); _polar=_computePolar(log); },
+    init(){
+      loadMeans(); loadAutoLog();
+      // §5: lataus on nyt asynkroninen. collectPoint/tickSegment KÄYNNISTYVÄT VASTA
+      // latauksen valmistuttua, jotta getAll ei pyyhi ensimmäistä työnnettyä pistettä.
+      return loadLogAsync().then(function(){
+        _polar = _computePolar(log);
+        // §9: pyydetään pysyvää tilaa kertaalleen (tilapainehäätöä vastaan). Ei vaikuta
+        // iOS:n 7 päivän ITP-ajastimeen. Ei UI:ta — selain päättää hiljaa.
+        try{ if(navigator.storage && navigator.storage.persist) navigator.storage.persist(); }catch(e){}
+        setInterval(collectPoint, LOG_INTERVAL_MS);
+        setInterval(tickSegment,  LOG_INTERVAL_MS);
+      });
+    },
     onMeanSet(){
       // Vaihe 1: lasketaan vakaus juuri ennen tallennusta — kuvaa kuinka
       // tasainen heading oli viimeisten STABILITY_WINDOW_MS millisekunnin ajan.
@@ -2609,27 +2665,27 @@ document.querySelectorAll(".stepper").forEach(st=>{
 });
 
 /* ---------- init ---------- */
-const APP_VERSION="🇫🇮 Tackcall v0.89";
+const APP_VERSION="🇫🇮 Tackcall v0.90";
 (function(){
   const e=$("verEnable"); if(e) e.textContent=APP_VERSION;
   const n=$("verNote"); if(n) n.textContent=APP_VERSION+" · shares engine with index.html";
 })();
-// Polaaridatan tilannekatsaus aloitusoverlayhin
-(function(){
+// Polaaridatan tilannekatsaus + Update polar -napin alkutila (§6). Molemmat lukevat
+// polaaritilan, joten ne AJETAAN VASTA latauksen valmistuttua — init oli ennen synkroninen,
+// nyt asynkroninen. Tilateksti lukee Polar.logLength():n suoran localStorage-luvun sijaan.
+Polar.init().then(function(){
   try{
-    const log=JSON.parse(localStorage.getItem('tackcall_polar_log_v1')||'[]');
-    const el=$("polarStatus"); if(!el) return;
-    if(log.length>20) el.textContent=log.length+' data points stored · PERF will show when ready';
-    else if(log.length>0) el.textContent='Building performance data · keep sailing to enable PERF';
-    else el.textContent='PERF learns your boat\'s speed as you sail · starts empty';
+    const el=$("polarStatus");
+    if(el){
+      const n=Polar.logLength();
+      if(n>20) el.textContent=n+' data points stored · PERF will show when ready';
+      else if(n>0) el.textContent='Building performance data · keep sailing to enable PERF';
+      else el.textContent='PERF learns your boat\'s speed as you sail · starts empty';
+    }
   }catch(e){}
-})();
-Polar.init();
-// Update polar -napin alkutila init():n jälkeen
-(function(){
-  const btn=$("btnPolarUpdate"); if(!btn) return;
-  btn.textContent=Polar.hasData()?'Update polar':'No polar data yet';
-})();
+  const btn=$("btnPolarUpdate");
+  if(btn) btn.textContent=Polar.hasData()?'Update polar':'No polar data yet';
+});
 window.addEventListener("resize", resize);
 window.addEventListener("orientationchange", ()=>{ checkOrientation(); setTimeout(resize,250); setTimeout(resize,600); });
 if(screen.orientation && screen.orientation.addEventListener){ screen.orientation.addEventListener("change", ()=>{ checkOrientation(); setTimeout(resize,200); }); }
