@@ -320,7 +320,69 @@ body.portrait #btnMean{top:22%; height:22%;}
 <button class="close" id="btnPolarUpdate">Update polar</button>
 <button class="close reset" id="btnReset">Reset means</button>
 <div class="note" id="verNote"></div>
+<!-- v0.95: Terms of Use & Privacy Policy upotettu omiksi sheeteiksi (offline-toimiva),
+     avataan samalla panelLink-tyylillä kuin Session summary. Ei ulkoista linkkiä enää —
+     appi toimii täysin ilman verkkoyhteyttä myös näiden tekstien osalta. -->
+<button class="panelLink" id="btnOpenTerms"><span class="plTxt">Terms of Use<small>Liability, no-warranty &amp; safety disclaimer</small></span><span class="plArrow">→</span></button>
+<button class="panelLink" id="btnOpenPrivacy"><span class="plTxt">Privacy Policy<small>What stays on your device</small></span><span class="plArrow">→</span></button>
 <button class="close" id="btnCloseSheet">Done</button>
+</div>
+</div>
+
+<!-- käyttöehdot (upotettu, v0.95 — offline-toimiva, ks. terms-of-use.md) -->
+<div class="sheet hidden" id="termsSheet">
+<div class="panel">
+<h2>Terms of Use</h2>
+<div class="helph">Acceptance</div>
+<p class="helpp">By using Tackcall at tackcall.app, you agree to these Terms. If you do not agree, do not use the app.</p>
+<div class="helph">What Tackcall is</div>
+<p class="helpp">Tackcall is a browser-based sailing tactics tool for tracking wind shifts, tack headings, and boat speed performance. It runs entirely in your browser — there is no account, login, or server-side storage of your sailing data. All logs, calibration data, and settings stay on your own device.</p>
+<div class="helph">No navigational or safety reliance</div>
+<p class="helpp">Tackcall is a tactical training and performance aid — it is not a certified navigation, safety, or collision-avoidance instrument. Do not rely on it as your sole or primary source of navigational information. Headings, wind-shift detection, and performance percentages come from your device's sensors, which are subject to error, drift, magnetic interference, and delay — particularly on boats with significant heel angle.</p>
+<p class="helpp">You are solely responsible for the safe operation of your vessel, compliance with the Racing Rules of Sailing, local navigation rules, and good seamanship, regardless of what the app displays. The developer accepts no responsibility for collisions, groundings, protests, disqualifications, or any other outcome connected to use of the app on the water.</p>
+<div class="helph">Your data</div>
+<p class="helpp">All sailing logs (headings, GPS points, calibration means, polar performance history) are stored locally in your browser on your own device. The developer does not receive, transmit, or have access to this data, and does not back it up — you're responsible for exporting your own data if you want to keep it.</p>
+<div class="helph">Site analytics</div>
+<p class="helpp">The developer reserves the right to run a basic, aggregate visitor counter on tackcall.app. This is separate from your sailing data, which never leaves your device.</p>
+<div class="helph">Intellectual property</div>
+<p class="helpp">The Tackcall source code is published under the MIT License on GitHub (github.com/vesa-fioni/tackcall). These Terms govern your use of the hosted app; the MIT License governs the source code if you obtain it separately.</p>
+<div class="helph">No warranty</div>
+<p class="helpp">The app is provided "as is" and "as available," without warranties of any kind. It is under active development — features, thresholds, and behavior may change without notice.</p>
+<div class="helph">Limitation of liability</div>
+<p class="helpp">To the fullest extent permitted by law, the developer is not liable for any damages arising from your use of, or inability to use, the app — including loss of data, loss of race results, or any physical, property, or financial damage on the water.</p>
+<div class="helph">Changes</div>
+<p class="helpp">The developer may update, modify, suspend, or discontinue the app or these Terms at any time without prior notice. Continued use after changes means you accept the update.</p>
+<div class="helph">Governing law</div>
+<p class="helpp">These Terms are governed by the laws of Finland. Any disputes are subject to the exclusive jurisdiction of the Finnish courts.</p>
+<div class="helph">Contact</div>
+<p class="helpp">Vesa Lindqvist — vesa.lindqvist@fioni.fi (personal contact address, not affiliated with any company for the purposes of this app).</p>
+<button class="close" id="btnCloseTerms">Done</button>
+</div>
+</div>
+
+<!-- tietosuojaseloste (upotettu, v0.95 — offline-toimiva, ks. privacy-policy.md) -->
+<div class="sheet hidden" id="privacySheet">
+<div class="panel">
+<h2>Privacy Policy</h2>
+<div class="helph">Overview</div>
+<p class="helpp">Tackcall is designed to keep your sailing data on your own device. This page explains what little data is involved when you use tackcall.app.</p>
+<div class="helph">Data stored on your device (not collected by us)</div>
+<p class="helpp">Tackcall stores heading and GPS logs, calculated tack means, calibration data, polar performance history, and your app settings directly in your browser's local storage. This data is never transmitted to, or accessible by, the developer. It stays on your device unless you export or share it yourself. If you clear your browser data, uninstall the app, or switch devices, this data is lost unless you've exported it.</p>
+<div class="helph">Site visitor analytics</div>
+<p class="helpp">The developer reserves the right to run a lightweight, aggregate visitor counter on tackcall.app — a count of page loads, plus basic technical information inherent to any web request (e.g. approximate country, browser type). This is aggregate, not used to profile or track you across sites, and is never linked to your sailing logs. No advertising or cross-site tracking is used.</p>
+<div class="helph">Cookies</div>
+<p class="helpp">Tackcall does not use cookies for tracking or advertising. Any minimal technical storage needed to avoid duplicate visit counts is limited to that purpose only.</p>
+<div class="helph">Third parties</div>
+<p class="helpp">Tackcall does not sell, rent, or share any data with third parties for advertising. The app is hosted as a static site — your device talks directly to the hosting provider to load the page, as with any website.</p>
+<div class="helph">Your rights (GDPR)</div>
+<p class="helpp">Because any aggregate analytics data is minimal and non-identifying, there is generally no personal data for the developer to hold, access, correct, or delete on your behalf — your sailing data lives only on your device, under your control. If you believe any data connected to your visit qualifies as personal data under GDPR, contact the developer below.</p>
+<div class="helph">Children</div>
+<p class="helpp">Tackcall is not directed at children and does not knowingly collect personal data from anyone.</p>
+<div class="helph">Changes</div>
+<p class="helpp">This policy may be updated as the app evolves — for example, if analytics tooling changes.</p>
+<div class="helph">Contact</div>
+<p class="helpp">Vesa Lindqvist — vesa.lindqvist@fioni.fi (personal contact address, not affiliated with any company for the purposes of this app).</p>
+<button class="close" id="btnClosePrivacy">Done</button>
 </div>
 </div>
 
@@ -2271,6 +2333,11 @@ $("btnSetMean").addEventListener("click", setMean);
 /* ---------- asetukset ---------- */
 $("btnGear").addEventListener("click", ()=>$("sheet").classList.remove("hidden"));
 $("btnCloseSheet").addEventListener("click", ()=>$("sheet").classList.add("hidden"));
+// v0.95: Terms/Privacy -sheetit, avaus samalla kaavalla kuin Session summary (piilota Settings, näytä kohdesheet)
+$("btnOpenTerms").addEventListener("click", ()=>{ $("sheet").classList.add("hidden"); $("termsSheet").classList.remove("hidden"); });
+$("btnCloseTerms").addEventListener("click", ()=>$("termsSheet").classList.add("hidden"));
+$("btnOpenPrivacy").addEventListener("click", ()=>{ $("sheet").classList.add("hidden"); $("privacySheet").classList.remove("hidden"); });
+$("btnClosePrivacy").addEventListener("click", ()=>$("privacySheet").classList.add("hidden"));
 $("btnOpenSummary").addEventListener("click", ()=>{
   $("sheet").classList.add("hidden");
   $("sessionSummary").classList.remove("hidden");
@@ -3001,7 +3068,7 @@ document.querySelectorAll(".stepper").forEach(st=>{
 });
 
 /* ---------- init ---------- */
-const APP_VERSION="🇫🇮 Tackcall v0.93";
+const APP_VERSION="🇫🇮 Tackcall v0.95";
 (function(){
   const e=$("verEnable"); if(e) e.textContent=APP_VERSION;
   const n=$("verNote"); if(n) n.textContent=APP_VERSION+" · shares engine with index.html";
