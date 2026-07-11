@@ -155,6 +155,17 @@ border:1px solid #2a2a2a; font-size:13px; font-weight:700; cursor:pointer;}
 border:none; font-weight:700; font-size:15px; cursor:pointer; background:#1a1a1a; color:#fff;}
 .panel .reset{background:transparent; border:1px solid #5a1f1f; color:#ff9b9b;}
 .panel .note{font-size:12px; color:#6c6c6c; line-height:1.5; margin-top:14px;}
+/* Session summary -pikalinkki asetusten kärjessä (v0.92): navigaatio, ei kytkin. Erotettu
+   varsinaisista asetuksista syaanilla (+hehku, sama --cyan kuin summary-paneelissa) ja
+   alareunan viivalla. Aina näkyvissä — SS on aina päällä, ei enää kytkintä. */
+.panelLink{display:flex; align-items:center; justify-content:space-between; gap:10px;
+  width:100%; margin:0 0 8px; padding:12px 0 14px; background:none; border:none;
+  border-bottom:1px solid #1c1c1c; cursor:pointer; text-align:left;}
+.panelLink .plTxt{font-size:15px; font-weight:700; color:var(--cyan); letter-spacing:.02em;
+  text-shadow:0 0 12px rgba(25,224,224,.4);}
+.panelLink .plTxt small{display:block; font-weight:400; color:#777; font-size:12px;
+  margin-top:3px; letter-spacing:0; text-shadow:none;}
+.panelLink .plArrow{flex:0 0 auto; color:var(--cyan); font-size:18px; text-shadow:0 0 12px rgba(25,224,224,.4);}
 /* ---- käyttöohje ---- */
 .helpsteps{margin:0 0 6px; padding:0; list-style:none; counter-reset:hs;}
 .helpsteps li{position:relative; padding:0 0 14px 38px; color:#d6d6d6; font-size:14px; line-height:1.5;}
@@ -278,6 +289,9 @@ body.portrait #btnMean{top:22%; height:22%;}
 <div class="sheet hidden" id="sheet">
 <div class="panel">
 <h2>Settings</h2>
+<!-- v0.92: Session summary aina päällä; avaus suorana, visuaalisesti erotettuna linkkinä
+     asetusten kärjessä (ks. Purjehdusyhteenveto §8). Vanha kytkin+piilonappi poistettu alempaa. -->
+<button class="panelLink" id="btnOpenSummary"><span class="plTxt">Session summary<small>After-sail recap — sector speeds vs. your history</small></span><span class="plArrow">→</span></button>
 <div class="row"><div class="lbl">GPS<small>SOG speed · polar performance learning</small></div><div class="tog" data-key="gps"></div></div>
 <div class="row"><div class="lbl">Offshore (COG)<small>Replaces compass with GPS course over ground. Ignores leeway — best above ~3 kn. Turns GPS on automatically.</small></div><div class="tog" data-key="offshoreCog"></div></div>
 <div class="row"><div class="lbl">Auto mean refresh<small>Watches for wind shifts and asks you to confirm each one it spots. Manual Set Mean always works. Off by default.</small></div><div class="tog" data-key="autoMeanRefresh"></div></div>
@@ -304,8 +318,6 @@ body.portrait #btnMean{top:22%; height:22%;}
 <button data-val="auto">Automatic</button>
 </div>
 <button class="close" id="btnPolarUpdate">Update polar</button>
-<div class="row"><div class="lbl">Session summary<small>After-sail recap: sector speeds and how today compared to before. Turn on to reveal the button below. Off by default.</small></div><div class="tog" data-key="sessionSummary"></div></div>
-<button class="close hidden" id="btnOpenSummary">Session summary →</button>
 <button class="close reset" id="btnReset">Reset means</button>
 <div class="note" id="verNote"></div>
 <button class="close" id="btnCloseSheet">Done</button>
@@ -447,7 +459,7 @@ const S = {
   gps:{cog:null, sog:null, on:false, watch:null},
   wakeLock:null,
   demo:false, demoT:0,
-  settings:{ deadband:3, tackThresh:20, tackAngle:90, gps:true, wake:false, smooth:5, audio:false, gaugeScale:20, headingFocus:false, headingOffset:0, orientationLock:'auto', offshoreCog:false, monoScheme:false, autoMeanRefresh:false, sessionSummary:false }, // tackThresh oletus = skaalan max, käyttäjä kiristää itse; headingOffset = asennuskorjaus, orientationLock = Portrait/Landscape/Automatic; offshoreCog = korvaa kompassin GPS-COG:lla; monoScheme = valkoinen/harmaa duotone-väriskeema kirkkaaseen aurinkoon; autoMeanRefresh = tuulennollapisteen automaattinen virkistys käännöspareista (oletus pois, ks. valmistusohjeet)
+  settings:{ deadband:3, tackThresh:20, tackAngle:90, gps:true, wake:false, smooth:5, audio:false, gaugeScale:20, headingFocus:false, headingOffset:0, orientationLock:'auto', offshoreCog:false, monoScheme:false, autoMeanRefresh:false }, // tackThresh oletus = skaalan max, käyttäjä kiristää itse; headingOffset = asennuskorjaus, orientationLock = Portrait/Landscape/Automatic; offshoreCog = korvaa kompassin GPS-COG:lla; monoScheme = valkoinen/harmaa duotone-väriskeema kirkkaaseen aurinkoon; autoMeanRefresh = tuulennollapisteen automaattinen virkistys käännöspareista (oletus pois, ks. valmistusohjeet)
   source:null, compassOk:false, liveSince:0,
   audio:{ state:'nomean', cand:'nomean', candSince:0, tackSince:null, tackArmed:true, tackLockUntil:0, tackAlertSince:null, settled:false, grooveSince:null }, // tackAlertSince = TACK-hälytyksen alkuhetki, ohjaa gaugen vilkun huomioikkunaa (synkassa äänimerkin kanssa, toimii myös äänet pois). settled/grooveSince = asettumissalpa (v0.80): TACK sallitaan vasta kun halssille on ASETUTTU (groove pysynyt SETTLE_DWELL_MS). Estää TACKin reachilta noustessa. Nollautuu käännöksessä (resetAudioOnTack).
 };
@@ -2291,39 +2303,75 @@ document.addEventListener("visibilitychange", ()=>{ if(document.hidden) ssStopAn
 // koskemattomana. Käytetään vain kun S.demo on tosi, jotta Session summaryn
 // laskenta ja ulkoasu voidaan validoida ilman oikeaa purjehdusdataa.
 function ssDemoLog(){
+  // v0.92: realistinen aikasarja (ei satunnaishajontaa) jotta myös uudet osiot —
+  // Upwind angle & speed (§7) ja Tack performance (§8) — saavat dataa: luovintasarja
+  // kestävillä käännöksillä, käännösten dippi+palautuminen, per-legi pinch/target/foot
+  // -vaihtelu ja pari lyhyttä flikkeriä (suodatettavaksi). Reach + run täyttävät muut
+  // sektorit. Deterministinen (siemenpohjainen), jotta demo on toistettava.
   const pts=[];
-  const wind=20, half=45; // tuulen suunta ja closehauled-puolikulma
-  const meanStb=norm(wind-half), meanBb=norm(wind+half);
-  // Venekohtainen "totuuspolaari" TWA→SOG (karkea, uskottava muoto)
+  const wind=20, half=45;
+  const meanStb=norm(wind-half), meanBb=norm(wind+half); // 335, 65
+  // Venepolaari: upwind saturoituu (matala TWA aidosti hidas → uskottava muoto)
   const trueSog=twa=>{
-    if(twa<30) return 0.06*twa;            // no-go nousee jyrkästi
-    if(twa<50) return 1.8+0.09*(twa-30);   // nousukurssi ~3.6 kn
-    if(twa<100) return 3.6+0.05*(twa-50);  // reach kiihtyy ~6 kn
-    if(twa<140) return 6.1-0.01*(twa-100); // laakea huippu
-    return 5.7-0.03*(twa-140);             // myötä hidastuu
+    if(twa<52){
+      const k=[[14,0.15],[18,0.7],[22,1.5],[26,2.4],[30,3.05],[34,3.45],[38,3.66],[42,3.76],[46,3.82],[50,3.85]];
+      if(twa<=k[0][0]) return 0.1;
+      for(let i=1;i<k.length;i++){ if(twa<=k[i][0]){ const [x0,y0]=k[i-1],[x1,y1]=k[i]; return y0+(y1-y0)*(twa-x0)/(x1-x0); } }
+      return 3.85;
+    }
+    if(twa<100) return 3.6+0.05*(twa-52);   // reach kiihtyy
+    if(twa<140) return 6.0-0.004*(twa-100); // laakea huippu
+    return 5.85-0.03*(twa-140);             // myötä hidastuu
   };
-  // Yksi sessio: satunnaisia pisteitä eri TWA:illa, annetulla nopeuskertoimella
-  const mkSession=(startTs, scale, n)=>{
-    for(let i=0;i<n;i++){
-      const twa=15+Math.random()*160;
-      const stb=Math.random()<0.5;
-      const heading=stb ? norm(wind-twa) : norm(wind+twa);
-      const noise=0.85+Math.random()*0.3;
-      const sog=Math.max(0.3, trueSog(twa)*scale*noise);
-      pts.push({
-        ts:startTs+i*1000, heading,
-        meanStb, meanBb,
-        tack: stb?'stb':'bb',
-        sog:Math.round(sog*100)/100, windAge:5,
-      });
+  const mkSession=(startTs, scale, seed)=>{
+    let s=seed>>>0; const rnd=()=>{ s=(s*1664525+1013904223)>>>0; return s/4294967296; };
+    let t=startTs;
+    const nearer=hd=>{ const ds=Math.abs(((hd-meanStb+540)%360)-180), db=Math.abs(((hd-meanBb+540)%360)-180); return ds<=db?'stb':'bb'; };
+    const push=(twa, side, spd)=>{
+      const heading = side==='stb' ? norm(wind-twa) : norm(wind+twa);
+      pts.push({ts:t, heading, meanStb, meanBb, tack:nearer(heading), sog:Math.round(Math.max(0,spd)*100)/100, windAge:5});
+      t+=1000;
+    };
+    // upwind-legi: TWA oskilloi leveästi keskikulman ympäri, nopeus seuraa hetkellistä
+    // TWA:ta (matala = hidas). angBias<0 = pinch, >0 = foot.
+    const leg=(side, angBias, dur)=>{
+      for(let i=0;i<dur;i++){
+        const twa=35+angBias + 6*Math.sin(i/4.5) + (rnd()*3-1.5);
+        push(twa, side, trueSog(twa)*scale*(0.95+rnd()*0.08));
+      }
+    };
+    // käännös: dippi läpi tuulen, sitten nousu matalasta grooveen nopeuden rakentuessa
+    const tack=(toSide, preSpd, recS)=>{
+      for(let i=0;i<3;i++){ const heading=norm(wind + (i-1)*4);
+        pts.push({ts:t, heading, meanStb, meanBb, tack:nearer(heading), sog:Math.round((0.35+i*0.1)*100)/100, windAge:5}); t+=1000; }
+      for(let i=0;i<recS;i++){ const frac=(i+1)/recS; const twa=22+12*frac+(rnd()*2-1); push(twa, toSide, preSpd*(0.5+0.5*frac)); }
+    };
+    // lyhyt flikkeri (ei kestä TACK_CONFIRM_DWELL_S → suodattuu)
+    const flicker=(otherSide, dur)=>{ for(let i=0;i<dur;i++) push(33, otherSide, trueSog(33)*scale); };
+
+    leg('stb', -1, 55);               // legi 0: on-target STB
+    tack('bb', trueSog(34)*scale, 6);
+    leg('bb', -8, 60);                // legi 1: PINCH (bb)
+    flicker('stb', 2);               // flikkeri
+    leg('bb', -8, 20);
+    tack('stb', trueSog(27)*scale, 9);
+    leg('stb', 7, 50);                // legi 2: FOOT (stb)
+    tack('bb', trueSog(42)*scale, 4);
+    leg('bb', 0, 65);                 // legi 3: on-target BB
+    tack('stb', trueSog(35)*scale, 7);
+    leg('stb', -2, 30);               // legi 4: lyhyt STB ennen bear-awayta
+    // Bear away + laskukierros: pyyhkäise TWA 52°→170° tasaisesti (reach→run),
+    // pari pistettä per kaista kohinalla → TÄYTTÄÄ polaariruusun ehyeksi kuten vanha
+    // demo. Yhdellä halssilla (stb) → ei uusia halssinvaihtoja Tack performanceen.
+    for(let seg=0; seg<25; seg++){
+      const base=52+seg*5;            // 52°…172°
+      const reps=(base>=95&&base<=140)?6:5; // ~10-12 pistettä/10° — tasainen ehyt scatter
+      for(let j=0;j<reps;j++){ const twa=Math.min(174, base+(rnd()*6-3)); push(twa,'stb', trueSog(twa)*scale*(0.93+rnd()*0.12)); }
     }
   };
-  const now=Date.now();
-  const dayMs=24*60*60*1000;
-  // Edellinen sessio: eilen, hieman hitaampi (scale 0.94)
-  mkSession(now-dayMs, 0.94, 200);
-  // Nykyinen sessio: tänään, hieman nopeampi (scale 1.0) — vertailu näyttää parannusta
-  mkSession(now-30*60*1000, 1.0, 200);
+  const now=Date.now(), dayMs=24*60*60*1000;
+  mkSession(now-dayMs, 0.94, 24680);      // edellinen sessio (eilen, hieman hitaampi)
+  mkSession(now-30*60*1000, 1.0, 12345);  // nykyinen sessio (tänään)
   return pts;
 }
 
@@ -2917,8 +2965,6 @@ $("btnPolarUpdate").addEventListener("click", ()=>{
 });
 function syncToggles(){
   document.querySelectorAll(".tog").forEach(t=>{ t.classList.toggle("on", !!S.settings[t.dataset.key]); });
-  // Session summary -avausnappi näkyy vain kun asetus on päällä (Vaihe B0)
-  const bs=$("btnOpenSummary"); if(bs) bs.classList.toggle("hidden", !S.settings.sessionSummary);
 }
 document.querySelectorAll(".tog").forEach(t=>{
   t.addEventListener("click", ()=>{
@@ -2955,7 +3001,7 @@ document.querySelectorAll(".stepper").forEach(st=>{
 });
 
 /* ---------- init ---------- */
-const APP_VERSION="🇫🇮 Tackcall v0.91";
+const APP_VERSION="🇫🇮 Tackcall v0.93";
 (function(){
   const e=$("verEnable"); if(e) e.textContent=APP_VERSION;
   const n=$("verNote"); if(n) n.textContent=APP_VERSION+" · shares engine with index.html";
