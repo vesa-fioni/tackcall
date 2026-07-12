@@ -1,0 +1,15 @@
+# Tackcall
+
+> Sailing tactics compass for racing: real-time lift/header detection, VMG, and performance tracking, without a separate wind instrument.
+
+Tackcall is a single-page web app (PWA) that reads the phone's compass and GPS to help racing sailors sail upwind more precisely. The user sets a "mean" heading for each tack based on today's wind; the app then continuously compares the current heading to that reference and reports whether the wind has lifted or headed, on which tack. It also computes VMG, tracks boat performance against the sailor's own learned polar, and provides a post-session summary with leg-by-leg and tack-by-tack analysis. All data stays on-device; there is no backend or account.
+
+## Project
+
+- [GitHub repository](https://github.com/vesa-fioni/tackcall): source code, MIT licence
+- [App](https://tackcall.app/): the live application, works directly in the browser
+
+## Notes
+
+- Single-file HTML/JS application, no build pipeline, no external dependencies
+- Requires phone compass (magnetometer) and GPS; iOS and Android via mobile browser
