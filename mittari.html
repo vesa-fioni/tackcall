@@ -2051,13 +2051,18 @@ function render(){
   // Mean-napin teksti: "SET STB" / "SET BB" — lyhyt, toimintaorientoitunut.
   // Kompassiluku poistettu (toisteinen: STB/BB-napit näyttävät jo asetetut meanit).
   const meanLbl = pending ? 'UPDATE WIND'
-                : S.tack==='bb' ? 'SET BB' : S.tack==='stb' ? 'SET STB' : 'SET MEAN';
+                : S.tack==='bb' ? 'SET BB'
+                : S.tack==='stb' ? 'SET STB'
+                // v0.97: kylmäkäynnistys (ei halssia, kumpaakaan meania ei asetettu) heijastaa STB-aloitusta.
+                // S.tack pysyy null → raakaloki rehellinen; SET MEAN oletusarvoisesti STB (ks. setMean).
+                : (S.meanStb==null && S.meanBb==null) ? 'SET STB'
+                : 'SET MEAN';
   { const bm=$("btnSetMean"); if(bm.textContent!==meanLbl) bm.textContent=meanLbl; }
   $("btnSetMean").classList.toggle("amr-pending", !!pending);
   // Pulsointi: keltainen kun tällä halssilla ei ole meania — joko koska se on nyt aktiivinen
   // halssi vailla meania, tai koska toinen halssi on jo asetettu ja tämä puuttuu vielä.
   $("btnBb").classList.toggle("needs-mean", S.meanBb==null && (S.tack==='bb' || S.meanStb!=null));
-  $("btnStb").classList.toggle("needs-mean", S.meanStb==null && (S.tack==='stb' || S.meanBb!=null));
+  $("btnStb").classList.toggle("needs-mean", S.meanStb==null && (S.tack==='stb' || S.meanBb!=null || (S.tack==null && S.meanBb==null)));
   // Nappi pysyy aina toiminnallisena tuulen kierron varalta — ei koskaan poistu.
   const posForSync = pointOfSail();
   const isDownwind = !!(posForSync && !posForSync.up);
@@ -3142,7 +3147,7 @@ document.querySelectorAll(".stepper").forEach(st=>{
 });
 
 /* ---------- init ---------- */
-const APP_VERSION="🇫🇮 Tackcall v0.96";
+const APP_VERSION="🇫🇮 Tackcall v0.97";
 (function(){
   const e=$("verEnable"); if(e) e.textContent=APP_VERSION;
   const n=$("verNote"); if(n) n.textContent=APP_VERSION+" · shares engine with index.html";
