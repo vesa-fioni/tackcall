@@ -171,6 +171,8 @@ padding:12px; font-size:13px; line-height:1.5; margin-top:6px; text-align:left;}
 .ver{font-family:var(--mono); font-size:11px; color:#4a4a4a; letter-spacing:.16em; margin-top:16px;}
 .disclaimer{font-size:11px; line-height:1.5; color:#5a5a5a; margin-top:20px; text-align:left;
 border-top:1px solid #1c1c1c; padding-top:14px;}
+.legalLinks{font-size:11px; line-height:1.5; margin-top:10px; text-align:left; color:#5a5a5a;}
+.legalLinks a{color:#8a8a8a; text-decoration:underline; text-underline-offset:2px; cursor:pointer;}
 .credit{font-family:var(--mono); font-size:10px; color:#3a3a3a; letter-spacing:.03em; line-height:1.6; margin-top:6px;}
 .consentTtl{font-size:20px; font-weight:800; letter-spacing:.02em; margin:0 0 16px; color:#eaeaea;}
 .consentBody{text-align:left; color:#a0a0a0; font-size:14px; line-height:1.55;
@@ -288,6 +290,8 @@ body.portrait #btnMean{top:22%; height:22%;}
 .tpLoss{font-family:var(--mono); font-size:10.5px; color:#8a8a8a; margin-top:2px;}
 .tpFoot{font-size:11px; line-height:1.55; color:#6c6c6c; text-align:center; margin:14px 6px 4px; font-family:var(--sans);}
 </style>
+<script data-goatcounter="https://fioni.goatcounter.com/count"
+        async src="//gc.zgo.at/count.js"></script>
 </head>
 <body>
 <div id="stage">
@@ -314,6 +318,7 @@ body.portrait #btnMean{top:22%; height:22%;}
 <button class="ghost" id="btnHelp">How to use →</button>
 <div class="err hidden" id="errBox"></div>
 <div class="disclaimer">Tactical reference only — not a substitute for proper lookout, seamanship, or navigation equipment. To the maximum extent permitted by law, the developer accepts no liability for its use. By using this app, you accept these terms.</div>
+<div class="legalLinks"><a id="btnOverlayTerms">Terms</a> · <a id="btnOverlayPrivacy">Privacy</a></div>
 <div class="ver" id="verEnable"></div>
 <div class="credit">Vesa Lindqvist<br>Joonas Sandholm (contributor)</div>
 </div>
@@ -2417,6 +2422,9 @@ $("btnOpenTerms").addEventListener("click", ()=>{ $("sheet").classList.add("hidd
 $("btnCloseTerms").addEventListener("click", ()=>$("termsSheet").classList.add("hidden"));
 $("btnOpenPrivacy").addEventListener("click", ()=>{ $("sheet").classList.add("hidden"); $("privacySheet").classList.remove("hidden"); });
 $("btnClosePrivacy").addEventListener("click", ()=>$("privacySheet").classList.add("hidden"));
+// v1.0: samat sheetit avattavissa myös aloitusnäytöstä (sheet z-index 40 > overlay 30, joten overlayta ei piiloteta — Done palauttaa etusivulle)
+$("btnOverlayTerms").addEventListener("click", (e)=>{ e.preventDefault(); $("termsSheet").classList.remove("hidden"); });
+$("btnOverlayPrivacy").addEventListener("click", (e)=>{ e.preventDefault(); $("privacySheet").classList.remove("hidden"); });
 $("btnOpenSummary").addEventListener("click", ()=>{
   $("sheet").classList.add("hidden");
   $("sessionSummary").classList.remove("hidden");
@@ -3153,7 +3161,7 @@ document.querySelectorAll(".stepper").forEach(st=>{
 });
 
 /* ---------- init ---------- */
-const APP_VERSION="🇫🇮 Tackcall v0.99";
+const APP_VERSION="🇫🇮 Tackcall v1.0";
 (function(){
   const e=$("verEnable"); if(e) e.textContent=APP_VERSION;
   const n=$("verNote"); if(n) n.textContent=APP_VERSION+" · shares engine with index.html";
