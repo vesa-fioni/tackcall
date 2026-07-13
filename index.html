@@ -294,11 +294,11 @@ body.portrait #btnMean{top:22%; height:22%;}
 <canvas id="inst"></canvas>
 <button class="ctl" id="btnGear" title="Settings">⚙</button>
 <button class="ctl" id="btnMean" title="Aseta keskisuunta"></button>
-<button class="ctl" id="btnStb">STB</button>
+<button class="ctl" id="btnStb">STBD</button>
 <div id="downwindHint">· DOWNWIND ·</div>
 <div id="offshoreHint">· OFFSHORE · COG ·</div>
 <button class="ctl" id="btnSetMean">SET MEAN</button>
-<button class="ctl" id="btnBb">BB</button>
+<button class="ctl" id="btnBb">PORT</button>
 </div>
 
 <!-- aloitus -->
@@ -355,7 +355,7 @@ body.portrait #btnMean{top:22%; height:22%;}
 <div class="stepper" data-key="deadband"><button data-d="-1">–</button><span class="val"></span><button data-d="1">+</button></div></div>
 <div class="row"><div class="lbl">Smoothing<small>1 responsive … 9 stable</small></div>
 <div class="stepper" data-key="smooth"><button data-d="-1">–</button><span class="val"></span><button data-d="1">+</button></div></div>
-<div class="row"><div class="lbl">Tack angle<small>STB↔BB, used for wind estimate</small></div>
+<div class="row"><div class="lbl">Tack angle<small>STBD↔PORT, used for wind estimate</small></div>
 <div class="stepper" data-key="tackAngle"><button data-d="-2">–</button><span class="val"></span><button data-d="2">+</button></div></div>
 <div class="row"><div class="lbl">Heading offset<small>Corrects for physical mounting rotation</small></div>
 <div class="stepper" data-key="headingOffset"><button data-d="-5">–</button><span class="val"></span><button data-d="5">+</button></div></div>
@@ -451,7 +451,7 @@ body.portrait #btnMean{top:22%; height:22%;}
 <div class="li"><span class="sw" style="background:#333"></span><b>GROOVE</b>Within the dead band, right on your mean.</div>
 </div>
 <div class="helph">Compass</div>
-<p class="helpp">The large red number is your current heading. STB / BB shows the tack you're on — automatically or manually, set in Settings.</p>
+<p class="helpp">The large red number is your current heading. STBD / PORT shows the tack you're on — automatically or manually, set in Settings.</p>
 <div class="helph">VMG</div>
 <p class="helpp">Speed made good along the wind axis, in knots — how fast you're progressing to windward (upwind) or to leeward (downwind). It's derived from your speed and the angle to the estimated wind, so it needs both means set and GPS on. Shown in coral, with SOG in amber, since SOG is the direct reading and VMG is computed.</p>
 <!-- PERF-ohje (v0.82): selkokielinen luku-ohje. 100% = oma P90-referenssi samassa kulmassa; >100 on validi (P90 on ylitettävä ~10% ajasta, ei cappia). Kolmiportainen kirkkaus = datavarmuus (--/dim/bright), ks. Polar.perf() ja PERF_MASS_DIM/BRIGHT. -->
@@ -2044,18 +2044,18 @@ function render(){
   const bbMeanStr  = S.meanBb!=null
     ? `<span class="btn-mean-val">${pad3(S.meanBb)}°</span>`
     : (S.meanStb!=null ? `<span class="btn-mean-val">NEXT</span>` : '');
-  const newStbHtml = `<span class="btn-tack">STB</span>${stbMeanStr}`;
-  const newBbHtml  = `<span class="btn-tack">BB</span>${bbMeanStr}`;
+  const newStbHtml = `<span class="btn-tack">STBD</span>${stbMeanStr}`;
+  const newBbHtml  = `<span class="btn-tack">PORT</span>${bbMeanStr}`;
   if($("btnStb").innerHTML !== newStbHtml) $("btnStb").innerHTML = newStbHtml;
   if($("btnBb").innerHTML  !== newBbHtml)  $("btnBb").innerHTML  = newBbHtml;
-  // Mean-napin teksti: "SET STB" / "SET BB" — lyhyt, toimintaorientoitunut.
-  // Kompassiluku poistettu (toisteinen: STB/BB-napit näyttävät jo asetetut meanit).
+  // Mean-napin teksti: "SET STBD" / "SET PORT" — lyhyt, toimintaorientoitunut.
+  // Kompassiluku poistettu (toisteinen: STBD/PORT-napit näyttävät jo asetetut meanit).
   const meanLbl = pending ? 'UPDATE WIND'
-                : S.tack==='bb' ? 'SET BB'
-                : S.tack==='stb' ? 'SET STB'
+                : S.tack==='bb' ? 'SET PORT'
+                : S.tack==='stb' ? 'SET STBD'
                 // v0.97: kylmäkäynnistys (ei halssia, kumpaakaan meania ei asetettu) heijastaa STB-aloitusta.
-                // S.tack pysyy null → raakaloki rehellinen; SET MEAN oletusarvoisesti STB (ks. setMean).
-                : (S.meanStb==null && S.meanBb==null) ? 'SET STB'
+                // S.tack pysyy null → raakaloki rehellinen; SET MEAN oletusarvoisesti STBD (ks. setMean).
+                : (S.meanStb==null && S.meanBb==null) ? 'SET STBD'
                 : 'SET MEAN';
   { const bm=$("btnSetMean"); if(bm.textContent!==meanLbl) bm.textContent=meanLbl; }
   $("btnSetMean").classList.toggle("amr-pending", !!pending);
@@ -2299,11 +2299,11 @@ function render(){
     // Yksirivinen ohje — kirkas valkoinen kuten rotate-ruudun ohjeistus
     let instrLine;
     if(S.meanStb==null && S.meanBb==null){
-      instrLine = 'SAIL UPWIND ON STB  ·  SETTLE  ·  TAP SET STB';
+      instrLine = 'SAIL UPWIND ON STBD  ·  SETTLE  ·  TAP SET STBD';
     } else if(S.meanBb==null){
-      instrLine = 'TACK ON BB  ·  SETTLE  ·  TAP SET BB';
+      instrLine = 'TACK ON PORT  ·  SETTLE  ·  TAP SET PORT';
     } else {
-      instrLine = 'TACK ON STB  ·  SETTLE  ·  TAP SET STB';
+      instrLine = 'TACK ON STBD  ·  SETTLE  ·  TAP SET STBD';
     }
     const fs = Math.max(11, small*0.026);
     drawBigMessage(instrLine, fs);
@@ -2932,7 +2932,7 @@ function renderLegQuality(cur){
     if(up.length < SS_MIN_PTS) continue; // ei tarpeeksi upwind-dataa → ei riviä (sama kynnysperiaate kuin ssUsable)
     const medTwa=_ssMedian(up.map(p=>ssTwa(p)));
     const durM = Math.max(1, Math.round((lg.t1-lg.t0)/60000));
-    const tackLbl = lg.tack==='stb'?'STB':(lg.tack==='bb'?'BB':'—');
+    const tackLbl = lg.tack==='stb'?'STBD':(lg.tack==='bb'?'PORT':'—');
     if(lg.tack==='stb') nStb++; else if(lg.tack==='bb') nBb++;
     let effPct=null, angErr=null;
     if(targetAngle!=null && bestVmg!=null && bestVmg>0){
@@ -2961,7 +2961,7 @@ function renderLegQuality(cur){
       read = Math.round(r.medTwa)+'° (target '+Math.round(r.targetAngle)+'°)';
     } else if(r.medTwa!=null){ read = Math.round(r.medTwa)+'°'; }
     const effStr = r.effPct!=null ? r.effPct+'%' : '—';
-    const tcl = r.tackLbl==='STB'?'stb':(r.tackLbl==='BB'?'bb':'');
+    const tcl = r.tackLbl==='STBD'?'stb':(r.tackLbl==='PORT'?'bb':'');
     listEl.insertAdjacentHTML('beforeend',
       '<div class="lqCard">'
       + '<div class="lqTack"><span class="'+tcl+'" style="padding:1px 5px;border-radius:4px;font-size:10px;">'+r.tackLbl+'</span><small>'+r.durM+'m</small></div>'
@@ -3038,7 +3038,7 @@ function renderTackPerf(cur){
         + '<line x1="0" y1="'+yPre.toFixed(0)+'" x2="120" y2="'+yPre.toFixed(0)+'" stroke="#3a3a3a" stroke-width="1" stroke-dasharray="3,3"/>'
         + '<polyline points="'+pl+'" fill="none" stroke="'+col+'" stroke-width="2"/></svg>';
     }
-    const fL=ev.fromTack==='stb'?'STB':'BB', tL=ev.toTack==='stb'?'STB':'BB';
+    const fL=ev.fromTack==='stb'?'STBD':'PORT', tL=ev.toTack==='stb'?'STBD':'PORT';
     const fCl=ev.fromTack==='stb'?'stb':'bb', tCl=ev.toTack==='stb'?'stb':'bb';
     const timeHtml = recSec!=null
       ? '<div class="tpTime">'+recSec+'<small>s</small></div>'
@@ -3153,7 +3153,7 @@ document.querySelectorAll(".stepper").forEach(st=>{
 });
 
 /* ---------- init ---------- */
-const APP_VERSION="🇫🇮 Tackcall v0.98";
+const APP_VERSION="🇫🇮 Tackcall v0.99";
 (function(){
   const e=$("verEnable"); if(e) e.textContent=APP_VERSION;
   const n=$("verNote"); if(n) n.textContent=APP_VERSION+" · shares engine with index.html";
