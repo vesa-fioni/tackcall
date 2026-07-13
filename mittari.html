@@ -294,11 +294,11 @@ body.portrait #btnMean{top:22%; height:22%;}
 <canvas id="inst"></canvas>
 <button class="ctl" id="btnGear" title="Settings">⚙</button>
 <button class="ctl" id="btnMean" title="Aseta keskisuunta"></button>
-<button class="ctl" id="btnStb">STB</button>
+<button class="ctl" id="btnStb">STBD</button>
 <div id="downwindHint">· DOWNWIND ·</div>
 <div id="offshoreHint">· OFFSHORE · COG ·</div>
 <button class="ctl" id="btnSetMean">SET MEAN</button>
-<button class="ctl" id="btnBb">BB</button>
+<button class="ctl" id="btnBb">PORT</button>
 </div>
 
 <!-- aloitus -->
@@ -340,7 +340,7 @@ body.portrait #btnMean{top:22%; height:22%;}
 <!-- v0.92: Session summary aina päällä; avaus suorana, visuaalisesti erotettuna linkkinä
      asetusten kärjessä (ks. Purjehdusyhteenveto §8). Vanha kytkin+piilonappi poistettu alempaa. -->
 <button class="panelLink" id="btnOpenSummary"><span class="plTxt">Session summary<small>After-sail recap — sector speeds vs. your history</small></span><span class="plArrow">→</span></button>
-<div class="row"><div class="lbl">GPS<small>SOG speed · polar performance learning</small></div><div class="tog" data-key="gps"></div></div>
+<div class="row"><div class="lbl">GPS<small>Switch off to save battery. Powers SOG, VMG and polar learning.</small></div><div class="tog" data-key="gps"></div></div>
 <div class="row"><div class="lbl">Offshore (COG)<small>Replaces compass with GPS course over ground. Ignores leeway — best above ~3 kn. Turns GPS on automatically.</small></div><div class="tog" data-key="offshoreCog"></div></div>
 <div class="row"><div class="lbl">Auto mean refresh<small>Watches for wind shifts and asks you to confirm each one it spots. Manual Set Mean always works. Off by default.</small></div><div class="tog" data-key="autoMeanRefresh"></div></div>
 <div class="row"><div class="lbl">Display mode<small>Off: Heading · enlarged main number<br>On: Instruments · enlarged secondary data</small></div><div class="tog" data-key="headingFocus"></div></div>
@@ -355,7 +355,7 @@ body.portrait #btnMean{top:22%; height:22%;}
 <div class="stepper" data-key="deadband"><button data-d="-1">–</button><span class="val"></span><button data-d="1">+</button></div></div>
 <div class="row"><div class="lbl">Smoothing<small>1 responsive … 9 stable</small></div>
 <div class="stepper" data-key="smooth"><button data-d="-1">–</button><span class="val"></span><button data-d="1">+</button></div></div>
-<div class="row"><div class="lbl">Tack angle<small>STB↔BB, used for wind estimate</small></div>
+<div class="row"><div class="lbl">Tack angle<small>STBD↔PORT, used for wind estimate</small></div>
 <div class="stepper" data-key="tackAngle"><button data-d="-2">–</button><span class="val"></span><button data-d="2">+</button></div></div>
 <div class="row"><div class="lbl">Heading offset<small>Corrects for physical mounting rotation</small></div>
 <div class="stepper" data-key="headingOffset"><button data-d="-5">–</button><span class="val"></span><button data-d="5">+</button></div></div>
@@ -451,7 +451,7 @@ body.portrait #btnMean{top:22%; height:22%;}
 <div class="li"><span class="sw" style="background:#333"></span><b>GROOVE</b>Within the dead band, right on your mean.</div>
 </div>
 <div class="helph">Compass</div>
-<p class="helpp">The large red number is your current heading. STB / BB shows the tack you're on — automatically or manually, set in Settings.</p>
+<p class="helpp">The large red number is your current heading. STBD / PORT shows the tack you're on — automatically or manually, set in Settings.</p>
 <div class="helph">VMG</div>
 <p class="helpp">Speed made good along the wind axis, in knots — how fast you're progressing to windward (upwind) or to leeward (downwind). It's derived from your speed and the angle to the estimated wind, so it needs both means set and GPS on. Shown in coral, with SOG in amber, since SOG is the direct reading and VMG is computed.</p>
 <!-- PERF-ohje (v0.82): selkokielinen luku-ohje. 100% = oma P90-referenssi samassa kulmassa; >100 on validi (P90 on ylitettävä ~10% ajasta, ei cappia). Kolmiportainen kirkkaus = datavarmuus (--/dim/bright), ks. Polar.perf() ja PERF_MASS_DIM/BRIGHT. -->
@@ -580,6 +580,16 @@ const SETTLE_DWELL_MS=3000; // asettumissalpa (v0.80): groove on pysyttävä tä
 // Toimii vain kun molemmat meanit asetettu (estWind() palauttaa null muuten → ei vaimennusta).
 // Säädettävissä kenttädatan perusteella — tyypillinen no-go-vyöhyke ~25–40°.
 const NO_GO_DEG = 10;
+// Meanien fyysinen validiteetti (v0.96): STB- ja BB-mean ovat kaksi ERI nousukurssia, joten
+// niiden täyskulman (meanStb↔meanBb) on ylitettävä luovan fyysinen alaraja. Jos molemmat
+// asetetaan samalta halssilta, pari romahtaa (meanStb≈meanBb) eikä tuulen suunta / VMG / PERF /
+// lift-header / learnedTackAngle ole mielekkäästi johdettavissa. Periaate: kirjoitus (setMean)
+// onnistuu aina, mutta kulutus portitetaan kunnes pari on fyysisesti mahdollinen.
+const MIN_TACK_SEP = 40; // ° — provisorinen, kenttädatalla säädettävä (~30–50°)
+function meansValid(){
+  return S.meanStb!=null && S.meanBb!=null
+      && Math.abs(angDiff(S.meanStb, S.meanBb)) >= MIN_TACK_SEP;
+}
 const OFFSHORE_MIN_KN = 3; // COG epäluotettava alle tämän — koko näyttö odotustilassa Offshore-tilassa
 // Näyttökynnys: tämän alle SOG näytetään "ei nopeutta" (--), ei harhaanjohtavaa 0.0.
 // Nappaa GPS:n coords.speed===0 -dropoutit (ja alle 0.05 kn kohinan, joka pyöristyisi 0.0:ksi).
@@ -1038,7 +1048,10 @@ const Polar = (function(){
     const p = _pendingRefresh;
     S.meanStb=p.toStb; S.meanStbTs=p.tsStb; S.meanStbStability=p.stabStb; S.meanStbSogRatio=p.sogStb;
     S.meanBb=p.toBb;   S.meanBbTs=p.tsBb;   S.meanBbStability=p.stabBb;   S.meanBbSogRatio=p.sogBb;
-    learnedTackAngle = Math.abs(_na(S.meanStb - S.meanBb));
+    // v0.96: opeta closehauled-kulma vain fyysisesti mahdollisesta parista (sama portti kuin onMeanSet).
+    if(Math.abs(_na(S.meanStb - S.meanBb)) >= MIN_TACK_SEP){
+      learnedTackAngle = Math.abs(_na(S.meanStb - S.meanBb));
+    }
     if(!S.demo){ saveMeans(); _logAuto('accept', p); } // demossa ei kirjoiteta pysyvästi eikä lokiin
     _pendingRefresh = null;
   }
@@ -1143,7 +1156,10 @@ const Polar = (function(){
       // Bootstrap: ensimmäinen manuaalinen mean-pari opettaa closehauled-kulman
       // automaattiselle virkistykselle. Manuaalinen asetus myös päivittää sen aina,
       // koska käyttäjän tarkoituksellinen asetus on paras saatavilla oleva totuus.
-      if(S.meanStb!=null && S.meanBb!=null){
+      // v0.96: vain fyysisesti mahdollinen pari opettaa — degeneroitunut pari (meanStb≈meanBb,
+      // esim. molemmat samalta halssilta) ei kirjoita learnedTackAngleä, ettei AMR:n
+      // closehauled-portti (expected=learnedTackAngle/2) myrkyty.
+      if(S.meanStb!=null && S.meanBb!=null && Math.abs(_na(S.meanStb - S.meanBb)) >= MIN_TACK_SEP){
         learnedTackAngle = Math.abs(_na(S.meanStb - S.meanBb));
       }
       // Manuaalinen asetus ottaa ohjat: väistä odottava ehdotus, herää irtikytkennästä.
@@ -1404,7 +1420,7 @@ function evalShift(){
   return {liftedDeg:lifted, status};
 }
 function estWind(){
-  if(S.meanStb==null || S.meanBb==null) return null;
+  if(!meansValid()) return null; // fyysisesti mahdoton pari (tai mean puuttuu) → ei tuulen suuntaa
   const half = S.settings.tackAngle/2;
   const w1 = norm(S.meanStb + half), w2 = norm(S.meanBb - half);
   const x=Math.cos(w1*Math.PI/180)+Math.cos(w2*Math.PI/180);
@@ -2028,20 +2044,25 @@ function render(){
   const bbMeanStr  = S.meanBb!=null
     ? `<span class="btn-mean-val">${pad3(S.meanBb)}°</span>`
     : (S.meanStb!=null ? `<span class="btn-mean-val">NEXT</span>` : '');
-  const newStbHtml = `<span class="btn-tack">STB</span>${stbMeanStr}`;
-  const newBbHtml  = `<span class="btn-tack">BB</span>${bbMeanStr}`;
+  const newStbHtml = `<span class="btn-tack">STBD</span>${stbMeanStr}`;
+  const newBbHtml  = `<span class="btn-tack">PORT</span>${bbMeanStr}`;
   if($("btnStb").innerHTML !== newStbHtml) $("btnStb").innerHTML = newStbHtml;
   if($("btnBb").innerHTML  !== newBbHtml)  $("btnBb").innerHTML  = newBbHtml;
-  // Mean-napin teksti: "SET STB" / "SET BB" — lyhyt, toimintaorientoitunut.
-  // Kompassiluku poistettu (toisteinen: STB/BB-napit näyttävät jo asetetut meanit).
+  // Mean-napin teksti: "SET STBD" / "SET PORT" — lyhyt, toimintaorientoitunut.
+  // Kompassiluku poistettu (toisteinen: STBD/PORT-napit näyttävät jo asetetut meanit).
   const meanLbl = pending ? 'UPDATE WIND'
-                : S.tack==='bb' ? 'SET BB' : S.tack==='stb' ? 'SET STB' : 'SET MEAN';
+                : S.tack==='bb' ? 'SET PORT'
+                : S.tack==='stb' ? 'SET STBD'
+                // v0.97: kylmäkäynnistys (ei halssia, kumpaakaan meania ei asetettu) heijastaa STB-aloitusta.
+                // S.tack pysyy null → raakaloki rehellinen; SET MEAN oletusarvoisesti STBD (ks. setMean).
+                : (S.meanStb==null && S.meanBb==null) ? 'SET STBD'
+                : 'SET MEAN';
   { const bm=$("btnSetMean"); if(bm.textContent!==meanLbl) bm.textContent=meanLbl; }
   $("btnSetMean").classList.toggle("amr-pending", !!pending);
   // Pulsointi: keltainen kun tällä halssilla ei ole meania — joko koska se on nyt aktiivinen
   // halssi vailla meania, tai koska toinen halssi on jo asetettu ja tämä puuttuu vielä.
   $("btnBb").classList.toggle("needs-mean", S.meanBb==null && (S.tack==='bb' || S.meanStb!=null));
-  $("btnStb").classList.toggle("needs-mean", S.meanStb==null && (S.tack==='stb' || S.meanBb!=null));
+  $("btnStb").classList.toggle("needs-mean", S.meanStb==null && (S.tack==='stb' || S.meanBb!=null || (S.tack==null && S.meanBb==null)));
   // Nappi pysyy aina toiminnallisena tuulen kierron varalta — ei koskaan poistu.
   const posForSync = pointOfSail();
   const isDownwind = !!(posForSync && !posForSync.up);
@@ -2272,18 +2293,28 @@ function render(){
   // näytetään ohjeteksti gauge-palkkien sijaan — kommunikoi sovelluksen edellytykset
   // selkeästi ilman erillistä onboarding-overlayä.
   const showInstruction = mean==null && !downwind && !inNoGo;
+  // v0.96: molemmat meanit asetettu mutta fyysisesti mahdottoman lähellä toisiaan (§ validiteettiportti).
+  const meansTooClose = S.meanStb!=null && S.meanBb!=null && !meansValid();
   if(showInstruction){
     // Yksirivinen ohje — kirkas valkoinen kuten rotate-ruudun ohjeistus
     let instrLine;
     if(S.meanStb==null && S.meanBb==null){
-      instrLine = 'SAIL UPWIND ON STB  ·  SETTLE  ·  TAP SET STB';
+      instrLine = 'SAIL UPWIND ON STBD  ·  SETTLE  ·  TAP SET STBD';
     } else if(S.meanBb==null){
-      instrLine = 'TACK ON BB  ·  SETTLE  ·  TAP SET BB';
+      instrLine = 'TACK ON PORT  ·  SETTLE  ·  TAP SET PORT';
     } else {
-      instrLine = 'TACK ON STB  ·  SETTLE  ·  TAP SET STB';
+      instrLine = 'TACK ON STBD  ·  SETTLE  ·  TAP SET STBD';
     }
     const fs = Math.max(11, small*0.026);
     drawBigMessage(instrLine, fs);
+  } else if(meansTooClose){
+    // v0.96: molemmat meanit asetettu, mutta liian lähellä toisiaan ollakseen kaksi eri
+    // nousukurssia (todennäköisesti asetettu samalta halssilta). Fyysisesti mahdoton pari:
+    // estWind()→null on jo kytkenyt VMG/PERF/no-gon pois; tässä lift/header-gaugen tilalle
+    // halssi-symmetrinen viesti. Hero (heading) säilyy — se on aina validi. Ei tapa mitään:
+    // painat SET uudelleen toisella halssilla ja pari korjaantuu.
+    const sep = Math.round(Math.abs(angDiff(S.meanStb, S.meanBb)));
+    drawBigMessage('STB & BB ONLY '+sep+'° APART  ·  TACK & SET', Math.max(11, small*0.026));
   } else if(!pending){
     // Ehdotuksen aikana gaugea EI piirretä: lift/header on laskettu vanhaa (vanhentuvaa)
     // meaniä vasten, ja tyhjä tila pitää tuulenkäännösviestin siistinä (kuten WAITING-ruutu).
@@ -2901,7 +2932,7 @@ function renderLegQuality(cur){
     if(up.length < SS_MIN_PTS) continue; // ei tarpeeksi upwind-dataa → ei riviä (sama kynnysperiaate kuin ssUsable)
     const medTwa=_ssMedian(up.map(p=>ssTwa(p)));
     const durM = Math.max(1, Math.round((lg.t1-lg.t0)/60000));
-    const tackLbl = lg.tack==='stb'?'STB':(lg.tack==='bb'?'BB':'—');
+    const tackLbl = lg.tack==='stb'?'STBD':(lg.tack==='bb'?'PORT':'—');
     if(lg.tack==='stb') nStb++; else if(lg.tack==='bb') nBb++;
     let effPct=null, angErr=null;
     if(targetAngle!=null && bestVmg!=null && bestVmg>0){
@@ -2930,7 +2961,7 @@ function renderLegQuality(cur){
       read = Math.round(r.medTwa)+'° (target '+Math.round(r.targetAngle)+'°)';
     } else if(r.medTwa!=null){ read = Math.round(r.medTwa)+'°'; }
     const effStr = r.effPct!=null ? r.effPct+'%' : '—';
-    const tcl = r.tackLbl==='STB'?'stb':(r.tackLbl==='BB'?'bb':'');
+    const tcl = r.tackLbl==='STBD'?'stb':(r.tackLbl==='PORT'?'bb':'');
     listEl.insertAdjacentHTML('beforeend',
       '<div class="lqCard">'
       + '<div class="lqTack"><span class="'+tcl+'" style="padding:1px 5px;border-radius:4px;font-size:10px;">'+r.tackLbl+'</span><small>'+r.durM+'m</small></div>'
@@ -3007,7 +3038,7 @@ function renderTackPerf(cur){
         + '<line x1="0" y1="'+yPre.toFixed(0)+'" x2="120" y2="'+yPre.toFixed(0)+'" stroke="#3a3a3a" stroke-width="1" stroke-dasharray="3,3"/>'
         + '<polyline points="'+pl+'" fill="none" stroke="'+col+'" stroke-width="2"/></svg>';
     }
-    const fL=ev.fromTack==='stb'?'STB':'BB', tL=ev.toTack==='stb'?'STB':'BB';
+    const fL=ev.fromTack==='stb'?'STBD':'PORT', tL=ev.toTack==='stb'?'STBD':'PORT';
     const fCl=ev.fromTack==='stb'?'stb':'bb', tCl=ev.toTack==='stb'?'stb':'bb';
     const timeHtml = recSec!=null
       ? '<div class="tpTime">'+recSec+'<small>s</small></div>'
@@ -3084,7 +3115,13 @@ function syncToggles(){
 document.querySelectorAll(".tog").forEach(t=>{
   t.addEventListener("click", ()=>{
     const k=t.dataset.key; S.settings[k]=!S.settings[k]; syncToggles();
-    if(k==='gps') applyGps();
+    if(k==='gps'){
+      // v0.98 kaskadi: GPS pois Offshoren ollessa päällä ⇒ myös Offshore pois. Offshore vaatii
+      // GPS:n datalähteeksi (ks. applyOffshoreCog), joten ilman tätä heading jäisi ilman lähdettä
+      // (kompassikäsittelijät early-returnaavat kun offshoreCog=true). Kaskadi palauttaa kompassitilan.
+      if(!S.settings.gps && S.settings.offshoreCog){ S.settings.offshoreCog=false; applyOffshoreCog(); syncToggles(); }
+      applyGps();
+    }
     if(k==='wake') applyWake();
     if(k==='audio'){ if(S.settings.audio) enableAudio(); else disableAudio(); }
     if(k==='offshoreCog') applyOffshoreCog();
@@ -3116,7 +3153,7 @@ document.querySelectorAll(".stepper").forEach(st=>{
 });
 
 /* ---------- init ---------- */
-const APP_VERSION="🇫🇮 Tackcall v0.95";
+const APP_VERSION="🇫🇮 Tackcall v0.99";
 (function(){
   const e=$("verEnable"); if(e) e.textContent=APP_VERSION;
   const n=$("verNote"); if(n) n.textContent=APP_VERSION+" · shares engine with index.html";
