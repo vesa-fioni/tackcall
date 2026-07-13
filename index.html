@@ -2309,7 +2309,7 @@ function render(){
     // halssi-symmetrinen viesti. Hero (heading) säilyy — se on aina validi. Ei tapa mitään:
     // painat SET uudelleen toisella halssilla ja pari korjaantuu.
     const sep = Math.round(Math.abs(angDiff(S.meanStb, S.meanBb)));
-    drawBigMessage('STB & BB '+sep+'° APART  ·  TACK & SET', Math.max(11, small*0.026));
+    drawBigMessage('STB & BB ONLY '+sep+'° APART  ·  TACK & SET', Math.max(11, small*0.026));
   } else if(!pending){
     // Ehdotuksen aikana gaugea EI piirretä: lift/header on laskettu vanhaa (vanhentuvaa)
     // meaniä vasten, ja tyhjä tila pitää tuulenkäännösviestin siistinä (kuten WAITING-ruutu).
