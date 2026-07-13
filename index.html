@@ -340,7 +340,7 @@ body.portrait #btnMean{top:22%; height:22%;}
 <!-- v0.92: Session summary aina päällä; avaus suorana, visuaalisesti erotettuna linkkinä
      asetusten kärjessä (ks. Purjehdusyhteenveto §8). Vanha kytkin+piilonappi poistettu alempaa. -->
 <button class="panelLink" id="btnOpenSummary"><span class="plTxt">Session summary<small>After-sail recap — sector speeds vs. your history</small></span><span class="plArrow">→</span></button>
-<div class="row"><div class="lbl">GPS<small>SOG speed · polar performance learning</small></div><div class="tog" data-key="gps"></div></div>
+<div class="row"><div class="lbl">GPS<small>Switch off to save battery. Powers SOG, VMG and polar learning.</small></div><div class="tog" data-key="gps"></div></div>
 <div class="row"><div class="lbl">Offshore (COG)<small>Replaces compass with GPS course over ground. Ignores leeway — best above ~3 kn. Turns GPS on automatically.</small></div><div class="tog" data-key="offshoreCog"></div></div>
 <div class="row"><div class="lbl">Auto mean refresh<small>Watches for wind shifts and asks you to confirm each one it spots. Manual Set Mean always works. Off by default.</small></div><div class="tog" data-key="autoMeanRefresh"></div></div>
 <div class="row"><div class="lbl">Display mode<small>Off: Heading · enlarged main number<br>On: Instruments · enlarged secondary data</small></div><div class="tog" data-key="headingFocus"></div></div>
@@ -3115,7 +3115,13 @@ function syncToggles(){
 document.querySelectorAll(".tog").forEach(t=>{
   t.addEventListener("click", ()=>{
     const k=t.dataset.key; S.settings[k]=!S.settings[k]; syncToggles();
-    if(k==='gps') applyGps();
+    if(k==='gps'){
+      // v0.98 kaskadi: GPS pois Offshoren ollessa päällä ⇒ myös Offshore pois. Offshore vaatii
+      // GPS:n datalähteeksi (ks. applyOffshoreCog), joten ilman tätä heading jäisi ilman lähdettä
+      // (kompassikäsittelijät early-returnaavat kun offshoreCog=true). Kaskadi palauttaa kompassitilan.
+      if(!S.settings.gps && S.settings.offshoreCog){ S.settings.offshoreCog=false; applyOffshoreCog(); syncToggles(); }
+      applyGps();
+    }
     if(k==='wake') applyWake();
     if(k==='audio'){ if(S.settings.audio) enableAudio(); else disableAudio(); }
     if(k==='offshoreCog') applyOffshoreCog();
@@ -3147,7 +3153,7 @@ document.querySelectorAll(".stepper").forEach(st=>{
 });
 
 /* ---------- init ---------- */
-const APP_VERSION="🇫🇮 Tackcall v0.97";
+const APP_VERSION="🇫🇮 Tackcall v0.98";
 (function(){
   const e=$("verEnable"); if(e) e.textContent=APP_VERSION;
   const n=$("verNote"); if(n) n.textContent=APP_VERSION+" · shares engine with index.html";
