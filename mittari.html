@@ -580,6 +580,16 @@ const SETTLE_DWELL_MS=3000; // asettumissalpa (v0.80): groove on pysyttävä tä
 // Toimii vain kun molemmat meanit asetettu (estWind() palauttaa null muuten → ei vaimennusta).
 // Säädettävissä kenttädatan perusteella — tyypillinen no-go-vyöhyke ~25–40°.
 const NO_GO_DEG = 10;
+// Meanien fyysinen validiteetti (v0.96): STB- ja BB-mean ovat kaksi ERI nousukurssia, joten
+// niiden täyskulman (meanStb↔meanBb) on ylitettävä luovan fyysinen alaraja. Jos molemmat
+// asetetaan samalta halssilta, pari romahtaa (meanStb≈meanBb) eikä tuulen suunta / VMG / PERF /
+// lift-header / learnedTackAngle ole mielekkäästi johdettavissa. Periaate: kirjoitus (setMean)
+// onnistuu aina, mutta kulutus portitetaan kunnes pari on fyysisesti mahdollinen.
+const MIN_TACK_SEP = 40; // ° — provisorinen, kenttädatalla säädettävä (~30–50°)
+function meansValid(){
+  return S.meanStb!=null && S.meanBb!=null
+      && Math.abs(angDiff(S.meanStb, S.meanBb)) >= MIN_TACK_SEP;
+}
 const OFFSHORE_MIN_KN = 3; // COG epäluotettava alle tämän — koko näyttö odotustilassa Offshore-tilassa
 // Näyttökynnys: tämän alle SOG näytetään "ei nopeutta" (--), ei harhaanjohtavaa 0.0.
 // Nappaa GPS:n coords.speed===0 -dropoutit (ja alle 0.05 kn kohinan, joka pyöristyisi 0.0:ksi).
@@ -1038,7 +1048,10 @@ const Polar = (function(){
     const p = _pendingRefresh;
     S.meanStb=p.toStb; S.meanStbTs=p.tsStb; S.meanStbStability=p.stabStb; S.meanStbSogRatio=p.sogStb;
     S.meanBb=p.toBb;   S.meanBbTs=p.tsBb;   S.meanBbStability=p.stabBb;   S.meanBbSogRatio=p.sogBb;
-    learnedTackAngle = Math.abs(_na(S.meanStb - S.meanBb));
+    // v0.96: opeta closehauled-kulma vain fyysisesti mahdollisesta parista (sama portti kuin onMeanSet).
+    if(Math.abs(_na(S.meanStb - S.meanBb)) >= MIN_TACK_SEP){
+      learnedTackAngle = Math.abs(_na(S.meanStb - S.meanBb));
+    }
     if(!S.demo){ saveMeans(); _logAuto('accept', p); } // demossa ei kirjoiteta pysyvästi eikä lokiin
     _pendingRefresh = null;
   }
@@ -1143,7 +1156,10 @@ const Polar = (function(){
       // Bootstrap: ensimmäinen manuaalinen mean-pari opettaa closehauled-kulman
       // automaattiselle virkistykselle. Manuaalinen asetus myös päivittää sen aina,
       // koska käyttäjän tarkoituksellinen asetus on paras saatavilla oleva totuus.
-      if(S.meanStb!=null && S.meanBb!=null){
+      // v0.96: vain fyysisesti mahdollinen pari opettaa — degeneroitunut pari (meanStb≈meanBb,
+      // esim. molemmat samalta halssilta) ei kirjoita learnedTackAngleä, ettei AMR:n
+      // closehauled-portti (expected=learnedTackAngle/2) myrkyty.
+      if(S.meanStb!=null && S.meanBb!=null && Math.abs(_na(S.meanStb - S.meanBb)) >= MIN_TACK_SEP){
         learnedTackAngle = Math.abs(_na(S.meanStb - S.meanBb));
       }
       // Manuaalinen asetus ottaa ohjat: väistä odottava ehdotus, herää irtikytkennästä.
@@ -1404,7 +1420,7 @@ function evalShift(){
   return {liftedDeg:lifted, status};
 }
 function estWind(){
-  if(S.meanStb==null || S.meanBb==null) return null;
+  if(!meansValid()) return null; // fyysisesti mahdoton pari (tai mean puuttuu) → ei tuulen suuntaa
   const half = S.settings.tackAngle/2;
   const w1 = norm(S.meanStb + half), w2 = norm(S.meanBb - half);
   const x=Math.cos(w1*Math.PI/180)+Math.cos(w2*Math.PI/180);
@@ -2272,6 +2288,8 @@ function render(){
   // näytetään ohjeteksti gauge-palkkien sijaan — kommunikoi sovelluksen edellytykset
   // selkeästi ilman erillistä onboarding-overlayä.
   const showInstruction = mean==null && !downwind && !inNoGo;
+  // v0.96: molemmat meanit asetettu mutta fyysisesti mahdottoman lähellä toisiaan (§ validiteettiportti).
+  const meansTooClose = S.meanStb!=null && S.meanBb!=null && !meansValid();
   if(showInstruction){
     // Yksirivinen ohje — kirkas valkoinen kuten rotate-ruudun ohjeistus
     let instrLine;
@@ -2284,6 +2302,14 @@ function render(){
     }
     const fs = Math.max(11, small*0.026);
     drawBigMessage(instrLine, fs);
+  } else if(meansTooClose){
+    // v0.96: molemmat meanit asetettu, mutta liian lähellä toisiaan ollakseen kaksi eri
+    // nousukurssia (todennäköisesti asetettu samalta halssilta). Fyysisesti mahdoton pari:
+    // estWind()→null on jo kytkenyt VMG/PERF/no-gon pois; tässä lift/header-gaugen tilalle
+    // halssi-symmetrinen viesti. Hero (heading) säilyy — se on aina validi. Ei tapa mitään:
+    // painat SET uudelleen toisella halssilla ja pari korjaantuu.
+    const sep = Math.round(Math.abs(angDiff(S.meanStb, S.meanBb)));
+    drawBigMessage('STB & BB '+sep+'° APART  ·  TACK & SET', Math.max(11, small*0.026));
   } else if(!pending){
     // Ehdotuksen aikana gaugea EI piirretä: lift/header on laskettu vanhaa (vanhentuvaa)
     // meaniä vasten, ja tyhjä tila pitää tuulenkäännösviestin siistinä (kuten WAITING-ruutu).
@@ -3116,7 +3142,7 @@ document.querySelectorAll(".stepper").forEach(st=>{
 });
 
 /* ---------- init ---------- */
-const APP_VERSION="🇫🇮 Tackcall v0.95";
+const APP_VERSION="🇫🇮 Tackcall v0.96";
 (function(){
   const e=$("verEnable"); if(e) e.textContent=APP_VERSION;
   const n=$("verNote"); if(n) n.textContent=APP_VERSION+" · shares engine with index.html";
