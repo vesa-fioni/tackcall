@@ -1,0 +1,524 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1, user-scalable=no">
+<meta name="color-scheme" content="dark">
+<title>Tackcall · inertia-dev</title>
+<style>
+/* ---- tyylitokenit: samat kuin mittari.html, jotta proto istuu Tackcallin ilmeeseen ---- */
+:root{
+  --bg:#000; --led:#ff2b2b; --green:#19e26a; --yellow:#ffd11a;
+  --orange:#ff8a1e; --red:#ff2b2b; --cyan:#19e0e0; --hair:#242424;
+  --mono:"SF Mono",ui-monospace,Menlo,Consolas,monospace;
+  --sans:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
+  /* kolmen suuntalähteen värit — literaalit (canvas ei ymmärrä sisäkkäistä var():a).
+     vihreä/punainen jätetään halssimerkitykselle. */
+  --c-comp:#ffd11a; --c-cog:#ff8a1e; --c-inr:#19e0e0;
+}
+*{box-sizing:border-box;}
+html,body{margin:0; height:100%; background:var(--bg); color:#fff; font-family:var(--sans);
+  -webkit-text-size-adjust:100%; overflow-x:hidden;}
+body{padding:max(10px,env(safe-area-inset-top)) max(12px,env(safe-area-inset-right))
+  calc(14px + env(safe-area-inset-bottom)) max(12px,env(safe-area-inset-left));}
+
+/* ---- aloitusoverlay (iOS vaatii käyttäjäeleen anturiluvalle) ---- */
+.overlay{position:fixed; inset:0; z-index:30; background:#000; display:flex;
+  align-items:center; justify-content:center; padding:24px;}
+.overlay.hidden{display:none;}
+.card{width:100%; max-width:420px; text-align:center;}
+.brand{font-family:var(--mono); font-weight:700; letter-spacing:.34em; font-size:12px;
+  color:var(--cyan); text-transform:uppercase; margin-bottom:8px;
+  text-shadow:0 0 12px rgba(25,224,224,.4);}
+.ttl{font-size:28px; font-weight:800; letter-spacing:.02em; margin:0 0 6px;}
+.sub{color:#8a8a8a; font-size:14px; line-height:1.55; margin:0 0 22px; text-align:left;}
+.overlay button{display:block; width:100%; font-family:var(--sans); font-weight:700;
+  font-size:16px; line-height:1.2; text-align:center; border:none; border-radius:14px;
+  padding:15px; margin:0 0 10px; cursor:pointer;}
+.big{background:var(--cyan); color:#00201f;}
+.ghost{background:#121212; color:#dcdcdc; border:1px solid #242424;}
+.err{background:#2a0d0d; color:#ff9b9b; border:1px solid #5a1f1f; border-radius:12px;
+  padding:12px; font-size:13px; line-height:1.5; margin-top:6px; text-align:left;}
+.hidden{display:none;}
+.ver{font-family:var(--mono); font-size:11px; color:#4a4a4a; letter-spacing:.16em; margin-top:16px;}
+.disclaimer{font-size:11px; line-height:1.5; color:#5a5a5a; margin-top:18px; text-align:left;
+  border-top:1px solid #1c1c1c; padding-top:12px;}
+
+/* ---- päänäkymä ---- */
+.top{display:flex; align-items:center; justify-content:space-between; gap:10px; margin-bottom:8px;}
+.mode{font-family:var(--mono); font-size:11px; font-weight:800; letter-spacing:.14em;
+  padding:5px 10px; border-radius:8px; border:1px solid var(--hair); color:#9a9a9a;}
+.mode.live{color:var(--green); border-color:rgba(25,226,106,.4); text-shadow:0 0 10px rgba(25,226,106,.4);}
+.mode.syn{color:var(--orange); border-color:rgba(255,138,30,.4); text-shadow:0 0 10px rgba(255,138,30,.4);}
+.status{font-family:var(--mono); font-size:10px; color:#6a6a6a; letter-spacing:.04em; text-align:right; flex:1;}
+
+/* ohjeteksti / thesis */
+.hint{font-size:12.5px; line-height:1.5; color:#9a9a9a; margin:0 0 10px; text-align:center;}
+.hint b{color:#e6e6e6;}
+
+/* kompassiruusu */
+.rosewrap{display:flex; justify-content:center; margin:2px 0 10px;}
+canvas{display:block; touch-action:none;}
+
+/* legenda */
+.legend{display:flex; justify-content:center; gap:16px; margin:0 0 12px; flex-wrap:wrap;}
+.legend .li{display:flex; align-items:center; gap:7px; font-size:12px; color:#cfcfcf;}
+.legend .sw{width:14px; height:4px; border-radius:2px;}
+
+/* kortit */
+.grid{display:grid; grid-template-columns:1fr 1fr; gap:8px;}
+.cardc{border:1px solid #1c1c1c; border-radius:12px; padding:10px 12px; background:#080808;}
+.cardc.wide{grid-column:1 / -1;}
+.lbl{font-family:var(--mono); font-size:9px; letter-spacing:.10em; color:#7a7a7a; text-transform:uppercase;}
+.num{font-family:var(--mono); font-weight:700; margin-top:6px; line-height:1;}
+.num.big2{font-size:30px;}
+.num.mid{font-size:20px;}
+.sub2{font-family:var(--mono); font-size:11px; color:#8a8a8a; margin-top:5px; letter-spacing:.03em;}
+.c-comp{color:var(--c-comp);} .c-cog{color:var(--c-cog);} .c-inr{color:var(--c-inr);}
+.dim{color:#4a4a4a;}
+
+/* käännöstila */
+.turnstate{font-family:var(--mono); font-weight:800; letter-spacing:.06em; font-size:20px;}
+.ts-straight{color:#8a8a8a;} .ts-turn{color:var(--cyan); text-shadow:0 0 14px rgba(25,224,224,.5);}
+.settle{font-family:var(--mono); font-size:10px; letter-spacing:.08em; margin-top:6px;}
+.settle.on{color:var(--green);} .settle.off{color:#5a5a5a;}
+
+/* napit */
+.btns{display:flex; gap:8px; margin-top:12px;}
+.btns button{flex:1; padding:14px 0; border-radius:12px; border:1px solid #2a2a2a;
+  background:#141414; color:#fff; font-weight:700; font-size:14px; cursor:pointer;
+  font-family:var(--sans);}
+.btns button:active{background:#222;}
+.btns button.accent{background:rgba(25,224,224,.12); border-color:rgba(25,224,224,.4); color:var(--cyan);}
+.btns .small{flex:0 0 auto; padding:14px 14px; color:#9a9a9a;}
+.foot{font-family:var(--mono); font-size:10px; color:#3a3a3a; letter-spacing:.10em;
+  text-align:center; margin-top:14px;}
+@media (prefers-reduced-motion: reduce){ *{transition:none !important;} }
+</style>
+</head>
+<body>
+
+<!-- ================= aloitusoverlay ================= -->
+<div class="overlay" id="overlay">
+  <div class="card">
+    <div class="brand">Tackcall · inertia-dev</div>
+    <h1 class="ttl">Inertial vs compass vs GPS</h1>
+    <p class="sub">A test bench that shows three heading sources side by side:
+      <b style="color:var(--c-comp)">compass</b>,
+      <b style="color:var(--c-cog)">GPS course</b>, and an
+      <b style="color:var(--c-inr)">inertial</b> relative heading derived from the
+      gyroscope, with the vertical axis taken from gravity.<br><br>
+      Tap <b>Anchor</b>, then hold the phone still and <b>tilt it</b>: the compass
+      swings, the inertial reading stays put. Rotate it flat and all three track.
+      That gap is the benefit this proto illustrates.</p>
+    <button class="big" id="btnStart">Enable sensors</button>
+    <button class="ghost" id="btnSyn">Synthetic demo (no sensors)</button>
+    <div class="err hidden" id="errBox"></div>
+    <p class="disclaimer">This is a developer test page, not a navigation tool. It stores
+      nothing and does not touch the Tackcall app's data. Synthetic mode shows a modelled,
+      illustrative signal — not measured data.</p>
+    <div class="ver" id="verLine">inertia-dev v0.1</div>
+  </div>
+</div>
+
+<!-- ================= päänäkymä ================= -->
+<div class="main hidden" id="main">
+  <div class="top">
+    <span class="mode" id="modeTag">—</span>
+    <span class="status" id="statusLine">starting…</span>
+  </div>
+
+  <p class="hint" id="hintLine"><b>Anchor</b>, then tilt the phone still — watch compass drift while inertial holds.</p>
+
+  <div class="rosewrap"><canvas id="rose" width="320" height="320"></canvas></div>
+
+  <div class="legend">
+    <span class="li"><span class="sw" style="background:var(--c-comp)"></span>Compass</span>
+    <span class="li"><span class="sw" style="background:var(--c-cog)"></span>GPS course</span>
+    <span class="li"><span class="sw" style="background:var(--c-inr)"></span>Inertial</span>
+  </div>
+
+  <div class="grid">
+    <div class="cardc">
+      <div class="lbl">Compass</div>
+      <div class="num mid c-comp" id="compAbs">---°</div>
+      <div class="sub2">Δ since anchor <span id="compDelta" class="c-comp">—</span></div>
+    </div>
+    <div class="cardc">
+      <div class="lbl">GPS course (COG)</div>
+      <div class="num mid c-cog" id="cogAbs">---°</div>
+      <div class="sub2">Δ since anchor <span id="cogDelta" class="c-cog">—</span></div>
+    </div>
+    <div class="cardc">
+      <div class="lbl">Inertial (relative)</div>
+      <div class="num mid c-inr" id="inrRel">0°</div>
+      <div class="sub2">since anchor · re-zeros on settle</div>
+    </div>
+    <div class="cardc">
+      <div class="lbl">Yaw rate · tilt</div>
+      <div class="num mid" id="yawRate">0.0 °/s</div>
+      <div class="sub2">tilt <span id="tiltDeg">0°</span> from flat</div>
+    </div>
+    <div class="cardc wide">
+      <div class="lbl">Turn detector</div>
+      <div class="turnstate ts-straight" id="turnState">STRAIGHT</div>
+      <div class="sub2">last turn <span id="lastTurn">—</span></div>
+      <div class="settle off" id="settleTag">● not settled</div>
+    </div>
+    <div class="cardc wide">
+      <div class="lbl">Sea state (vertical accel)</div>
+      <div class="num mid" id="seaRms">0.00 <span style="font-size:12px;color:#7a7a7a">m/s² rms</span></div>
+      <div class="sub2">slams <span id="slamCount">0</span></div>
+    </div>
+  </div>
+
+  <div class="btns">
+    <button class="accent" id="btnAnchor">Anchor (zero)</button>
+    <button id="btnResetStats">Reset stats</button>
+    <button class="small" id="btnMode">⇄</button>
+  </div>
+
+  <div class="foot" id="footLine">LIVE</div>
+</div>
+
+<script>
+"use strict";
+/* =========================================================================
+   Tackcall — inertia-dev.html · Vaihe 1 (havainnollistus)
+   Valmistusohje: Tackcall-inertia-dev-valmistusohje-v1, luvut 2–5.
+   Erillinen koeproto: EI kosketa mittari.html:ää eikä sovelluksen dataa.
+   Ydinlaskenta käyttää raakaa rotationRate + accelerationIncludingGravity —
+   EI magnetometriankkuroitua fuusioitua yaw'ta (§2).
+   ========================================================================= */
+const APP_VERSION = 'inertia-dev v0.1';
+
+/* ---- alustavat kynnykset (valmistusohje §7 — kaikki kalibroidaan vesillä) ---- */
+const GRAV_LP      = 0.08;   // painovoiman alipäästö per näyte (3.1)
+const TURN_THRESH  = 8;      // °/s, käännöskynnys (3.3)
+const TURN_END_DWELL = 0.6;  // s, kääntymisnopeus alle kynnyksen näin kauan → käännös loppu
+const SETTLE_THRESH  = 3;    // °/s, "suora kurssi" (3.5)
+const SETTLE_DWELL   = 1.2;  // s, settle vaatii tämän verran tasaista
+const SLAM_THRESH  = 6;      // m/s², pystykiihtyvyyspiikki = slam (4)
+const SEA_WIN      = 3.0;    // s, aallokon RMS-ikkuna (4)
+
+/* ---- tila ---- */
+const S = {
+  mode:'live',                 // 'live' | 'syn'
+  // johdettu painovoima (laitekehys) — alustetaan ensimmäisellä näytteellä
+  g:{x:0,y:0,z:0}, gInit:false,
+  yawRate:0,                   // °/s oikean pystyakselin ympäri (3.2)
+  tilt:0,                      // ° flatista
+  relHeading:0,                // ° integroitu suhteellinen suunta (3.4)
+  compass:null,                // absoluuttinen kompassisuunta °
+  cog:null, sog:null,          // GPS-kurssi ° / nopeus m/s
+  // ankkurit (Anchor-nappi): kunkin lähteen referenssi Δ-laskentaan
+  anchor:{ comp:null, cog:null },   // rel-ankkuri = relHeading nollataan
+  // käännöstunnistin (3.3)
+  turning:false, turnAccum:0, turnSign:0, belowSince:0, lastTurnMag:null, lastTurnDir:0,
+  // settle (3.5)
+  settled:false, steadySince:0,
+  // aallokko (4)
+  seaBuf:[], slams:0, lastVert:0,
+  // apu
+  lastMotionTs:0
+};
+
+/* ---- pieni matikka ---- */
+const norm360 = a => ((a%360)+360)%360;
+const angDiff = (a,b)=>{ let d=(a-b+540)%360-180; return d; };          // -180..180
+const clamp = (v,lo,hi)=>Math.max(lo,Math.min(hi,v));
+const fmtSigned = d => (d>=0?'+':'')+d.toFixed(0)+'°';
+
+/* =========================================================================
+   YDINLASKENTA — jaettu live- ja synteettisen moodin kesken.
+   rr = {alpha,beta,gamma} °/s (Z,X,Y), ag = {x,y,z} m/s² (sis. painovoima),
+   acc = {x,y,z} m/s² (painovoima poistettu, voi olla null), dt sekunteina.
+   ========================================================================= */
+function computeStep(rr, ag, acc, dt){
+  if(!(dt>0) || dt>0.5) dt = 0.016;   // suojaa oudoilta väleiltä
+
+  /* 3.1 — pystyakseli painovoimasta (alipäästö) */
+  if(ag){
+    if(!S.gInit){ S.g.x=ag.x; S.g.y=ag.y; S.g.z=ag.z; S.gInit=true; }
+    else{ S.g.x += (ag.x-S.g.x)*GRAV_LP; S.g.y += (ag.y-S.g.y)*GRAV_LP; S.g.z += (ag.z-S.g.z)*GRAV_LP; }
+  }
+  const gm = Math.hypot(S.g.x,S.g.y,S.g.z) || 1;
+  const dx=S.g.x/gm, dy=S.g.y/gm, dz=S.g.z/gm;   // alaspäin-yksikkövektori
+
+  /* tilt: kulma flatista (ruudun normaali = z). Flat → |dz|≈1 → 0°, pysty → dz≈0 → 90° */
+  S.tilt = Math.acos(clamp(Math.abs(dz),0,1))*180/Math.PI;
+
+  /* 3.2 — yaw-rate oikean pystyakselin ympäri = ω · d
+     ω laitekehyksessä (X,Y,Z) = (beta, gamma, alpha) */
+  if(rr){
+    const wx=rr.beta||0, wy=rr.gamma||0, wz=rr.alpha||0;
+    S.yawRate = wx*dx + wy*dy + wz*dz;
+  }
+
+  /* 3.4 — suhteellinen suunta: integroi yaw-rate */
+  S.relHeading += S.yawRate*dt;
+
+  /* 3.3 — käännöstunnistin */
+  const a = Math.abs(S.yawRate);
+  if(!S.turning){
+    if(a > TURN_THRESH){ S.turning=true; S.turnAccum=0; S.turnSign=Math.sign(S.yawRate); S.belowSince=0; }
+  }
+  if(S.turning){
+    S.turnAccum += S.yawRate*dt;
+    if(a < TURN_THRESH){ S.belowSince += dt; if(S.belowSince>=TURN_END_DWELL){
+      S.lastTurnMag = Math.abs(S.turnAccum); S.lastTurnDir = Math.sign(S.turnAccum);
+      S.turning=false;
+      /* käännöksen loppu = luonteva uudelleenankkurointi (3.4/3.5). Vaihe 1:ssä
+         näytetään settlenä; rel-nollaus tehdään Anchor-napista, ei automaattisesti,
+         jotta demo pysyy käyttäjän hallinnassa. */
+    }} else { S.belowSince=0; }
+  }
+
+  /* 3.5 — settle */
+  if(a < SETTLE_THRESH){ S.steadySince += dt; if(S.steadySince>=SETTLE_DWELL) S.settled=true; }
+  else { S.steadySince=0; S.settled=false; }
+
+  /* 4 — aallokko: pystykiihtyvyys (lineaari) projisoituna d:lle */
+  let vert = 0;
+  if(acc && acc.x!=null){ vert = acc.x*dx + acc.y*dy + acc.z*dz; }
+  else if(ag){ vert = (ag.x*dx+ag.y*dy+ag.z*dz) - gm; }   // varalla: poista painovoiman magnitudi
+  S.seaBuf.push({t:performance.now()/1000, v:vert});
+  const cutoff = performance.now()/1000 - SEA_WIN;
+  while(S.seaBuf.length && S.seaBuf[0].t < cutoff) S.seaBuf.shift();
+  if(Math.abs(vert) > SLAM_THRESH && Math.abs(S.lastVert) <= SLAM_THRESH) S.slams++;  // nouseva reuna
+  S.lastVert = vert;
+}
+function seaRms(){
+  if(!S.seaBuf.length) return 0;
+  let s=0; for(const p of S.seaBuf) s+=p.v*p.v;
+  return Math.sqrt(s/S.seaBuf.length);
+}
+
+/* =========================================================================
+   LIVE-ANTURIT
+   ========================================================================= */
+function onMotion(e){
+  const now = performance.now();
+  /* mitataan dt suoraan kellosta — e.interval:n yksikkö (ms/s) vaihtelee selaimittain */
+  const dt = S.lastMotionTs ? (now-S.lastMotionTs)/1000 : 0.016;
+  S.lastMotionTs = now;
+  computeStep(e.rotationRate, e.accelerationIncludingGravity, e.acceleration, dt);
+}
+function onOrient(e){
+  let hd=null;
+  if(e.webkitCompassHeading!=null) hd = e.webkitCompassHeading;
+  else if(e.absolute && e.alpha!=null){
+    hd = norm360(360 - e.alpha);
+    const so = (screen.orientation && screen.orientation.angle) || window.orientation || 0;
+    hd = norm360(hd + so);
+  }
+  if(hd!=null) S.compass = hd;
+}
+function onGeo(pos){
+  const c = pos.coords;
+  S.sog = (c.speed!=null) ? c.speed : null;
+  /* coords.heading on epäluotettava paikallaan/matalalla vauhdilla → näytetään null */
+  S.cog = (c.heading!=null && !isNaN(c.heading) && (c.speed==null || c.speed>0.5)) ? c.heading : null;
+}
+
+async function startLive(){
+  setErr('');
+  try{
+    // iOS: molemmat vaativat requestPermissionin käyttäjäeleestä
+    if(typeof DeviceMotionEvent!=='undefined' && typeof DeviceMotionEvent.requestPermission==='function'){
+      const r = await DeviceMotionEvent.requestPermission();
+      if(r!=='granted'){ setErr('Motion permission denied. Try Synthetic demo, or enable Motion & Orientation Access in Settings › Safari.'); return; }
+    }
+    if(typeof DeviceOrientationEvent!=='undefined' && typeof DeviceOrientationEvent.requestPermission==='function'){
+      try{ await DeviceOrientationEvent.requestPermission(); }catch(_){/* kompassi valinnainen */}
+    }
+  }catch(err){ setErr('Sensor permission error: '+err.message); return; }
+
+  window.addEventListener('devicemotion', onMotion, true);
+  window.addEventListener('deviceorientationabsolute', onOrient, true);
+  window.addEventListener('deviceorientation', onOrient, true);
+  if('geolocation' in navigator){
+    navigator.geolocation.watchPosition(onGeo, ()=>{}, {enableHighAccuracy:true, maximumAge:1000, timeout:10000});
+  }
+  S.mode='live';
+  enterMain();
+}
+
+/* =========================================================================
+   SYNTEETTINEN MOODI (§5) — mallinnettu, havainnollistava.
+   Ajaa saman laskennan ilman anturia + mallintaa lähteiden tunnetut viat:
+   kompassi rappeutuu kallistuksessa, COG laahaa. Selvästi merkitty SYN.
+   ========================================================================= */
+let synTimer=null, synClock=0, synTrueHdg=0, synCogHist=[];
+function synFrame(){
+  const dt=0.033; synClock+=dt;
+  /* sekvenssi: 5 s suoraa → 3 s käännös (~90°) → toistuu, jakso 8 s */
+  const phase = synClock % 8;
+  let trueYaw, heel;
+  if(phase < 5){ trueYaw = 0; heel = 12*Math.sin(synClock*0.6); }           // suora, loiva kallistus
+  else { trueYaw = 30; heel = 12*Math.cos((phase-5)*1.0)*(-1); }            // käännös ~30°/s → ~90°
+  synTrueHdg = norm360(synTrueHdg + trueYaw*dt);
+
+  const heelR = heel*Math.PI/180;
+  const wave = (Math.sin(synClock*4.1)+Math.sin(synClock*6.7))*3;           // aallon yaw-kohina °/s
+  const waveV = (Math.sin(synClock*4.1)*2.2 + (Math.random()-0.5)*1.5);     // pystykiihtyvyys
+
+  // synteettinen gravity: kallistus kiertää painovoimaa X-akselilla
+  const ag = { x: 9.81*Math.sin(heelR), y: 0, z: 9.81*Math.cos(heelR) };
+  // synteettinen rotationRate: todellinen yaw + aallon kohina, pystyakselin ympäri (Z)
+  const rr = { alpha: (trueYaw+wave), beta:0, gamma:0 };
+  const acc = { x:0, y:0, z:waveV };
+  computeStep(rr, ag, acc, dt);
+
+  // mallinnettu kompassi: tosisuunta + kallistuksen kasvattama virhe (dip-rappeuma)
+  const heelAbs = Math.abs(heel);
+  const compErr = (heelAbs*0.8) + (heelAbs>30? (heelAbs-30)*2.5:0) + (Math.random()-0.5)*heelAbs*0.6;
+  S.compass = norm360(synTrueHdg + compErr);
+  // mallinnettu COG: tosisuunta viiveellä ~3 s
+  synCogHist.push(synTrueHdg); if(synCogHist.length>90) synCogHist.shift();
+  S.cog = synCogHist.length>=90 ? synCogHist[0] : null;
+  S.sog = 3;
+}
+function startSyn(){
+  setErr('');
+  S.mode='syn'; synClock=0; synTrueHdg=0; synCogHist=[]; S.gInit=false;
+  synTimer = setInterval(synFrame, 33);
+  enterMain();
+}
+function stopSyn(){ if(synTimer){ clearInterval(synTimer); synTimer=null; } }
+
+/* =========================================================================
+   ANKKUROINTI JA NOLLAUKSET
+   ========================================================================= */
+function doAnchor(){
+  S.anchor.comp = (S.compass!=null)? S.compass : null;
+  S.anchor.cog  = (S.cog!=null)? S.cog : null;
+  S.relHeading = 0;               // 3.4: nollaa suhteellinen suunta
+  S.settled=false; S.steadySince=0;
+}
+function resetStats(){ S.lastTurnMag=null; S.lastTurnDir=0; S.slams=0; S.seaBuf=[]; }
+
+/* =========================================================================
+   RENDERÖINTI
+   ========================================================================= */
+const rose = document.getElementById('rose');
+const rctx = rose.getContext('2d');
+/* neulavärit luetaan kerran (ei joka framessa) — vastaavat --c-comp/-cog/-inr */
+const COL_COMP='#ffd11a', COL_COG='#ff8a1e', COL_INR='#19e0e0';
+const MONO_CANVAS='ui-monospace,Menlo,Consolas,monospace';
+function sizeRose(){
+  const dpr = window.devicePixelRatio || 1;
+  const css = Math.min(window.innerWidth-24, 340);
+  rose.style.width=css+'px'; rose.style.height=css+'px';
+  rose.width = Math.round(css*dpr); rose.height = Math.round(css*dpr);
+  rctx.setTransform(dpr,0,0,dpr,0,0);
+  rose._css = css;
+}
+function drawNeedle(cx,cy,r,deltaDeg,color,len){
+  // Δ=0 osoittaa ylös (12), positiivinen kiertää myötäpäivään
+  const ang = (deltaDeg-90)*Math.PI/180;
+  rctx.strokeStyle=color; rctx.lineWidth=3.5; rctx.lineCap='round';
+  rctx.beginPath(); rctx.moveTo(cx,cy);
+  rctx.lineTo(cx+Math.cos(ang)*r*len, cy+Math.sin(ang)*r*len); rctx.stroke();
+  rctx.fillStyle=color; rctx.beginPath();
+  rctx.arc(cx+Math.cos(ang)*r*len, cy+Math.sin(ang)*r*len, 4, 0, 7); rctx.fill();
+}
+function renderRose(){
+  const css=rose._css||320, cx=css/2, cy=css/2, r=css/2-14;
+  rctx.clearRect(0,0,css,css);
+  // kehä
+  rctx.strokeStyle='#1c1c1c'; rctx.lineWidth=2;
+  rctx.beginPath(); rctx.arc(cx,cy,r,0,7); rctx.stroke();
+  // tikut 30° välein
+  for(let d=0; d<360; d+=30){
+    const a=(d-90)*Math.PI/180, r0=(d%90===0)?r-12:r-7;
+    rctx.strokeStyle=(d===0)?'#3a3a3a':'#161616'; rctx.lineWidth=(d===0)?2:1;
+    rctx.beginPath(); rctx.moveTo(cx+Math.cos(a)*r0, cy+Math.sin(a)*r0);
+    rctx.lineTo(cx+Math.cos(a)*r, cy+Math.sin(a)*r); rctx.stroke();
+  }
+  // "0 = anchor" ylös
+  rctx.fillStyle='#4a4a4a'; rctx.font='10px '+MONO_CANVAS;
+  rctx.textAlign='center'; rctx.fillText('0 = ANCHOR', cx, cy-r+22);
+
+  // COG-neula vain jos ankkuri + nykylukema
+  if(S.anchor.cog!=null && S.cog!=null) drawNeedle(cx,cy,r,angDiff(S.cog,S.anchor.cog),COL_COG,0.72);
+  // kompassineula
+  if(S.anchor.comp!=null && S.compass!=null) drawNeedle(cx,cy,r,angDiff(S.compass,S.anchor.comp),COL_COMP,0.86);
+  // inertiaali (suhteellinen, ankkuri = 0)
+  drawNeedle(cx,cy,r,angDiff(S.relHeading,0),COL_INR,1.0);
+
+  // keskipiste
+  rctx.fillStyle='#333'; rctx.beginPath(); rctx.arc(cx,cy,4,0,7); rctx.fill();
+}
+
+const $ = id => document.getElementById(id);
+function renderDom(){
+  // moodi + status
+  const tag=$('modeTag');
+  tag.textContent = S.mode==='live'?'LIVE':'SYNTHETIC';
+  tag.className = 'mode '+(S.mode==='live'?'live':'syn');
+  $('footLine').textContent = S.mode==='live'?'LIVE':'SYNTHETIC · modelled, illustrative';
+  let st=[];
+  st.push(S.gInit?'motion ok':'motion —');
+  st.push(S.compass!=null?'compass ok':'compass —');
+  st.push(S.cog!=null?'cog '+S.cog.toFixed(0)+'°':(S.mode==='live'?'cog — (slow?)':'cog lag'));
+  $('statusLine').textContent = st.join(' · ');
+
+  // kompassi
+  $('compAbs').textContent = S.compass!=null? S.compass.toFixed(0)+'°':'---°';
+  $('compDelta').textContent = (S.anchor.comp!=null && S.compass!=null)? fmtSigned(angDiff(S.compass,S.anchor.comp)) : '—';
+  // cog
+  $('cogAbs').textContent = S.cog!=null? S.cog.toFixed(0)+'°':'---°';
+  $('cogDelta').textContent = (S.anchor.cog!=null && S.cog!=null)? fmtSigned(angDiff(S.cog,S.anchor.cog)) : '—';
+  // inertiaali
+  $('inrRel').textContent = fmtSigned(angDiff(S.relHeading,0));
+  // yaw + tilt
+  $('yawRate').textContent = S.yawRate.toFixed(1)+' °/s';
+  $('tiltDeg').textContent = S.tilt.toFixed(0)+'°';
+  // käännöstila
+  const tsEl=$('turnState');
+  if(S.turning){ tsEl.textContent = 'TURNING '+(S.yawRate>0?'▸':'◂'); tsEl.className='turnstate ts-turn'; }
+  else { tsEl.textContent='STRAIGHT'; tsEl.className='turnstate ts-straight'; }
+  $('lastTurn').textContent = (S.lastTurnMag!=null)? (S.lastTurnMag.toFixed(0)+'° '+(S.lastTurnDir>0?'▸':'◂')) : '—';
+  const se=$('settleTag');
+  se.textContent = S.settled?'● settled':'● not settled';
+  se.className = 'settle '+(S.settled?'on':'off');
+  // aallokko
+  $('seaRms').innerHTML = seaRms().toFixed(2)+' <span style="font-size:12px;color:#7a7a7a">m/s² rms</span>';
+  $('slamCount').textContent = String(S.slams);
+}
+
+let rafOn=false;
+function loop(){ renderRose(); renderDom(); requestAnimationFrame(loop); }
+
+/* =========================================================================
+   KÄYNNISTYS
+   ========================================================================= */
+function setErr(msg){ const b=$('errBox'); if(!msg){ b.classList.add('hidden'); b.textContent=''; } else { b.classList.remove('hidden'); b.textContent=msg; } }
+function enterMain(){
+  $('overlay').classList.add('hidden');
+  $('main').classList.remove('hidden');
+  sizeRose();
+  if(!rafOn){ rafOn=true; requestAnimationFrame(loop); }
+}
+function toggleMode(){
+  if(S.mode==='syn'){ stopSyn(); location.reload(); }   // takaisin liveen: yksinkertaisin on uudelleenlataus
+  else { // liveltä syntheticiin
+    window.removeEventListener('devicemotion', onMotion, true);
+    window.removeEventListener('deviceorientation', onOrient, true);
+    window.removeEventListener('deviceorientationabsolute', onOrient, true);
+    startSyn();
+  }
+}
+
+document.getElementById('verLine').textContent = APP_VERSION;
+$('btnStart').addEventListener('click', startLive);
+$('btnSyn').addEventListener('click', startSyn);
+$('btnAnchor').addEventListener('click', doAnchor);
+$('btnResetStats').addEventListener('click', resetStats);
+$('btnMode').addEventListener('click', toggleMode);
+window.addEventListener('resize', ()=>{ if(!$('main').classList.contains('hidden')) sizeRose(); });
+window.addEventListener('orientationchange', ()=>{ setTimeout(sizeRose,300); });
+</script>
+</body>
+</html>
