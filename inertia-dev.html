@@ -93,6 +93,22 @@ canvas{display:block; touch-action:none;}
 .btns .small{flex:0 0 auto; padding:14px 14px; color:#9a9a9a;}
 .foot{font-family:var(--mono); font-size:10px; color:#3a3a3a; letter-spacing:.10em;
   text-align:center; margin-top:14px;}
+
+/* raakakanavat + loki (v0.2 diagnostiikka) */
+.raw2{font-family:var(--mono); font-size:14px; color:#cfcfcf; line-height:1.7; margin-top:6px;
+  letter-spacing:.02em;}
+.logcard{margin-top:8px;}
+.loghead{display:flex; align-items:center; justify-content:space-between;}
+.rowcount{font-family:var(--mono); font-size:10px; color:#6a6a6a; letter-spacing:.04em;}
+#logArea{width:100%; height:120px; margin-top:8px; box-sizing:border-box; resize:vertical;
+  background:#050505; color:#b9b9b9; border:1px solid #1c1c1c; border-radius:8px;
+  font-family:var(--mono); font-size:10px; line-height:1.35; padding:8px; white-space:pre;}
+.logbtns{display:flex; gap:8px; margin-top:8px;}
+.logbtns button{flex:1; padding:11px 0; border-radius:10px; border:1px solid #2a2a2a;
+  background:#141414; color:#dcdcdc; font-weight:700; font-size:13px; cursor:pointer; font-family:var(--sans);}
+.logbtns button:active{background:#222;}
+.logbtns #btnRec.rec{background:rgba(255,43,43,.16); border-color:rgba(255,43,43,.5); color:var(--red);}
+.copied{font-family:var(--mono); font-size:11px; color:var(--green); text-align:center; margin-top:8px; letter-spacing:.04em;}
 @media (prefers-reduced-motion: reduce){ *{transition:none !important;} }
 </style>
 </head>
@@ -117,7 +133,7 @@ canvas{display:block; touch-action:none;}
     <p class="disclaimer">This is a developer test page, not a navigation tool. It stores
       nothing and does not touch the Tackcall app's data. Synthetic mode shows a modelled,
       illustrative signal — not measured data.</p>
-    <div class="ver" id="verLine">inertia-dev v0.1</div>
+    <div class="ver" id="verLine">inertia-dev v0.2</div>
   </div>
 </div>
 
@@ -128,7 +144,7 @@ canvas{display:block; touch-action:none;}
     <span class="status" id="statusLine">starting…</span>
   </div>
 
-  <p class="hint" id="hintLine"><b>Anchor</b>, then tilt the phone still — watch compass drift while inertial holds.</p>
+  <p class="hint" id="hintLine"><b>Anchor</b>, tilt the phone still — then <b>Record</b> the maneuver and <b>Select all</b> to copy the raw log.</p>
 
   <div class="rosewrap"><canvas id="rose" width="320" height="320"></canvas></div>
 
@@ -170,6 +186,24 @@ canvas{display:block; touch-action:none;}
       <div class="num mid" id="seaRms">0.00 <span style="font-size:12px;color:#7a7a7a">m/s² rms</span></div>
       <div class="sub2">slams <span id="slamCount">0</span></div>
     </div>
+    <div class="cardc wide">
+      <div class="lbl">Raw channels (diagnostic)</div>
+      <div class="raw2" id="rawChans">α — · β — · γ —<br>d — , — , —</div>
+    </div>
+  </div>
+
+  <div class="cardc wide logcard">
+    <div class="loghead">
+      <span class="lbl">Raw log</span>
+      <span class="rowcount" id="rowCount">0 rows</span>
+    </div>
+    <textarea id="logArea" readonly spellcheck="false" placeholder="Press Record, do the maneuver, Stop, then Select all → copy."></textarea>
+    <div class="logbtns">
+      <button id="btnRec">● Record</button>
+      <button id="btnSelAll">Select all</button>
+      <button id="btnClearLog">Clear</button>
+    </div>
+    <div class="copied hidden" id="copiedTag">Copied to clipboard ✓</div>
   </div>
 
   <div class="btns">
@@ -190,7 +224,7 @@ canvas{display:block; touch-action:none;}
    Ydinlaskenta käyttää raakaa rotationRate + accelerationIncludingGravity —
    EI magnetometriankkuroitua fuusioitua yaw'ta (§2).
    ========================================================================= */
-const APP_VERSION = 'inertia-dev v0.1';
+const APP_VERSION = 'inertia-dev v0.2';
 
 /* ---- alustavat kynnykset (valmistusohje §7 — kaikki kalibroidaan vesillä) ---- */
 const GRAV_LP      = 0.08;   // painovoiman alipäästö per näyte (3.1)
@@ -200,6 +234,7 @@ const SETTLE_THRESH  = 3;    // °/s, "suora kurssi" (3.5)
 const SETTLE_DWELL   = 1.2;  // s, settle vaatii tämän verran tasaista
 const SLAM_THRESH  = 6;      // m/s², pystykiihtyvyyspiikki = slam (4)
 const SEA_WIN      = 3.0;    // s, aallokon RMS-ikkuna (4)
+const LOG_HZ       = 10;     // raakalokin desimointi (v0.2 diagnostiikka)
 
 /* ---- tila ---- */
 const S = {
@@ -219,6 +254,10 @@ const S = {
   settled:false, steadySince:0,
   // aallokko (4)
   seaBuf:[], slams:0, lastVert:0,
+  // raakakanavat (v0.2 diagnostiikka): viimeisin rr + ag + johdettu d
+  raw:{ a:0,b:0,g:0, agx:0,agy:0,agz:0 }, dx:0, dy:0, dz:0,
+  // raakaloki (v0.2): select all -kopiointia varten
+  recording:false, recStart:0, lastLogTs:0, logRows:[], logDirty:false,
   // apu
   lastMotionTs:0
 };
@@ -244,6 +283,7 @@ function computeStep(rr, ag, acc, dt){
   }
   const gm = Math.hypot(S.g.x,S.g.y,S.g.z) || 1;
   const dx=S.g.x/gm, dy=S.g.y/gm, dz=S.g.z/gm;   // alaspäin-yksikkövektori
+  S.dx=dx; S.dy=dy; S.dz=dz;                       // talteen luku/loki (v0.2)
 
   /* tilt: kulma flatista (ruudun normaali = z). Flat → |dz|≈1 → 0°, pysty → dz≈0 → 90° */
   S.tilt = Math.acos(clamp(Math.abs(dz),0,1))*180/Math.PI;
@@ -253,7 +293,10 @@ function computeStep(rr, ag, acc, dt){
   if(rr){
     const wx=rr.beta||0, wy=rr.gamma||0, wz=rr.alpha||0;
     S.yawRate = wx*dx + wy*dy + wz*dz;
+    /* talteen raakakanavat (v0.2 diagnostiikka) */
+    S.raw.a=rr.alpha||0; S.raw.b=rr.beta||0; S.raw.g=rr.gamma||0;
   }
+  if(ag){ S.raw.agx=ag.x||0; S.raw.agy=ag.y||0; S.raw.agz=ag.z||0; }
 
   /* 3.4 — suhteellinen suunta: integroi yaw-rate */
   S.relHeading += S.yawRate*dt;
@@ -287,7 +330,29 @@ function computeStep(rr, ag, acc, dt){
   while(S.seaBuf.length && S.seaBuf[0].t < cutoff) S.seaBuf.shift();
   if(Math.abs(vert) > SLAM_THRESH && Math.abs(S.lastVert) <= SLAM_THRESH) S.slams++;  // nouseva reuna
   S.lastVert = vert;
+
+  /* raakaloki (v0.2): desimoitu ~LOG_HZ, vain kun tallennus päällä */
+  if(S.recording){
+    const now = performance.now();
+    if(now - S.lastLogTs >= 1000/LOG_HZ){
+      S.lastLogTs = now;
+      logRow((now - S.recStart)/1000);
+    }
+  }
 }
+function logRow(t){
+  const f = (v,n=2)=> (v==null? '' : (+v).toFixed(n));
+  /* sarakkeet: t_s,alpha,beta,gamma,agx,agy,agz,dx,dy,dz,yawRate,tilt,rel,compass,cog */
+  S.logRows.push([
+    f(t,2), f(S.raw.a,1), f(S.raw.b,1), f(S.raw.g,1),
+    f(S.raw.agx,2), f(S.raw.agy,2), f(S.raw.agz,2),
+    f(S.dx,3), f(S.dy,3), f(S.dz,3),
+    f(S.yawRate,1), f(S.tilt,1), f(S.relHeading,1),
+    (S.compass!=null? f(S.compass,0):''), (S.cog!=null? f(S.cog,0):'')
+  ].join(','));
+  S.logDirty = true;
+}
+const LOG_HEADER = 't_s,alpha,beta,gamma,agx,agy,agz,dx,dy,dz,yawRate,tilt,rel,compass,cog';
 function seaRms(){
   if(!S.seaBuf.length) return 0;
   let s=0; for(const p of S.seaBuf) s+=p.v*p.v;
@@ -486,6 +551,18 @@ function renderDom(){
   // aallokko
   $('seaRms').innerHTML = seaRms().toFixed(2)+' <span style="font-size:12px;color:#7a7a7a">m/s² rms</span>';
   $('slamCount').textContent = String(S.slams);
+  // raakakanavat (v0.2)
+  $('rawChans').innerHTML =
+    'α '+S.raw.a.toFixed(1)+' · β '+S.raw.b.toFixed(1)+' · γ '+S.raw.g.toFixed(1)+' °/s'+
+    '<br>d '+S.dx.toFixed(3)+' , '+S.dy.toFixed(3)+' , '+S.dz.toFixed(3);
+  // loki: kirjoitetaan vain kun uusi rivi tuli (ei joka framessa)
+  if(S.logDirty){
+    S.logDirty=false;
+    const ta=$('logArea');
+    ta.value = LOG_HEADER+'\n'+S.logRows.join('\n');
+    ta.scrollTop = ta.scrollHeight;
+    $('rowCount').textContent = S.logRows.length+' rows';
+  }
 }
 
 let rafOn=false;
@@ -511,12 +588,43 @@ function toggleMode(){
   }
 }
 
+/* ---- raakaloki: record / select all + copy / clear (v0.2) ---- */
+function toggleRecord(){
+  S.recording = !S.recording;
+  const b=$('btnRec');
+  if(S.recording){
+    S.recStart = performance.now(); S.lastLogTs = 0;
+    b.textContent='■ Stop'; b.classList.add('rec');
+  } else {
+    b.textContent='● Record'; b.classList.remove('rec');
+  }
+}
+async function selectAllLog(){
+  const ta=$('logArea');
+  if(!ta.value){ return; }
+  ta.focus(); ta.select(); ta.setSelectionRange(0, ta.value.length);   // iOS: näytä valinta
+  let ok=false;
+  try{ if(navigator.clipboard && navigator.clipboard.writeText){ await navigator.clipboard.writeText(ta.value); ok=true; } }catch(_){}
+  if(!ok){ try{ ok=document.execCommand('copy'); }catch(_){}}
+  const tag=$('copiedTag');
+  tag.textContent = ok ? 'Copied to clipboard ✓' : 'Selected — long-press → Copy';
+  tag.classList.remove('hidden');
+  clearTimeout(selectAllLog._t); selectAllLog._t=setTimeout(()=>tag.classList.add('hidden'), 2500);
+}
+function clearLog(){
+  S.logRows=[]; S.logDirty=false;
+  $('logArea').value=''; $('rowCount').textContent='0 rows';
+}
+
 document.getElementById('verLine').textContent = APP_VERSION;
 $('btnStart').addEventListener('click', startLive);
 $('btnSyn').addEventListener('click', startSyn);
 $('btnAnchor').addEventListener('click', doAnchor);
 $('btnResetStats').addEventListener('click', resetStats);
 $('btnMode').addEventListener('click', toggleMode);
+$('btnRec').addEventListener('click', toggleRecord);
+$('btnSelAll').addEventListener('click', selectAllLog);
+$('btnClearLog').addEventListener('click', clearLog);
 window.addEventListener('resize', ()=>{ if(!$('main').classList.contains('hidden')) sizeRose(); });
 window.addEventListener('orientationchange', ()=>{ setTimeout(sizeRose,300); });
 </script>
