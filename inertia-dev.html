@@ -133,7 +133,7 @@ canvas{display:block; touch-action:none;}
     <p class="disclaimer">This is a developer test page, not a navigation tool. It stores
       nothing and does not touch the Tackcall app's data. Synthetic mode shows a modelled,
       illustrative signal — not measured data.</p>
-    <div class="ver" id="verLine">inertia-dev v0.2</div>
+    <div class="ver" id="verLine">inertia-dev v0.3</div>
   </div>
 </div>
 
@@ -224,7 +224,7 @@ canvas{display:block; touch-action:none;}
    Ydinlaskenta käyttää raakaa rotationRate + accelerationIncludingGravity —
    EI magnetometriankkuroitua fuusioitua yaw'ta (§2).
    ========================================================================= */
-const APP_VERSION = 'inertia-dev v0.2';
+const APP_VERSION = 'inertia-dev v0.3';
 
 /* ---- alustavat kynnykset (valmistusohje §7 — kaikki kalibroidaan vesillä) ---- */
 const GRAV_LP      = 0.08;   // painovoiman alipäästö per näyte (3.1)
@@ -289,9 +289,13 @@ function computeStep(rr, ag, acc, dt){
   S.tilt = Math.acos(clamp(Math.abs(dz),0,1))*180/Math.PI;
 
   /* 3.2 — yaw-rate oikean pystyakselin ympäri = ω · d
-     ω laitekehyksessä (X,Y,Z) = (beta, gamma, alpha) */
+     AKSELIKARTOITUS varmennettu kenttätesteillä (v0.3): tällä iPhonella
+     rotationRate EI noudata W3C:n alpha=Z-konventiota. Painovoimageometria
+     osoitti: pitch X:n ympäri → alpha, yaw Z:n ympäri → gamma, siis
+     ω (X,Y,Z) = (alpha, beta, gamma). (Tuotannossa tämä pitäisi tunnistaa,
+     ei kovakoodata — dev-protossa riittää mitattu totuus.) */
   if(rr){
-    const wx=rr.beta||0, wy=rr.gamma||0, wz=rr.alpha||0;
+    const wx=rr.alpha||0, wy=rr.beta||0, wz=rr.gamma||0;
     S.yawRate = wx*dx + wy*dy + wz*dz;
     /* talteen raakakanavat (v0.2 diagnostiikka) */
     S.raw.a=rr.alpha||0; S.raw.b=rr.beta||0; S.raw.g=rr.gamma||0;
@@ -430,8 +434,8 @@ function synFrame(){
 
   // synteettinen gravity: kallistus kiertää painovoimaa X-akselilla
   const ag = { x: 9.81*Math.sin(heelR), y: 0, z: 9.81*Math.cos(heelR) };
-  // synteettinen rotationRate: todellinen yaw + aallon kohina, pystyakselin ympäri (Z)
-  const rr = { alpha: (trueYaw+wave), beta:0, gamma:0 };
+  // synteettinen rotationRate: veneen käännös = yaw pystyakselin (Z) ympäri → gamma-kanava (v0.3)
+  const rr = { alpha:0, beta:0, gamma:(trueYaw+wave) };
   const acc = { x:0, y:0, z:waveV };
   computeStep(rr, ag, acc, dt);
 
