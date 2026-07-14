@@ -57,6 +57,8 @@ body{padding:max(10px,env(safe-area-inset-top)) max(12px,env(safe-area-inset-rig
 .hint b{color:#e6e6e6;}
 
 /* kompassiruusu */
+.monlbl{font-family:var(--mono); font-size:10px; letter-spacing:.14em; color:#5a5a5a;
+  text-transform:uppercase; text-align:center; margin:14px 0 2px;}
 .rosewrap{display:flex; justify-content:center; margin:2px 0 10px;}
 canvas{display:block; touch-action:none;}
 
@@ -118,22 +120,24 @@ canvas{display:block; touch-action:none;}
 <div class="overlay" id="overlay">
   <div class="card">
     <div class="brand">Tackcall · inertia-dev</div>
-    <h1 class="ttl">Inertial vs compass vs GPS</h1>
-    <p class="sub">A test bench that shows three heading sources side by side:
-      <b style="color:var(--c-comp)">compass</b>,
-      <b style="color:var(--c-cog)">GPS course</b>, and an
-      <b style="color:var(--c-inr)">inertial</b> relative heading derived from the
-      gyroscope, with the vertical axis taken from gravity.<br><br>
-      Tap <b>Anchor</b>, then hold the phone still and <b>tilt it</b>: the compass
-      swings, the inertial reading stays put. Rotate it flat and all three track.
-      That gap is the benefit this proto illustrates.</p>
+    <h1 class="ttl">Session data recorder</h1>
+    <p class="sub">Logs raw inertial + heading channels from a sailing session for
+      offline analysis. Each sample records
+      <b style="color:var(--c-inr)">heading</b>, yaw-rate,
+      <b style="color:var(--c-comp)">heel</b>, vertical acceleration (sea state),
+      COG and SOG — the data needed to test the open questions (adaptive smoothing,
+      heel-vs-speed trim, gust discrimination).<br><br>
+      <b>Mount the phone rigidly to the boat.</b> Hand-held readings measure your
+      hand, not the boat, and are not valid data. Then <b>Record</b> a session and
+      <b>Select all</b> to export the CSV.</p>
     <button class="big" id="btnStart">Enable sensors</button>
     <button class="ghost" id="btnSyn">Synthetic demo (no sensors)</button>
     <div class="err hidden" id="errBox"></div>
-    <p class="disclaimer">This is a developer test page, not a navigation tool. It stores
-      nothing and does not touch the Tackcall app's data. Synthetic mode shows a modelled,
-      illustrative signal — not measured data.</p>
-    <div class="ver" id="verLine">inertia-dev v0.3</div>
+    <p class="disclaimer">Developer data-collection tool, not a navigation aid. Records
+      only to this page's own buffer (export via Select all); does not touch the Tackcall
+      app's data. Synthetic mode produces a modelled signal for checking the format — not
+      measured data.</p>
+    <div class="ver" id="verLine">inertia-dev v0.4</div>
   </div>
 </div>
 
@@ -144,8 +148,23 @@ canvas{display:block; touch-action:none;}
     <span class="status" id="statusLine">starting…</span>
   </div>
 
-  <p class="hint" id="hintLine"><b>Anchor</b>, tilt the phone still — then <b>Record</b> the maneuver and <b>Select all</b> to copy the raw log.</p>
+  <p class="hint" id="hintLine"><b>Mount rigidly to the boat</b>, then <b>Record</b> the session. <b>Select all</b> exports the CSV. Hand-held data is not valid.</p>
 
+  <div class="cardc wide logcard">
+    <div class="loghead">
+      <span class="lbl">Session recording</span>
+      <span class="rowcount"><span id="recTime">00:00</span> · <span id="rowCount">0 rows</span></span>
+    </div>
+    <textarea id="logArea" readonly spellcheck="false" placeholder="Mount rigidly · press Record · sail · Stop · Select all → copy the CSV."></textarea>
+    <div class="logbtns">
+      <button id="btnRec">● Record</button>
+      <button id="btnSelAll">Select all</button>
+      <button id="btnClearLog">Clear</button>
+    </div>
+    <div class="copied hidden" id="copiedTag">Copied to clipboard ✓</div>
+  </div>
+
+  <div class="monlbl">Live monitor</div>
   <div class="rosewrap"><canvas id="rose" width="320" height="320"></canvas></div>
 
   <div class="legend">
@@ -163,7 +182,7 @@ canvas{display:block; touch-action:none;}
     <div class="cardc">
       <div class="lbl">GPS course (COG)</div>
       <div class="num mid c-cog" id="cogAbs">---°</div>
-      <div class="sub2">Δ since anchor <span id="cogDelta" class="c-cog">—</span></div>
+      <div class="sub2">SOG <span id="sogVal">—</span></div>
     </div>
     <div class="cardc">
       <div class="lbl">Inertial (relative)</div>
@@ -171,9 +190,9 @@ canvas{display:block; touch-action:none;}
       <div class="sub2">since anchor · re-zeros on settle</div>
     </div>
     <div class="cardc">
-      <div class="lbl">Yaw rate · tilt</div>
+      <div class="lbl">Yaw rate · heel</div>
       <div class="num mid" id="yawRate">0.0 °/s</div>
-      <div class="sub2">tilt <span id="tiltDeg">0°</span> from flat</div>
+      <div class="sub2">heel <span id="tiltDeg">0°</span> from flat</div>
     </div>
     <div class="cardc wide">
       <div class="lbl">Turn detector</div>
@@ -190,20 +209,6 @@ canvas{display:block; touch-action:none;}
       <div class="lbl">Raw channels (diagnostic)</div>
       <div class="raw2" id="rawChans">α — · β — · γ —<br>d — , — , —</div>
     </div>
-  </div>
-
-  <div class="cardc wide logcard">
-    <div class="loghead">
-      <span class="lbl">Raw log</span>
-      <span class="rowcount" id="rowCount">0 rows</span>
-    </div>
-    <textarea id="logArea" readonly spellcheck="false" placeholder="Press Record, do the maneuver, Stop, then Select all → copy."></textarea>
-    <div class="logbtns">
-      <button id="btnRec">● Record</button>
-      <button id="btnSelAll">Select all</button>
-      <button id="btnClearLog">Clear</button>
-    </div>
-    <div class="copied hidden" id="copiedTag">Copied to clipboard ✓</div>
   </div>
 
   <div class="btns">
@@ -224,7 +229,7 @@ canvas{display:block; touch-action:none;}
    Ydinlaskenta käyttää raakaa rotationRate + accelerationIncludingGravity —
    EI magnetometriankkuroitua fuusioitua yaw'ta (§2).
    ========================================================================= */
-const APP_VERSION = 'inertia-dev v0.3';
+const APP_VERSION = 'inertia-dev v0.4';
 
 /* ---- alustavat kynnykset (valmistusohje §7 — kaikki kalibroidaan vesillä) ---- */
 const GRAV_LP      = 0.08;   // painovoiman alipäästö per näyte (3.1)
@@ -346,17 +351,18 @@ function computeStep(rr, ag, acc, dt){
 }
 function logRow(t){
   const f = (v,n=2)=> (v==null? '' : (+v).toFixed(n));
-  /* sarakkeet: t_s,alpha,beta,gamma,agx,agy,agz,dx,dy,dz,yawRate,tilt,rel,compass,cog */
+  /* sarakkeet: t_s,alpha,beta,gamma,agx,agy,agz,dx,dy,dz,yawRate,tilt,rel,compass,cog,sog,searms */
   S.logRows.push([
     f(t,2), f(S.raw.a,1), f(S.raw.b,1), f(S.raw.g,1),
     f(S.raw.agx,2), f(S.raw.agy,2), f(S.raw.agz,2),
     f(S.dx,3), f(S.dy,3), f(S.dz,3),
     f(S.yawRate,1), f(S.tilt,1), f(S.relHeading,1),
-    (S.compass!=null? f(S.compass,0):''), (S.cog!=null? f(S.cog,0):'')
+    (S.compass!=null? f(S.compass,0):''), (S.cog!=null? f(S.cog,0):''),
+    (S.sog!=null? f(S.sog,2):''), f(seaRms(),2)
   ].join(','));
   S.logDirty = true;
 }
-const LOG_HEADER = 't_s,alpha,beta,gamma,agx,agy,agz,dx,dy,dz,yawRate,tilt,rel,compass,cog';
+const LOG_HEADER = 't_s,alpha,beta,gamma,agx,agy,agz,dx,dy,dz,yawRate,tilt,rel,compass,cog,sog,searms';
 function seaRms(){
   if(!S.seaBuf.length) return 0;
   let s=0; for(const p of S.seaBuf) s+=p.v*p.v;
@@ -536,9 +542,9 @@ function renderDom(){
   // kompassi
   $('compAbs').textContent = S.compass!=null? S.compass.toFixed(0)+'°':'---°';
   $('compDelta').textContent = (S.anchor.comp!=null && S.compass!=null)? fmtSigned(angDiff(S.compass,S.anchor.comp)) : '—';
-  // cog
+  // cog + sog
   $('cogAbs').textContent = S.cog!=null? S.cog.toFixed(0)+'°':'---°';
-  $('cogDelta').textContent = (S.anchor.cog!=null && S.cog!=null)? fmtSigned(angDiff(S.cog,S.anchor.cog)) : '—';
+  $('sogVal').textContent = (S.sog!=null)? (S.sog*1.94384).toFixed(1)+' kn' : '—';
   // inertiaali
   $('inrRel').textContent = fmtSigned(angDiff(S.relHeading,0));
   // yaw + tilt
@@ -566,6 +572,11 @@ function renderDom(){
     ta.value = LOG_HEADER+'\n'+S.logRows.join('\n');
     ta.scrollTop = ta.scrollHeight;
     $('rowCount').textContent = S.logRows.length+' rows';
+  }
+  // istunnon kesto (kun tallennus päällä)
+  if(S.recording){
+    const s = Math.floor((performance.now()-S.recStart)/1000);
+    $('recTime').textContent = String(Math.floor(s/60)).padStart(2,'0')+':'+String(s%60).padStart(2,'0');
   }
 }
 
@@ -597,7 +608,7 @@ function toggleRecord(){
   S.recording = !S.recording;
   const b=$('btnRec');
   if(S.recording){
-    S.recStart = performance.now(); S.lastLogTs = 0;
+    S.recStart = performance.now(); S.lastLogTs = 0; $('recTime').textContent='00:00';
     b.textContent='■ Stop'; b.classList.add('rec');
   } else {
     b.textContent='● Record'; b.classList.remove('rec');
@@ -617,7 +628,7 @@ async function selectAllLog(){
 }
 function clearLog(){
   S.logRows=[]; S.logDirty=false;
-  $('logArea').value=''; $('rowCount').textContent='0 rows';
+  $('logArea').value=''; $('rowCount').textContent='0 rows'; $('recTime').textContent='00:00';
 }
 
 document.getElementById('verLine').textContent = APP_VERSION;
