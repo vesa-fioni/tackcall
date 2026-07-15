@@ -1,0 +1,189 @@
+<!DOCTYPE html>
+<html lang="fi">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Tackcall BLE-toistin — live-testi (sovellus + laite)</title>
+<!--
+  LIVE-TESTISIVU (valmistusohje v4, §13 kohta 3, täysversio).
+  Upottaa oikean mittari.html:n iframeen ja renderöi ulkoisen näyttötoistimen
+  VIERELLE elävästä datasta. Ketju:
+    mittari.html (draw-silmukka, 1×/s) --postMessage--> tämä sivu
+      --> encode (10 tavua, §4.2) --> decode (ESP32:n näkökulma) --> canvas-renderöinti
+  Todistaa koko ohjelmistoketjun oikealla sovellusdatalla ilman rautaa.
+
+  KÄYTTÖ: aseta tämä tiedosto SAMAAN kansioon mittari.html:n kanssa ja avaa selaimessa.
+  Sovellus ajaa vasemmalla; oikealla näkyy mitä ulkoinen laite näyttäisi + lähetettävät tavut.
+  Sovelluksessa: hyväksy vastuuvapaus, käynnistä sensorit/demo, aseta meanit → laite päivittyy.
+-->
+<style>
+  :root{--bg:#0f1112;--panel:#1a1d1f;--ink:#d7dbd0;--accent:#6ad;--lcd:#cdd4be;}
+  *{box-sizing:border-box;}
+  body{margin:0;background:var(--bg);color:var(--ink);
+       font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;padding:14px;}
+  h1{font-size:16px;font-weight:600;margin:0 0 4px;}
+  .sub{font-size:12px;opacity:.6;margin:0 0 14px;}
+  .wrap{display:flex;flex-wrap:wrap;gap:20px;align-items:flex-start;}
+  .side{display:flex;flex-direction:column;gap:10px;}
+  .card{background:var(--panel);border-radius:10px;padding:12px;}
+  .card h2{font-size:12px;font-weight:600;margin:0 0 8px;opacity:.7;text-transform:uppercase;letter-spacing:1px;}
+  iframe#app{width:390px;height:600px;border:0;border-radius:22px;background:#000;
+             box-shadow:0 0 0 10px #222,0 8px 30px rgba(0,0,0,.5);}
+  .device{background:#282c30;border-radius:16px;padding:20px;display:inline-block;}
+  .bezel{background:#0f1112;border-radius:8px;padding:10px;}
+  canvas#screen{display:block;image-rendering:pixelated;background:var(--lcd);width:576px;height:192px;}
+  .brand{font:11px ui-monospace,Menlo,monospace;color:#9aa;margin-top:10px;letter-spacing:1px;}
+  .bytes{background:#0c0e0f;border-radius:8px;padding:12px;font:12px/1.6 ui-monospace,Menlo,monospace;}
+  .bytes .lbl{color:#7a8;} .bytes .hex{color:#e8c07a;letter-spacing:1px;word-break:break-all;}
+  .bytes .dec{color:#9aa;font-size:11px;}
+  .verdict{margin-top:6px;font-size:12px;}
+  .ok{color:#7bda7b;} .bad{color:#e06b6b;} .idle{color:#9a9;}
+  .stat{font-size:12px;opacity:.8;}
+  .note{font-size:11px;opacity:.5;margin-top:10px;line-height:1.5;max-width:600px;}
+</style>
+</head>
+<body>
+  <h1>Tackcall BLE-toistin — live-testi</h1>
+  <p class="sub">§13 kohta 3 · sovellus (vasemmalla) syöttää laitenäyttöä (oikealla) elävästi · 1×/s</p>
+
+  <div class="wrap">
+    <div class="side">
+      <div class="card">
+        <h2>Sovellus — mittari.html</h2>
+        <iframe id="app" src="mittari.html" title="Tackcall app"></iframe>
+      </div>
+    </div>
+
+    <div class="side">
+      <div class="card">
+        <h2>Ulkoinen näyttötoistin (mitä laite näyttäisi)</h2>
+        <div class="device">
+          <div class="bezel"><canvas id="screen" width="192" height="64"></canvas></div>
+          <div class="brand">TACKCALL · CFAG19264D · 192×64</div>
+        </div>
+      </div>
+      <div class="card">
+        <h2>BLE-paketti (10 tavua, §4.2)</h2>
+        <div class="bytes">
+          <div class="hex" id="hex">– odottaa dataa sovellukselta –</div>
+          <div class="dec" id="dec"></div>
+          <div class="verdict" id="verdict"><span class="idle">Ei vielä paketteja. Käynnistä sovellus (hyväksy vastuuvapaus + sensorit/demo).</span></div>
+          <div class="stat" id="stat"></div>
+        </div>
+      </div>
+      <div class="note">
+        Jos laite ei päivity: (1) hyväksy sovelluksen vastuuvapaus, (2) käynnistä sensorit tai demo,
+        (3) aseta meanit — shift/gauge vaativat meanit, VMG/SOG/PERF vaativat GPS:n.
+        Sovellus lähettää paketin kerran sekunnissa vain kun se piirtää (heading saatavilla).
+      </div>
+    </div>
+  </div>
+
+<script>
+"use strict";
+// ============ protokolla (identtinen mittari.html-siltaan / §4.2) ============
+const MAGIC=0x7C, STATE_ENUM={groove:0,lift:1,header:2,tack:3,nomean:0};
+function crc8(bytes){let c=0;for(const b of bytes){c^=b;for(let i=0;i<8;i++)c=(c&1)?((c>>1)^0x8C):(c>>1);}return c&0xFF;}
+function encode(o){const b=new Uint8Array(10);b[0]=MAGIC;let f=0;
+  if(o.meansValid)f|=1; if(o.gpsValid)f|=2; f|=((STATE_ENUM[o.state]??0)&3)<<2; b[1]=f;
+  const hdg=(o.hdg==null)?0xFFFF:(o.hdg&0xFFFF); b[2]=hdg&0xFF; b[3]=(hdg>>8)&0xFF;
+  let sh=(o.shift==null)?0:Math.max(-90,Math.min(90,o.shift)); b[4]=sh&0xFF;
+  b[5]=(o.perf==null)?0xFF:Math.max(0,Math.min(254,Math.round(o.perf)));
+  b[6]=(o.vmg==null)?0xFF:Math.max(0,Math.min(254,Math.round(o.vmg*10)));
+  b[7]=(o.sog==null)?0xFF:Math.max(0,Math.min(254,Math.round(o.sog*10)));
+  b[8]=(o.seq??0)&0xFF; b[9]=crc8(b.slice(0,9)); return b;}
+function decode(b){return{
+  magicOk:b[0]===MAGIC, crcOk:crc8(b.slice(0,9))===b[9],
+  meansValid:!!(b[1]&1), gpsValid:!!(b[1]&2), state:(b[1]>>2)&3,
+  hdg:((b[2]|(b[3]<<8))===0xFFFF)?null:(b[2]|(b[3]<<8)),
+  shift:(b[4]<<24>>24), perf:(b[5]===0xFF)?null:b[5],
+  vmg:(b[6]===0xFF)?null:b[6]/10, sog:(b[7]===0xFF)?null:b[7]/10, seq:b[8]};}
+const STATE_NAME=["groove","lift","header","tack"];
+
+// ============ renderöijä (identtinen mockup_locked.py-logiikkaan) ============
+const W=192,H=64, cv=document.getElementById("screen"), ctx=cv.getContext("2d");
+const SEG={'0':['top','tl','tr','bl','br','bot'],'1':['tr','br'],'2':['top','tr','mid','bl','bot'],
+'3':['top','tr','mid','br','bot'],'4':['tl','tr','mid','br'],'5':['top','tl','mid','br','bot'],
+'6':['top','tl','mid','bl','br','bot'],'7':['top','tr','br'],'8':['top','tl','tr','mid','bl','br','bot'],
+'9':['top','tl','tr','mid','br','bot']};
+let buf;
+function clr(){buf=new Uint8Array(W*H).fill(1);}
+function px(x,y){if(x>=0&&x<W&&y>=0&&y<H)buf[y*W+x]=0;}
+function rc(x0,y0,x1,y1){for(let y=y0;y<=y1;y++)for(let x=x0;x<=x1;x++)px(x,y);}
+function digit(x,y,w,h,ch,t){if(!(ch in SEG))return;const s=SEG[ch],my=y+(h>>1);
+  if(s.includes('top'))rc(x+t,y,x+w-t,y+t); if(s.includes('bot'))rc(x+t,y+h-t,x+w-t,y+h);
+  if(s.includes('mid'))rc(x+t,my-(t>>1),x+w-t,my+(t>>1)+(t%2));
+  if(s.includes('tl'))rc(x,y+t,x+t,my); if(s.includes('tr'))rc(x+w-t,y+t,x+w,my);
+  if(s.includes('bl'))rc(x,my,x+t,y+h-t); if(s.includes('br'))rc(x+w-t,my,x+w,y+h-t);}
+function num(x,y,dw,dh,t,gap,text){let cx=x;for(const ch of text){
+  if(ch==='.'){const sz=t+1;rc(cx,y+dh-sz,cx+sz,y+dh);cx+=sz+gap;}
+  else if(ch in SEG){digit(cx,y,dw,dh,ch,t);cx+=dw+gap;}
+  else if(ch==='-'){const my=y+(dh>>1);rc(cx,my-(t>>1),cx+dw,my+(t>>1));cx+=dw+gap;}
+  else if(ch===' ')cx+=dw+gap;}return cx;}
+const F={'H':["10001","10001","10001","11111","10001","10001","10001"],'D':["11110","10001","10001","10001","10001","10001","11110"],
+'G':["01111","10000","10000","10111","10001","10001","01111"],'R':["11110","10001","10001","11110","10100","10010","10001"],
+'P':["11110","10001","10001","11110","10000","10000","10000"],'E':["11111","10000","10000","11110","10000","10000","11111"],
+'F':["11111","10000","10000","11110","10000","10000","10000"],'V':["10001","10001","10001","10001","10001","01010","00100"],
+'M':["10001","11011","10101","10101","10001","10001","10001"],'S':["01111","10000","10000","01110","00001","00001","11110"],
+'O':["01110","10001","10001","10001","10001","10001","01110"],'L':["10000","10000","10000","10000","10000","10000","11111"],
+'I':["11111","00100","00100","00100","00100","00100","11111"],'T':["11111","00100","00100","00100","00100","00100","00100"],
+'A':["01110","10001","10001","11111","10001","10001","10001"],'C':["01111","10000","10000","10000","10000","10000","01111"],
+'K':["10001","10010","10100","11000","10100","10010","10001"]};
+function lab(x,y,text){let cx=x;for(const ch of text){const g=F[ch];if(g){for(let r=0;r<7;r++)for(let c=0;c<5;c++)if(g[r][c]==='1')px(cx+c,y+r);}cx+=6;}}
+function dash(x,y,dw,t){const my=y+7;rc(x,my-(t>>1),x+dw,my+(t>>1));rc(x+dw+3,my-(t>>1),x+2*dw+3,my+(t>>1));}
+function dashC(x,y,dw){const my=y+15;rc(x+8,my-1,x+8+dw,my+1);rc(x+8+dw+5,my-1,x+8+2*dw+5,my+1);}
+function gauge(shift){const gL=58,gR=134,gcx=(gL+gR)>>1,gbot=62,gmax=10,scale=20,sw=2,gap=1;
+  const half=(gR-gL)>>1,n=Math.floor(half/(sw+gap));const sh=i=>Math.max(2,Math.round((i+1)/n*gmax/2)*2);
+  rc(gcx,gbot-gmax+1,gcx,gbot); if(shift==null)return;
+  const fr=Math.max(-1,Math.min(1,shift/scale)),act=Math.round(Math.abs(fr)*n),sg=fr>=0?1:-1;
+  for(let i=0;i<n;i++){if(i>=act)continue;const h=sh(i),y0=gbot-h+1;
+    let x0=sg>=0?gcx+1+i*(sw+gap):gcx-1-i*(sw+gap)-(sw-1);rc(x0,y0,x0+sw-1,gbot);}}
+function render(d){clr();
+  lab(64+18,0,"HDG");
+  if(d.hdg==null)dashC(64,13,16); else num(64,13,16,31,3,5,String(d.hdg).padStart(3,' '));
+  let lbl=""; const st=STATE_NAME[d.state];
+  if(d.meansValid){ if(st==="lift")lbl="LIFT"; else if(st==="header")lbl="HDR"; else if(st==="tack")lbl="TACK"; }
+  lab(2,0,lbl);
+  if(!d.meansValid)dash(2,13,8,2); else num(2,13,8,14,2,3,(d.shift<0?"-":"")+Math.abs(d.shift));
+  lab(158,0,"PERF"); if(d.perf==null)dash(158,13,8,2); else num(158,13,8,14,2,3,String(d.perf));
+  lab(2,34,"VMG"); if(d.vmg==null)dash(2,47,8,2); else num(2,47,8,14,2,3,d.vmg.toFixed(1));
+  lab(158,34,"SOG"); if(d.sog==null)dash(158,47,8,2); else num(158,47,8,14,2,3,d.sog.toFixed(1));
+  gauge(d.meansValid?d.shift:null);
+  blit();}
+function blit(){const img=ctx.createImageData(W,H);for(let i=0;i<W*H;i++){
+  const on=buf[i]===0; img.data[i*4]=on?20:205; img.data[i*4+1]=on?24:212; img.data[i*4+2]=on?26:190; img.data[i*4+3]=255;}
+  ctx.putImageData(img,0,0);}
+
+// ============ datalähde: postMessage sovelluksen iframestä ============
+let pktCount=0, lastTs=0;
+window.addEventListener("message",ev=>{
+  const m=ev.data;
+  if(!m || m.__tackcall!==true || !m.payload) return;
+  const o=m.payload;
+  const bytes=encode(o);          // objekti -> 10 tavua (kuten iOS-kuori tekisi)
+  const d=decode(bytes);          // 10 tavua -> kentät (kuten ESP32 tekisi)
+  render(d);                      // renderöi laitenäyttö
+  pktCount++; lastTs=Date.now();
+  document.getElementById("hex").textContent=[...bytes].map(x=>x.toString(16).padStart(2,'0').toUpperCase()).join(" ");
+  document.getElementById("dec").textContent=
+    `MAGIC=${bytes[0]} FLAGS=0b${bytes[1].toString(2).padStart(8,'0')} HDG=${d.hdg??'--'} `+
+    `SHIFT=${d.shift} PERF=${d.perf??'--'} VMG=${d.vmg??'--'} SOG=${d.sog??'--'} SEQ=${bytes[8]} CRC=${bytes[9]}`;
+  const ok=d.magicOk&&d.crcOk;
+  document.getElementById("verdict").innerHTML=ok
+    ? `<span class="ok">✓ MAGIC + CRC8 kelpaa · tila=${STATE_NAME[d.state]} · round-trip ehjä</span>`
+    : `<span class="bad">✗ validointi epäonnistui</span>`;
+  document.getElementById("stat").textContent=`paketteja: ${pktCount}`;
+});
+
+// alkuruutu: tyhjä laite (kaikki --) kunnes dataa saapuu
+render(decode(encode({meansValid:false,gpsValid:false,state:'nomean',hdg:null,shift:null,perf:null,vmg:null,sog:null})));
+
+// valvonta: jos dataa ei kuulu > 3 s vaikka paketteja on tullut, huomautetaan (avoin #3)
+setInterval(()=>{
+  if(pktCount>0 && Date.now()-lastTs>3000){
+    document.getElementById("stat").textContent=`paketteja: ${pktCount} · ei dataa ${Math.round((Date.now()-lastTs)/1000)} s (sovellus ei ehkä piirrä — heading puuttuu?)`;
+  }
+},1000);
+</script>
+</body>
+</html>

@@ -1424,6 +1424,28 @@ function evalShift(){
   else status = lifted>0 ? 'lift':'header';
   return {liftedDeg:lifted, status};
 }
+/* ---------- ulkoinen BLE-näyttötoistin (repeater) ----------
+   Työntää jo lasketut näyttöarvot ulos. Kaksi ulostuloa, molemmat valinnaisia:
+   1) natiivikuori (iOS WKWebView + CoreBluetooth) jos silta on olemassa
+   2) selaintestisivu (§13): jos sivu on upotettu iframeen, postataan emolle
+   Tavallisessa selaimessa (ei kuorta, ei emokehystä) tämä on TÄYSIN no-op:
+   window.parent===window kun ei olla iframessa → ei posteta mitään.
+   EI muuta mitään ydinlaskennassa — vain lukee valmiit arvot ja lähettää. */
+function pushToRepeater(o){
+  try{
+    const nb = window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.tackcallBLE;
+    if(nb) nb.postMessage(o);                 // natiivikuori (tuleva)
+    if(window.parent && window.parent!==window)
+      window.parent.postMessage({__tackcall:true, payload:o}, '*'); // selaintesti
+  }catch(e){ /* hiljainen: toistin ei saa koskaan kaataa sovellusta */ }
+}
+let _rptLast=0, _rptSeq=0;
+function maybePushRepeater(o){
+  const now=Date.now();
+  if(now-_rptLast < 1000) return;            // 1 paketti / s (§4.1)
+  _rptLast=now; o.seq=(_rptSeq=(_rptSeq+1)&0xFF);
+  pushToRepeater(o);
+}
 function estWind(){
   if(!meansValid()) return null; // fyysisesti mahdoton pari (tai mean puuttuu) → ei tuulen suuntaa
   const half = S.settings.tackAngle/2;
@@ -2275,6 +2297,20 @@ function render(){
   const vmgCol = _vmg!=null ? PAL.vmg : PAL.vmgNone;
   label('VMG', colTopRight, yEy, Math.max(10,small*0.024*sScale), PAL.label,'center');
   drawNumber(vmgStr, colTopRight, yVal, small*0.092*sScale, vmgCol, false);
+
+  // --- ulkoinen näyttötoistin: työnnä juuri lasketut arvot (1×/s, §4) ---
+  // Käytetään dispStatus/dispLifted (ei raaka evalShift): peilaa täsmälleen ruutua,
+  // ml. downwind/no-go-vaimennus. GPS-riippuvaiset (_pd/_vmg/_sogNow) → null → laite '--'.
+  maybePushRepeater({
+    meansValid: meansValid(),
+    gpsValid:   _sogNow!=null,
+    state:      dispStatus,                    // 'groove'|'lift'|'header'|'nomean'
+    hdg:        (S.heading!=null ? Math.round(S.heading) : null),
+    shift:      (dispLifted!=null ? Math.round(dispLifted) : null),
+    perf:       (_pd && _pd.state!=='none' && _pd.pct!=null ? _pd.pct : null),
+    vmg:        _vmg,
+    sog:        _sogNow
+  });
 
   // --- SOG (suoraa dataa, kuten HDG-pääluku): korostettu ylivuotopaikka ---
   // Landscapessa uloin sarake äärioikealla (colOverflow), portraitissa pääluvun alla
@@ -3161,7 +3197,7 @@ document.querySelectorAll(".stepper").forEach(st=>{
 });
 
 /* ---------- init ---------- */
-const APP_VERSION="🇫🇮 Tackcall v1.0";
+const APP_VERSION="🇫🇮 Tackcall v1.1";
 (function(){
   const e=$("verEnable"); if(e) e.textContent=APP_VERSION;
   const n=$("verNote"); if(n) n.textContent=APP_VERSION+" · shares engine with index.html";
