@@ -1,0 +1,393 @@
+<!DOCTYPE html>
+<html lang="fi">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Tackcall BLE-toistin — simulaattori</title>
+<!--
+  Tackcall ulkoisen BLE-näyttötoistimen SELAINSIMULAATTORI (valmistusohje v4, §13 kohta 3).
+  Todistaa ohjelmistoketjun ILMAN rautaa:
+    1) protokolla-enkooderi: objekti -> 10 tavua (§4.2), CRC8, FLAGS-tila-enum, sentinelit
+    2) protokolla-dekooderi: 10 tavua -> kentät (sama minkä ESP32 tekisi)
+    3) 192x64 canvas-renderöijä: piirtää §2:n layoutin dekoodatusta paketista
+  Additiivinen: erillinen tiedosto, EI kosketa mittari.html:n ydintä.
+  Renderöinti vastaa pikselintarkasti hyväksyttyä mockupia (mockup_locked.py).
+-->
+<style>
+  :root { --bg:#0f1112; --panel:#1a1d1f; --ink:#d7dbd0; --accent:#6ad; --lcd:#cdd4be; }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--bg); color:var(--ink);
+         font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif; padding:16px; }
+  h1 { font-size:16px; font-weight:600; margin:0 0 4px; }
+  .sub { font-size:12px; opacity:.6; margin:0 0 16px; }
+  .wrap { display:flex; flex-wrap:wrap; gap:24px; align-items:flex-start; }
+  .col { flex:1; min-width:300px; }
+  /* laitekehys */
+  .device { background:#282c30; border-radius:16px; padding:22px; display:inline-block; }
+  .bezel { background:#0f1112; border-radius:8px; padding:10px; }
+  canvas#screen { display:block; image-rendering:pixelated; background:var(--lcd);
+                  width:576px; height:192px; } /* 192x64 * 3 */
+  .brand { font:11px ui-monospace,Menlo,monospace; color:#9aa; margin-top:10px; letter-spacing:1px; }
+  /* säätimet */
+  .ctrl { background:var(--panel); border-radius:10px; padding:16px; }
+  .row { display:flex; align-items:center; gap:10px; margin:10px 0; }
+  .row label { width:120px; font-size:13px; opacity:.85; }
+  .row input[type=range] { flex:1; }
+  .row .val { width:52px; text-align:right; font:13px ui-monospace,monospace; color:var(--accent); }
+  .states { display:flex; gap:6px; flex-wrap:wrap; margin:6px 0 14px; }
+  .states button { background:#24282b; color:var(--ink); border:1px solid #3a3f43;
+                   border-radius:6px; padding:6px 10px; font-size:12px; cursor:pointer; }
+  .states button.active { background:var(--accent); color:#04121c; border-color:var(--accent); font-weight:600; }
+  .toggle { display:flex; align-items:center; gap:8px; font-size:13px; margin:8px 0; }
+  .bytes { background:#0c0e0f; border-radius:8px; padding:12px; margin-top:14px;
+           font:12px/1.6 ui-monospace,Menlo,monospace; }
+  .bytes .lbl { color:#7a8; }
+  .bytes .hex { color:#e8c07a; letter-spacing:1px; word-break:break-all; }
+  .bytes .dec { color:#9aa; }
+  .verdict { margin-top:8px; font-size:12px; }
+  .ok { color:#7bda7b; } .bad { color:#e06b6b; }
+  .note { font-size:11px; opacity:.5; margin-top:14px; line-height:1.5; }
+</style>
+</head>
+<body>
+  <h1>Tackcall BLE-toistin — selainsimulaattori</h1>
+  <p class="sub">Valmistusohje v4 · §13 kohta 3 · todistaa protokollan + tila-logiikan + renderöinnin ilman rautaa</p>
+
+  <div class="wrap">
+    <div class="col" style="flex:0 0 auto;">
+      <div class="device">
+        <div class="bezel"><canvas id="screen" width="192" height="64"></canvas></div>
+        <div class="brand">TACKCALL · CFAG19264D · 192×64</div>
+      </div>
+      <div class="bytes">
+        <div><span class="lbl">BLE-paketti (10 tavua, §4.2):</span></div>
+        <div class="hex" id="hex">–</div>
+        <div class="dec" id="dec">–</div>
+        <div class="verdict" id="verdict"></div>
+      </div>
+    </div>
+
+    <div class="col">
+      <div class="ctrl">
+        <div class="row"><label>Tila</label></div>
+        <div class="states" id="states">
+          <button data-state="lift">LIFT</button>
+          <button data-state="header">HDR (header)</button>
+          <button data-state="tack">TACK</button>
+          <button data-state="groove">GROOVE</button>
+          <button data-state="nomean">NO MEAN</button>
+        </div>
+
+        <div class="row"><label for="hdg">HDG (°)</label>
+          <input type="range" id="hdg" min="0" max="359" value="335">
+          <span class="val" id="hdg_v">335</span></div>
+        <div class="row"><label for="shift">Shift (°)</label>
+          <input type="range" id="shift" min="-40" max="40" value="-17">
+          <span class="val" id="shift_v">-17</span></div>
+        <div class="row"><label for="perf">PERF (%)</label>
+          <input type="range" id="perf" min="0" max="130" value="87">
+          <span class="val" id="perf_v">87</span></div>
+        <div class="row"><label for="vmg">VMG (kt)</label>
+          <input type="range" id="vmg" min="0" max="150" value="11">
+          <span class="val" id="vmg_v">1.1</span></div>
+        <div class="row"><label for="sog">SOG (kt)</label>
+          <input type="range" id="sog" min="0" max="150" value="20">
+          <span class="val" id="sog_v">2.0</span></div>
+
+        <label class="toggle"><input type="checkbox" id="gps" checked> GPS kytketty (gps_valid)</label>
+        <label class="toggle"><input type="checkbox" id="means" checked> Meanit asetettu (means_valid)</label>
+
+        <div class="note">
+          Kun GPS pois → VMG/SOG/PERF näyttävät <code>--</code> (§4.3).<br>
+          Kun meanit pois → shift-kenttä ja gauge <code>--</code>/tyhjä, HDG näkyy silti.<br>
+          Tila-enum menee FLAGS-tavun bitteihin 2–3. Etumerkki: header miinuksella, lift ilman.
+        </div>
+      </div>
+    </div>
+  </div>
+
+<script>
+"use strict";
+// ============================================================
+//  1) PROTOKOLLA — enkooderi ja dekooderi (§4.2)
+// ============================================================
+const MAGIC = 0x7C;
+const STATE_ENUM = { groove:0, lift:1, header:2, tack:3, nomean:0 };
+
+// CRC-8 (Dallas/Maxim), polynomi 0x31 heijastettuna = 0x8C
+function crc8(bytes){
+  let crc = 0;
+  for(const b of bytes){
+    crc ^= b;
+    for(let i=0;i<8;i++){
+      crc = (crc & 1) ? ((crc >> 1) ^ 0x8C) : (crc >> 1);
+    }
+  }
+  return crc & 0xFF;
+}
+
+// objekti -> Uint8Array(10). null-arvot -> sentinelit (0xFF / 0xFFFF)
+function encode(o){
+  const b = new Uint8Array(10);
+  b[0] = MAGIC;
+  let flags = 0;
+  if(o.meansValid) flags |= 0x01;          // bitti 0
+  if(o.gpsValid)   flags |= 0x02;          // bitti 1
+  const st = STATE_ENUM[o.state] ?? 0;
+  flags |= (st & 0x03) << 2;               // bitit 2–3
+  b[1] = flags;
+  // HDG uint16 LE, 0xFFFF = ei dataa
+  const hdg = (o.hdg==null) ? 0xFFFF : (o.hdg & 0xFFFF);
+  b[2] = hdg & 0xFF; b[3] = (hdg >> 8) & 0xFF;
+  // SHIFT int8, kyllästys ±90
+  let sh = (o.shift==null) ? 0 : Math.max(-90, Math.min(90, o.shift));
+  b[4] = sh & 0xFF;                         // kahden komplementti
+  // PERF uint8, 0xFF = ei dataa
+  b[5] = (o.perf==null) ? 0xFF : Math.max(0, Math.min(254, Math.round(o.perf)));
+  // VMG, SOG: solmut ×10, 0xFF = ei dataa
+  b[6] = (o.vmg==null) ? 0xFF : Math.max(0, Math.min(254, Math.round(o.vmg*10)));
+  b[7] = (o.sog==null) ? 0xFF : Math.max(0, Math.min(254, Math.round(o.sog*10)));
+  b[8] = (o.seq ?? 0) & 0xFF;
+  b[9] = crc8(b.slice(0,9));
+  return b;
+}
+
+// Uint8Array(10) -> kentät. Palauttaa myös valid: CRC & MAGIC ok?
+function decode(b){
+  const magicOk = b[0] === MAGIC;
+  const crcOk = crc8(b.slice(0,9)) === b[9];
+  const flags = b[1];
+  const meansValid = !!(flags & 0x01);
+  const gpsValid   = !!(flags & 0x02);
+  const state = (flags >> 2) & 0x03;        // 0..3
+  const hdgRaw = b[2] | (b[3] << 8);
+  const hdg = (hdgRaw === 0xFFFF) ? null : hdgRaw;
+  const shift = (b[4] << 24 >> 24);         // int8
+  const perf = (b[5] === 0xFF) ? null : b[5];
+  const vmg  = (b[6] === 0xFF) ? null : b[6]/10;
+  const sog  = (b[7] === 0xFF) ? null : b[7]/10;
+  return { magicOk, crcOk, meansValid, gpsValid, state, hdg, shift, perf, vmg, sog, seq:b[8] };
+}
+const STATE_NAME = ["groove","lift","header","tack"];
+
+// ============================================================
+//  2) RENDERÖIJÄ — 192×64, pikselintarkka vastine mockup_locked.py:stä
+// ============================================================
+const W=192, H=64;
+const cv = document.getElementById("screen");
+const ctx = cv.getContext("2d");
+
+// 7-segmenttikartta (sama kuin mockupissa)
+const SEG = {
+  '0':['top','tl','tr','bl','br','bot'], '1':['tr','br'],
+  '2':['top','tr','mid','bl','bot'], '3':['top','tr','mid','br','bot'],
+  '4':['tl','tr','mid','br'], '5':['top','tl','mid','br','bot'],
+  '6':['top','tl','mid','bl','br','bot'], '7':['top','tr','br'],
+  '8':['top','tl','tr','mid','bl','br','bot'], '9':['top','tl','tr','mid','br','bot'],
+};
+// pikselipuskuri (0=musta muste, 1=tausta)
+let buf;
+function clear(){ buf = new Uint8Array(W*H).fill(1); }
+function px(x,y){ if(x>=0&&x<W&&y>=0&&y<H) buf[y*W+x]=0; }
+function rect(x0,y0,x1,y1){ for(let y=y0;y<=y1;y++) for(let x=x0;x<=x1;x++) px(x,y); }
+
+function drawDigit(x,y,w,h,ch,t){
+  if(!(ch in SEG)) return;
+  const s=SEG[ch], my=y+(h>>1);
+  if(s.includes('top')) rect(x+t,y,x+w-t,y+t);
+  if(s.includes('bot')) rect(x+t,y+h-t,x+w-t,y+h);
+  if(s.includes('mid')) rect(x+t,my-(t>>1),x+w-t,my+(t>>1)+(t%2));
+  if(s.includes('tl'))  rect(x,y+t,x+t,my);
+  if(s.includes('tr'))  rect(x+w-t,y+t,x+w,my);
+  if(s.includes('bl'))  rect(x,my,x+t,y+h-t);
+  if(s.includes('br'))  rect(x+w-t,my,x+w,y+h-t);
+}
+function drawNumber(x,y,dw,dh,t,gap,text){
+  let cx=x;
+  for(const ch of text){
+    if(ch==='.'){ const sz=t+1; rect(cx,y+dh-sz,cx+sz,y+dh); cx+=sz+gap; }
+    else if(ch in SEG){ drawDigit(cx,y,dw,dh,ch,t); cx+=dw+gap; }
+    else if(ch==='-'){ const my=y+(dh>>1); rect(cx,my-(t>>1),cx+dw,my+(t>>1)); cx+=dw+gap; }
+    else if(ch===' '){ cx+=dw+gap; }
+  }
+  return cx;
+}
+
+// 5×7 pikselifontti otsikoille (vain tarvittavat kirjaimet)
+const FONT5x7 = {
+  'H':["10001","10001","10001","11111","10001","10001","10001"],
+  'D':["11110","10001","10001","10001","10001","10001","11110"],
+  'G':["01111","10000","10000","10111","10001","10001","01111"],
+  'R':["11110","10001","10001","11110","10100","10010","10001"],
+  'P':["11110","10001","10001","11110","10000","10000","10000"],
+  'E':["11111","10000","10000","11110","10000","10000","11111"],
+  'F':["11111","10000","10000","11110","10000","10000","10000"],
+  'V':["10001","10001","10001","10001","10001","01010","00100"],
+  'M':["10001","11011","10101","10101","10001","10001","10001"],
+  'S':["01111","10000","10000","01110","00001","00001","11110"],
+  'O':["01110","10001","10001","10001","10001","10001","01110"],
+  'L':["10000","10000","10000","10000","10000","10000","11111"],
+  'I':["11111","00100","00100","00100","00100","00100","11111"],
+  'T':["11111","00100","00100","00100","00100","00100","00100"],
+  'A':["01110","10001","10001","11111","10001","10001","10001"],
+  'C':["01111","10000","10000","10000","10000","10000","01111"],
+  'K':["10001","10010","10100","11000","10100","10010","10001"],
+};
+function drawLabel(x,y,text){
+  let cx=x;
+  for(const ch of text){
+    const g=FONT5x7[ch];
+    if(g){
+      for(let r=0;r<7;r++) for(let c=0;c<5;c++) if(g[r][c]==='1') px(cx+c,y+r);
+      cx+=6;
+    } else cx+=6;
+  }
+}
+
+// gauge (§2): kaksisuuntainen keskeltä, segmentit porras 2→10px, 1px raot
+function drawGauge(shift){
+  const gL=58, gR=134, gcx=(gL+gR)>>1, gbot=62, gmax=10, scale=20, segw=2, gap=1;
+  const half=(gR-gL)>>1, n=Math.floor(half/(segw+gap));
+  const segH=(i)=>Math.max(2, Math.round((i+1)/n*gmax/2)*2);
+  rect(gcx,gbot-gmax+1,gcx,gbot); // keskiviiva
+  if(shift==null) return;
+  const frac=Math.max(-1,Math.min(1, shift/scale));
+  const active=Math.round(Math.abs(frac)*n);
+  const sign=frac>=0?1:-1;
+  for(let i=0;i<n;i++){
+    if(i>=active) continue;
+    const h=segH(i), y0=gbot-h+1;
+    let x0 = sign>=0 ? gcx+1+i*(segw+gap) : gcx-1-i*(segw+gap)-(segw-1);
+    rect(x0,y0,x0+segw-1,gbot);
+  }
+}
+
+// pääpiirto: dekoodattu paketti -> ruutu (peilaa §2 + §4.3 näyttölogiikka)
+function render(dec){
+  clear();
+  // otsikot: HDG keskellä aina
+  drawLabel(64+18,0,"HDG");
+  // HDG-luku (tai -- jos ei dataa)
+  const hdgTxt = (dec.hdg==null) ? "" : String(dec.hdg).padStart(3,' ');
+  if(dec.hdg==null) drawDashCentered(64,13,16,31,3); else drawNumber(64,13,16,31,3,5,hdgTxt);
+
+  // shift-kenttä (ylävasen): otsikko tilan mukaan, tyhjä groovessa/nomean
+  const stName = STATE_NAME[dec.state];
+  let lbl="";
+  if(dec.meansValid){
+    if(stName==="lift") lbl="LIFT";
+    else if(stName==="header") lbl="HDR";
+    else if(stName==="tack") lbl="TACK";
+    else lbl=""; // groove
+  } else lbl=""; // nomean
+  drawLabel(2,0,lbl);
+  // shift-luku: -- jos ei meaneja, muuten etumerkillinen
+  if(!dec.meansValid){ drawDash(2,13,8,14,2); }
+  else {
+    let s = dec.shift;
+    let txt = (s<0? "-":"") + Math.abs(s);
+    drawNumber(2,13,8,14,2,3,txt);
+  }
+
+  // PERF (ylaoikea): -- jos ei GPS / null
+  drawLabel(158,0,"PERF");
+  if(dec.perf==null) drawDash(158,13,8,14,2); else drawNumber(158,13,8,14,2,3,String(dec.perf));
+
+  // VMG (alavasen)
+  drawLabel(2,34,"VMG");
+  if(dec.vmg==null) drawDash(2,47,8,14,2); else drawNumber(2,47,8,14,2,3,dec.vmg.toFixed(1));
+
+  // SOG (alaoikea)
+  drawLabel(158,34,"SOG");
+  if(dec.sog==null) drawDash(158,47,8,14,2); else drawNumber(158,47,8,14,2,3,dec.sog.toFixed(1));
+
+  // gauge: tyhjä jos ei meaneja
+  drawGauge(dec.meansValid ? dec.shift : null);
+
+  blit();
+}
+function drawDash(x,y,dw,dh,t){ const my=y+(dh>>1); rect(x,my-(t>>1),x+dw,my+(t>>1)); rect(x+dw+3,my-(t>>1),x+2*dw+3,my+(t>>1)); }
+function drawDashCentered(x,y,dw,dh,t){ const my=y+(dh>>1); rect(x+8,my-1,x+8+dw,my+1); rect(x+8+dw+5,my-1,x+8+2*dw+5,my+1); }
+
+// puskuri -> canvas
+function blit(){
+  const img=ctx.createImageData(W,H);
+  for(let i=0;i<W*H;i++){
+    const v = buf[i]===0 ? 20 : 205;   // muste tummaa, tausta LCD-vaalea
+    const g = buf[i]===0 ? 24 : 212;
+    const b = buf[i]===0 ? 26 : 190;
+    img.data[i*4]=v; img.data[i*4+1]=g; img.data[i*4+2]=b; img.data[i*4+3]=255;
+  }
+  ctx.putImageData(img,0,0);
+}
+
+// ============================================================
+//  3) SÄÄTIMET + live-päivitys (round-trip: encode -> decode -> render)
+// ============================================================
+let curState="header";
+const el = id=>document.getElementById(id);
+
+function collect(){
+  const gps = el("gps").checked, means = el("means").checked;
+  const st = curState;
+  return {
+    meansValid: means,
+    gpsValid: gps,
+    state: st,
+    hdg: +el("hdg").value,
+    shift: means ? +el("shift").value : null,
+    perf: gps ? +el("perf").value : null,
+    vmg:  gps ? (+el("vmg").value)/10 : null,
+    sog:  gps ? (+el("sog").value)/10 : null,
+    seq: (seq=(seq+1)&0xFF)
+  };
+}
+let seq=0;
+
+function tick(){
+  // näyta säädinarvot
+  el("hdg_v").textContent = el("hdg").value;
+  el("shift_v").textContent = (+el("shift").value>=0?"+":"") + el("shift").value;
+  el("perf_v").textContent = el("perf").value;
+  el("vmg_v").textContent = ((+el("vmg").value)/10).toFixed(1);
+  el("sog_v").textContent = ((+el("sog").value)/10).toFixed(1);
+
+  const obj = collect();
+  const bytes = encode(obj);           // 1) enkoodaa
+  const dec = decode(bytes);           // 2) dekoodaa (ESP32:n näkökulma)
+  render(dec);                         // 3) renderöi dekoodatusta
+
+  // näytä tavut + round-trip-verifiointi
+  el("hex").textContent = [...bytes].map(x=>x.toString(16).padStart(2,'0').toUpperCase()).join(" ");
+  el("dec").textContent =
+    `MAGIC=${bytes[0]} FLAGS=0b${bytes[1].toString(2).padStart(8,'0')} `+
+    `HDG=${dec.hdg??'--'} SHIFT=${dec.shift} PERF=${dec.perf??'--'} `+
+    `VMG=${dec.vmg??'--'} SOG=${dec.sog??'--'} SEQ=${bytes[8]} CRC=${bytes[9]}`;
+  const ok = dec.magicOk && dec.crcOk;
+  el("verdict").innerHTML = ok
+    ? `<span class="ok">✓ MAGIC + CRC8 kelpaa · tila=${STATE_NAME[dec.state]} · round-trip ehjä</span>`
+    : `<span class="bad">✗ validointi epäonnistui</span>`;
+}
+
+// tilanapit
+document.querySelectorAll("#states button").forEach(btn=>{
+  btn.addEventListener("click",()=>{
+    curState=btn.dataset.state;
+    document.querySelectorAll("#states button").forEach(b=>b.classList.remove("active"));
+    btn.classList.add("active");
+    // kytke means/gps loogisesti tilan mukaan
+    if(curState==="nomean"){ el("means").checked=false; }
+    else { el("means").checked=true; }
+    tick();
+  });
+});
+// säätimet
+["hdg","shift","perf","vmg","sog"].forEach(id=>el(id).addEventListener("input",tick));
+["gps","means"].forEach(id=>el(id).addEventListener("change",tick));
+
+// alkutila: header
+document.querySelector('#states button[data-state="header"]').classList.add("active");
+tick();
+</script>
+</body>
+</html>
