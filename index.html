@@ -1434,7 +1434,9 @@ function evalShift(){
 function pushToRepeater(o){
   try{
     const nb = window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.tackcallBLE;
-    if(nb) nb.postMessage(o);                 // natiivikuori (tuleva)
+    if(nb) nb.postMessage(o);                 // iOS-natiivikuori (Vaihe 2)
+    if(window.AndroidBridge && typeof window.AndroidBridge.postMessage==='function')
+      window.AndroidBridge.postMessage(JSON.stringify(o)); // Android-natiivikuori (Vaihe 1)
     if(window.parent && window.parent!==window)
       window.parent.postMessage({__tackcall:true, payload:o}, '*'); // selaintesti
   }catch(e){ /* hiljainen: toistin ei saa koskaan kaataa sovellusta */ }
@@ -3197,7 +3199,7 @@ document.querySelectorAll(".stepper").forEach(st=>{
 });
 
 /* ---------- init ---------- */
-const APP_VERSION="🇫🇮 Tackcall v1.1";
+const APP_VERSION="🇫🇮 Tackcall v1.2";
 (function(){
   const e=$("verEnable"); if(e) e.textContent=APP_VERSION;
   const n=$("verNote"); if(n) n.textContent=APP_VERSION+" · shares engine with index.html";
