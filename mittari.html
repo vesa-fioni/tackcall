@@ -1,5 +1,10 @@
 <!DOCTYPE html>
 <!-- Tackcall Meter — MIT License — Copyright (c) 2026 Vesa Lindqvist — Contributors: Joonas Sandholm -->
+<!-- v1.6 (Pre-start erä 2, korjauspaketti): (1) marginaali-esikatselu poistettu setup-näkymästä
+     (päällekkäinen taktisen kanssa — setup on vain linja + kello). (2) preStartUpdateView() ajetaan
+     nyt joka framessa loopissa, joten taktinen näkymä avautuu heti kun linja + kello valmiit, tilan
+     muutostavasta riippumatta; ‹ SETUP-lippu (forceSetup) estää auto-palautuksen. (3) Kello rajattu
+     −1:00:aan (PRESTART_MIN_TTS) — ei enää juokse rajatta miinukselle (aiemmin −227:10 mahdollinen). -->
 <!-- v1.5 (Pre-start erä 2, taktinen näkymä): mockupin dual-bar-layout tuotantoon. Aktivoituu
      automaattisesti kun linja + kello asetettu (setup-sheet piiloon). Iso 7-segmenttikello keskellä
      (napauta = Sync), DIST/SOG 7-seg ylä/ala. Oikea palkki = marginaali (aktiivinen, neula + NOW-raja).
@@ -670,14 +675,6 @@ body.portrait #btnMean{top:22%; height:22%;}
 </div>
 <div class="ssHint">Set the sequence length, tap <b>Start</b>. When the first signal sounds, tap <b>Sync</b> — it snaps the clock to the nearest whole minute. Tap Sync again at any whole-minute signal to re-align.</div>
 
-<!-- erä 2: marginaali-esikatselu (varsinainen palkki taktisessa näkymässä) -->
-<div class="ssSub">Margin — when to commit</div>
-<div class="psTactical">
-  <div class="psTacMid">
-    <div class="psState st-idle" id="psState">Set line, target &amp; timer</div>
-    <div class="psTacReadout">TGT <b id="psTgt">—</b> · SOG <b id="psTacSog">—</b></div>
-  </div>
-</div>
 <div class="ssHint">When the line is set and the timer is started, the full tactical view opens automatically with the margin bar.</div>
 
 <button class="close reset" id="btnClearLine">Clear line</button>
@@ -762,7 +759,8 @@ const S = {
   // linja EI persistoidu istuntojen yli — napautetaan uudelleen joka lähdössä.
   preStart:{ active:false, boat:null, pin:null,
              durS:300, gunTs:null,        // erä 2: ajastin — durS = asetettu sekvenssin pituus, gunTs = laukaushetken absoluuttinen aika (null = ei käynnissä)
-             targetKn:null, scaleRefM:null }, // erä 2: tavoitenopeus (upwind-P90, O-PS-5) + palkin täysasteikon referenssi
+             targetKn:null, scaleRefM:null, // erä 2: tavoitenopeus (upwind-P90, O-PS-5) + palkin täysasteikon referenssi
+             forceSetup:false }, // erä 2: käyttäjä valitsi ‹ SETUP → pysy setup-näkymässä vaikka ehdot täyttyisivät
   wakeLock:null,
   demo:false, demoT:0,
   settings:{ deadband:3, tackThresh:20, tackAngle:90, gps:true, wake:false, smooth:5, audio:false, gaugeScale:20, headingFocus:false, headingOffset:0, orientationLock:'auto', offshoreCog:false, monoScheme:false, autoMeanRefresh:false }, // tackThresh oletus = skaalan max, käyttäjä kiristää itse; headingOffset = asennuskorjaus, orientationLock = Portrait/Landscape/Automatic; offshoreCog = korvaa kompassin GPS-COG:lla; monoScheme = valkoinen/harmaa duotone-väriskeema kirkkaaseen aurinkoon; autoMeanRefresh = tuulennollapisteen automaattinen virkistys käännöspareista (oletus pois, ks. valmistusohjeet)
@@ -852,9 +850,12 @@ function projectedDistanceIfPushNow(secondsLeftInt, s0Ms, targetMs, accelTimeS){
   return d;
 }
 // Sekunteja laukaisuun (voi olla negatiivinen), tai null jos ajastin ei käynnissä.
+// Rajattu −60 s:iin: laukaisun jälkeen kello lukittuu −1:00 eikä juokse rajatta miinukselle.
+const PRESTART_MIN_TTS = -60;
 function preStartTimeToStartS(){
   if(S.preStart.gunTs==null) return null;
-  return (S.preStart.gunTs - Date.now())/1000;
+  const t=(S.preStart.gunTs - Date.now())/1000;
+  return t<PRESTART_MIN_TTS ? PRESTART_MIN_TTS : t;
 }
 
 // Näyttökynnys: tämän alle SOG näytetään "ei nopeutta" (--), ei harhaanjohtavaa 0.0.
@@ -2669,6 +2670,7 @@ function loop(){
   try{ if(S.demo) stepDemo(); render();
     // Pre-start: päivitä livenä joko taktinen näkymä tai setup-sheet, kumpi näkyvissä.
     if(S.preStart.active){
+      preStartUpdateView(); // tarkista joka framessa: linja + kello → taktinen näkymä auki
       if($("preStartTactical").classList.contains("show")) renderPreStartTactical();
       else if(!$("preStartSheet").classList.contains("hidden")) renderPreStart();
     }
@@ -2834,29 +2836,16 @@ function preStartComputeMargin(distM, tts){
   else { cls='st-soon'; txt='PUSH SOON'; }
   return { marginM, pos, cls, txt };
 }
-// erä 2: setup-sheetin marginaali-esikatselu (TGT/SOG + tilateksti, ei palkkia)
+// erä 2: setup-sheetin ajastinlukema (marginaali-esikatselu poistettu — se on taktisessa näkymässä)
 function renderPreStartTimerMargin(distM){
   const ps=S.preStart;
   const tts=preStartTimeToStartS();
   $("psDurVal").textContent = preStartFmtClock(ps.durS);
   $("psTime").textContent   = preStartFmtClock(tts!=null ? tts : ps.durS);
-  $("psTgt").textContent    = ps.targetKn!=null ? ps.targetKn.toFixed(1)+' kn' : '—';
-  $("psTacSog").textContent = S.gps.sog!=null ? S.gps.sog.toFixed(1)+' kn' : '—';
-  const st=$("psState");
-  const m=preStartComputeMargin(distM, tts);
-  if(!m){
-    st.className='psState st-idle';
-    st.textContent = (ps.targetKn==null) ? 'No polar data yet — sail to learn target'
-                   : (distM==null)       ? 'Set the start line'
-                   : 'Start the timer';
-    return;
-  }
-  st.className='psState '+m.cls;
-  st.textContent=m.txt;
 }
 // erä 2: näkymän ohjaus — taktinen näkymä auki kun linja + kello asetettu.
 function preStartViewActive(){
-  return S.preStart.active && S.preStart.gunTs!=null && S.preStart.boat && S.preStart.pin;
+  return S.preStart.active && !S.preStart.forceSetup && S.preStart.gunTs!=null && S.preStart.boat && S.preStart.pin;
 }
 function preStartUpdateView(){
   const tac=$("preStartTactical");
@@ -2903,6 +2892,7 @@ $("btnOpenPreStart").addEventListener("click", ()=>{
   $("sheet").classList.add("hidden");
   $("preStartSheet").classList.remove("hidden");
   S.preStart.active=true; // datatila päälle: collectPoint merkitsee preStart:true
+  S.preStart.forceSetup=false; // avattaessa salli taktinen näkymä jos ehdot täyttyvät
   // Tavoitenopeus = upwind-P90 (O-PS-5). Haetaan polaarin latauduttua, kiinteä approach-kulmalle.
   Polar.ready().then(()=>{
     try{ const ss=Polar.sectorSpeeds(); S.preStart.targetKn=(ss&&ss.upwind&&ss.upwind.p90!=null)?ss.upwind.p90:null; }catch(e){ S.preStart.targetKn=null; }
@@ -2912,8 +2902,8 @@ $("btnOpenPreStart").addEventListener("click", ()=>{
 });
 $("btnClosePreStart").addEventListener("click", ()=>{
   $("preStartSheet").classList.add("hidden");
+  $("preStartTactical").classList.remove("show");
   S.preStart.active=false; // datatila pois
-  preStartUpdateView();
 });
 $("btnSetBoat").addEventListener("click", ()=>preStartMarkEnd('boat'));
 $("btnSetPin").addEventListener("click", ()=>preStartMarkEnd('pin'));
@@ -2931,6 +2921,7 @@ $("btnPsDurPlus").addEventListener("click", ()=>{
 });
 $("btnPsStart").addEventListener("click", ()=>{
   S.preStart.gunTs=Date.now()+S.preStart.durS*1000;
+  S.preStart.forceSetup=false; // Start → salli taktinen näkymä
   const d=preStartDist();
   S.preStart.scaleRefM=Math.max((d!=null?d:50)*0.6, 20); // palkin täysasteikko lähestymisen alkaessa
   renderPreStart(); preStartUpdateView(); // linja + kello → taktinen näkymä
@@ -2948,7 +2939,8 @@ $("btnPsReset").addEventListener("click", ()=>{
 });
 // erä 2: taktisen näkymän napit
 $("btnPtExit").addEventListener("click", ()=>{
-  // takaisin setup-sheetiin ilman että kello pysähtyy
+  // takaisin setup-sheetiin ilman että kello pysähtyy; forceSetup estää auto-palautuksen
+  S.preStart.forceSetup=true;
   $("preStartTactical").classList.remove("show");
   $("preStartSheet").classList.remove("hidden");
   renderPreStart();
@@ -3687,7 +3679,7 @@ document.querySelectorAll(".stepper").forEach(st=>{
 });
 
 /* ---------- init ---------- */
-const APP_VERSION="🇫🇮 Tackcall v1.5";
+const APP_VERSION="🇫🇮 Tackcall v1.6";
 (function(){
   const e=$("verEnable"); if(e) e.textContent=APP_VERSION;
   const n=$("verNote"); if(n) n.textContent=APP_VERSION+" · shares engine with index.html";
