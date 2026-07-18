@@ -1,5 +1,10 @@
 <!DOCTYPE html>
 <!-- Tackcall Meter — MIT License — Copyright (c) 2026 Vesa Lindqvist — Contributors: Joonas Sandholm -->
+<!-- v1.8 (Pre-start erä 4/5): AT GUN -snapshot + PERFECT START. Kellon ylittäessä 0 lukemat
+     (DIST, SOG) jäädytetään kerran laukaisuhetkeen ja palkit lukittuvat gun-asentoonsa.
+     Tilateksti: OCS AT GUN (yli linjan) / PERFECT START (≤2 m, ei OCS, ≥98% P90) / AT GUN (muu).
+     Ilman polaaria ei voi olla PERFECT (pace vaatii tavoitenopeuden). Start ja Reset tyhjentävät
+     snapshotin. Kellon napautus-Sync estetty laukaisun jälkeen. Taktinen dual-bar nyt kokonainen. -->
 <!-- v1.7 (Pre-start erä 3): aikataulu + vasen palkki + re-planointi. Vasen palkki näyttää nyt
      sijaintipoikkeaman lineaarisesta lähestymiskäyrästä (PUSH=jäljessä / ON PATH / EASE=edellä),
      ankkuroitu Start-hetkellä (glide d0/t0, profiili lineaarinen — valitsin siirretty myöhemmäksi).
@@ -642,6 +647,8 @@ body.portrait #btnMean{top:22%; height:22%;}
 .ptState.st-closing{color:var(--yellow);}
 .ptState.st-soon{color:var(--orange);}
 .ptState.st-urgent{color:var(--red);animation:psPulse .7s ease-in-out infinite;}
+.ptState.st-good{color:var(--green);}
+.ptState.st-perfect{color:var(--green);text-shadow:0 0 14px rgba(25,226,106,.75);}
 .ptState.st-hidden{visibility:hidden;}
 .ptExit{position:absolute;top:calc(10px + env(safe-area-inset-top));left:14px;z-index:70;font-family:var(--mono);font-size:12px;font-weight:700;color:#7d8791;background:rgba(11,13,16,.8);border:1px solid #1c232b;border-radius:9px;padding:6px 10px;letter-spacing:.06em;}
 .ptSyncHint{position:absolute;bottom:calc(6px + env(safe-area-inset-bottom));left:0;right:0;text-align:center;font-family:var(--mono);font-size:10px;color:#4a4a4a;letter-spacing:.06em;pointer-events:none;}
@@ -769,6 +776,7 @@ const S = {
              durS:300, gunTs:null,        // erä 2: ajastin — durS = asetettu sekvenssin pituus, gunTs = laukaushetken absoluuttinen aika (null = ei käynnissä)
              targetKn:null, scaleRefM:null, // erä 2: tavoitenopeus (upwind-P90, O-PS-5) + palkin täysasteikon referenssi
              glide:null, replanned:false, // erä 3: aikataulun ankkuri {d0,t0,k} + re-planointilippu (§6)
+             snapshot:null, // erä 4/5: laukaisuhetkellä jäädytetyt lukemat {distM,sogKn,targetKn} (AT GUN / PERFECT START)
              forceSetup:false }, // erä 2: käyttäjä valitsi ‹ SETUP → pysy setup-näkymässä vaikka ehdot täyttyisivät
   wakeLock:null,
   demo:false, demoT:0,
@@ -2892,21 +2900,44 @@ function preStartUpdateView(){
 // erä 2: taktisen dual-bar-näkymän renderöinti (kutsutaan loopista kun näkyvissä)
 function renderPreStartTactical(){
   const ps=S.preStart;
-  const distM=preStartDist();
+  const distLive=preStartDist();
   const tts=preStartTimeToStartS();
+
+  // erä 4/5: gun-tunnistus — jäädytä lukemat kun kello ylittää 0 (kerran).
+  if(ps.gunTs!=null && !ps.snapshot && tts!=null && tts<=0){
+    ps.snapshot={ distM:distLive, sogKn:(S.gps.sog!=null?S.gps.sog:0), targetKn:ps.targetKn, ts:Date.now() };
+  }
+  const snap=ps.snapshot;
+  const distM = snap ? snap.distM : distLive;
+  const sogKn = snap ? snap.sogKn : (S.gps.sog!=null?S.gps.sog:0);
+
   // DIST TO LINE (7-seg) + OVER-merkintä jos yli
   let distEl=$("ptDist");
   if(distM==null){ distEl.innerHTML='<span class="ptUnit">— m</span>'; }
   else { const over=distM<0; const n=Math.round(Math.abs(distM));
     distEl.innerHTML=psSegSVG(String(n))+'<span class="ptUnit">m'+(over?' OVER':'')+'</span>'; }
-  // kello (7-seg)
-  $("ptClock").innerHTML=psSegSVG(preStartFmtClock(tts!=null?tts:ps.durS));
+  // kello (7-seg) — jäädytettynä 0:00
+  $("ptClock").innerHTML=psSegSVG(snap ? '0:00' : preStartFmtClock(tts!=null?tts:ps.durS));
   // SOG (7-seg)
-  const sog=S.gps.sog!=null?S.gps.sog:0;
-  $("ptSog").innerHTML=psSegSVG(sog.toFixed(1))+'<span class="ptUnit">kn</span>';
+  $("ptSog").innerHTML=psSegSVG(sogKn.toFixed(1))+'<span class="ptUnit">kn</span>';
+
+  const needle=$("ptNeedle"), st=$("ptState");
+  const barL=$("ptBarLeft"), needleL=$("ptNeedleLeft");
+
+  // erä 4/5: laukaisun jälkeen — lopputulosnäyttö, palkit jäädytetty (ei päivitetä neuloja).
+  if(snap){
+    const over = snap.distM!=null && snap.distM<0;
+    const pace = (snap.targetKn!=null && snap.targetKn>0 && snap.distM!=null)
+                 ? 100*snap.sogKn/snap.targetKn : null;
+    const perfect = !over && snap.distM!=null && snap.distM<=2 && pace!=null && pace>=98;
+    if(over){ st.className='ptState st-urgent'; st.textContent='OCS AT GUN'; }
+    else if(perfect){ st.className='ptState st-perfect'; st.textContent='PERFECT START'; }
+    else { st.className='ptState st-good'; st.textContent='AT GUN'; }
+    return; // neulat jäävät viimeiseen (gun-hetken) asentoonsa
+  }
+
   // oikea palkki (marginaali) + tilateksti
   const m=preStartComputeMargin(distM, tts);
-  const needle=$("ptNeedle"), st=$("ptState");
   if(!m){
     needle.classList.add("hidden");
     st.className='ptState st-hidden'; st.textContent='—';
@@ -2917,7 +2948,6 @@ function renderPreStartTactical(){
   }
 
   // vasen palkki (aikataulu) + re-planointi (erä 3)
-  const barL=$("ptBarLeft"), needleL=$("ptNeedleLeft");
   let schedPct=null;
   if(ps.glide && distM!=null && tts!=null && tts>0){
     const targetMs = ps.targetKn!=null ? ps.targetKn*PRESTART_KN_TO_MS : null;
@@ -2985,6 +3015,7 @@ $("btnPsStart").addEventListener("click", ()=>{
   // erä 3: ankkuroi aikataulu lähestymisen alkuun (lineaarinen profiili)
   S.preStart.glide={ d0:(d!=null?d:50), t0:S.preStart.durS, k:PRESTART_PROFILE_K };
   S.preStart.replanned=false;
+  S.preStart.snapshot=null; // erä 4/5: uusi sekvenssi → tyhjennä laukaisusnapshot
   renderPreStart(); preStartUpdateView(); // linja + kello → taktinen näkymä
 });
 $("btnPsSync").addEventListener("click", ()=>{
@@ -2998,6 +3029,7 @@ $("btnPsSync").addEventListener("click", ()=>{
 $("btnPsReset").addEventListener("click", ()=>{
   S.preStart.gunTs=null; S.preStart.scaleRefM=null;
   S.preStart.glide=null; S.preStart.replanned=false; // erä 3: nollaa aikataulu
+  S.preStart.snapshot=null; // erä 4/5: nollaa laukaisusnapshot
   renderPreStart(); preStartUpdateView();
 });
 // erä 2: taktisen näkymän napit
@@ -3009,8 +3041,8 @@ $("btnPtExit").addEventListener("click", ()=>{
   renderPreStart();
 });
 $("ptClockBox").addEventListener("click", ()=>{
-  // napauta kelloa = Sync (committee-merkillä)
-  if(S.preStart.gunTs==null) return;
+  // napauta kelloa = Sync (committee-merkillä). Laukaisun jälkeen (snapshot) ei tehdä mitään.
+  if(S.preStart.gunTs==null || S.preStart.snapshot) return;
   const remMs=S.preStart.gunTs-Date.now();
   S.preStart.gunTs=Date.now()+Math.round(remMs/60000)*60000;
 });
@@ -3742,7 +3774,7 @@ document.querySelectorAll(".stepper").forEach(st=>{
 });
 
 /* ---------- init ---------- */
-const APP_VERSION="🇫🇮 Tackcall v1.7";
+const APP_VERSION="🇫🇮 Tackcall v1.8";
 (function(){
   const e=$("verEnable"); if(e) e.textContent=APP_VERSION;
   const n=$("verNote"); if(n) n.textContent=APP_VERSION+" · shares engine with index.html";
