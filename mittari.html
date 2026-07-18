@@ -1,5 +1,11 @@
 <!DOCTYPE html>
 <!-- Tackcall Meter — MIT License — Copyright (c) 2026 Vesa Lindqvist — Contributors: Joonas Sandholm -->
+<!-- v1.3 (Pre-start erä 1): PRE-START-näkymä + datatila. GPS ottaa nyt talteen lat/lon/accuracy
+     (S.gps.lat/lon/acc). Uusi S.preStart{active,boat,pin}. Linjan asetus SET BOAT/SET PIN
+     (kumpi tahansa ensin, molemmat ajamalla), oikea DIST TO LINE kohtisuorana etäisyytenä
+     linjasegmenttiin (distToLine/preStartDist — O-PS-1, EI SOG-integraatio). collectPoint
+     merkitsee preStart:true kun tila aktiivinen (additiivinen, ei skeemamuutosta). Linja ei
+     persistoidu. Marginaali/aikataulu/neulat tulevat erässä 2–3 (ks. Pre-Start valmistusohje v2). -->
 <html lang="en-GB">
 <head>
 <meta charset="UTF-8">
@@ -345,6 +351,8 @@ body.portrait #btnMean{top:22%; height:22%;}
 <!-- v0.92: Session summary aina päällä; avaus suorana, visuaalisesti erotettuna linkkinä
      asetusten kärjessä (ks. Purjehdusyhteenveto §8). Vanha kytkin+piilonappi poistettu alempaa. -->
 <button class="panelLink" id="btnOpenSummary"><span class="plTxt">Session summary<small>After-sail recap — sector speeds vs. your history</small></span><span class="plArrow">→</span></button>
+<!-- Pre-start (erä 1): oma näkymä, avaus samalla kaavalla kuin Session summary -->
+<button class="panelLink" id="btnOpenPreStart"><span class="plTxt">Pre-start<small>Start-line assistant — set the line, see distance</small></span><span class="plArrow">→</span></button>
 <div class="row"><div class="lbl">GPS<small>Switch off to save battery. Powers SOG, VMG and polar learning.</small></div><div class="tog" data-key="gps"></div></div>
 <div class="row"><div class="lbl">Offshore (COG)<small>Replaces compass with GPS course over ground. Ignores leeway — best above ~3 kn. Turns GPS on automatically.</small></div><div class="tog" data-key="offshoreCog"></div></div>
 <div class="row"><div class="lbl">Auto mean refresh<small>Watches for wind shifts and asks you to confirm each one it spots. Manual Set Mean always works. Off by default.</small></div><div class="tog" data-key="autoMeanRefresh"></div></div>
@@ -538,6 +546,31 @@ body.portrait #btnMean{top:22%; height:22%;}
 </div>
 </div>
 
+<!-- Pre-start (erä 1): linjan asetus + oikea kohtisuora DIST TO LINE.
+     Marginaali, aikataulu ja neulat tulevat erässä 2–3 (ks. valmistusohje v2 §9). -->
+<div class="sheet hidden" id="preStartSheet">
+<div class="panel">
+<h2>Pre-start</h2>
+<div class="ssHint">Drive to each end of the start line and tap to mark it. Order doesn't matter. The line is not saved between starts — set it again each time.</div>
+<div class="ssSub">Start line</div>
+<div class="ssRow" id="psLineRow">
+  <div class="ssCard"><div class="ssLbl">BOAT END</div><div class="ssNum" id="psBoat">—</div></div>
+  <div class="ssCard"><div class="ssLbl">PIN END</div><div class="ssNum" id="psPin">—</div></div>
+</div>
+<div class="psBtns" style="display:flex;gap:8px;margin:10px 0;">
+  <button class="close" id="btnSetBoat" style="flex:1;">Set boat end</button>
+  <button class="close" id="btnSetPin" style="flex:1;">Set pin end</button>
+</div>
+<div class="ssSub">Distance to line</div>
+<div class="ssRow">
+  <div class="ssCard" style="flex:1;"><div class="ssLbl">DIST TO LINE</div><div class="ssNum" id="psDist">—</div></div>
+</div>
+<div class="ssHint" id="psGpsHint">GPS accuracy shown once you set an end. A poor fix makes the line unreliable.</div>
+<button class="close reset" id="btnClearLine">Clear line</button>
+<button class="close" id="btnClosePreStart">Done</button>
+</div>
+</div>
+
 <!-- asennusohjaus (Edellytys / A: offset / B: kallistustesti — ks. valmistusohjeet v2) -->
 <div class="sheet hidden" id="mountFlow">
 <div class="panel" id="mountFlowPanel"></div>
@@ -571,7 +604,12 @@ const S = {
   meanStbStability:null, meanBbStability:null,
   meanStbSogRatio:null, meanBbSogRatio:null, // O1 SOG-ristivalidointi (white paper 4.5) — talteenotto, ei vielä käytössä päätöksissä
   rangeBuf:[],
-  gps:{cog:null, sog:null, on:false, watch:null},
+  gps:{cog:null, sog:null, lat:null, lon:null, acc:null, on:false, watch:null},
+  // Pre-start (erä 1): oma taktinen tila + datatila. active-lippu merkitsee
+  // collectPoint-pisteisiin preStart:true (lukija voi suodattaa lähtöä edeltävän
+  // manööveroinnin analyysistä). boat/pin ovat linjan päätepisteet {lat,lon,ts};
+  // linja EI persistoidu istuntojen yli — napautetaan uudelleen joka lähdössä.
+  preStart:{ active:false, boat:null, pin:null },
   wakeLock:null,
   demo:false, demoT:0,
   settings:{ deadband:3, tackThresh:20, tackAngle:90, gps:true, wake:false, smooth:5, audio:false, gaugeScale:20, headingFocus:false, headingOffset:0, orientationLock:'auto', offshoreCog:false, monoScheme:false, autoMeanRefresh:false }, // tackThresh oletus = skaalan max, käyttäjä kiristää itse; headingOffset = asennuskorjaus, orientationLock = Portrait/Landscape/Automatic; offshoreCog = korvaa kompassin GPS-COG:lla; monoScheme = valkoinen/harmaa duotone-väriskeema kirkkaaseen aurinkoon; autoMeanRefresh = tuulennollapisteen automaattinen virkistys käännöspareista (oletus pois, ks. valmistusohjeet)
@@ -596,6 +634,53 @@ function meansValid(){
       && Math.abs(angDiff(S.meanStb, S.meanBb)) >= MIN_TACK_SEP;
 }
 const OFFSHORE_MIN_KN = 3; // COG epäluotettava alle tämän — koko näyttö odotustilassa Offshore-tilassa
+
+// ============================================================
+// PRE-START -geometria (erä 1) — O-PS-1: oikea DIST TO LINE
+// GPS-position KOHTISUORA etäisyys linjasegmenttiin, EI SOG-integraationa.
+// Näin luku pysyy oikeana manööveroinnista riippumatta: luffaus paikallaan →
+// etäisyys ei muutu; väistö kauemmas → etäisyys kasvaa rehellisesti.
+// ============================================================
+const EARTH_R = 6371000; // m
+// Paikallinen taso-approksimaatio: lähtölinjan mitat ovat satoja metrejä, joten
+// equirectangular-projektio (lat/lon → metrit) on tällä skaalalla tarkka ja halpa.
+// Origoksi valitaan boat-piste; x = itä, y = pohjoinen (metreinä).
+function llToXY(lat, lon, lat0, lon0){
+  const rad=Math.PI/180;
+  const x=(lon-lon0)*rad*EARTH_R*Math.cos(lat0*rad);
+  const y=(lat-lat0)*rad*EARTH_R;
+  return {x, y};
+}
+// Kohtisuora etäisyys pisteestä P linjasegmenttiin A–B (metreinä).
+// Merkki: positiivinen kun P on linjan "ennen"-puolella (kaukana radasta,
+// odotusalueella), negatiivinen kun yli linjan. Puoli määritetään ristitulon
+// merkistä; kumpi puoli on positiivinen kiinnitetään erä 2:ssa radan suunnan
+// mukaan — erässä 1 palautetaan itseisarvo + erillinen puoli-tieto.
+function distToLine(pLat, pLon, aLat, aLon, bLat, bLon){
+  const A=llToXY(aLat,aLon,aLat,aLon);       // origo
+  const B=llToXY(bLat,bLon,aLat,aLon);
+  const P=llToXY(pLat,pLon,aLat,aLon);
+  const dx=B.x-A.x, dy=B.y-A.y;
+  const len2=dx*dx+dy*dy;
+  if(len2<1e-9){ // linja rappeutunut (päät samassa) — palauta suora etäisyys päähän
+    return { dist:Math.hypot(P.x-A.x, P.y-A.y), side:0, t:0 };
+  }
+  // projektio: t = kohdan sijainti segmentillä (0=A, 1=B), rajoitettu janalle
+  let t=((P.x-A.x)*dx+(P.y-A.y)*dy)/len2;
+  const tc=Math.max(0,Math.min(1,t));
+  const cx=A.x+tc*dx, cy=A.y+tc*dy;          // lähin piste janalla
+  const dist=Math.hypot(P.x-cx, P.y-cy);
+  const side=Math.sign(dx*(P.y-A.y)-dy*(P.x-A.x)); // ristitulo → kumpi puoli
+  return { dist, side, t:tc };
+}
+// Nykyinen kohtisuora etäisyys lähtölinjaan, tai null jos linjaa/positiota ei ole.
+function preStartDist(){
+  const ps=S.preStart;
+  if(!ps.boat || !ps.pin || S.gps.lat==null) return null;
+  const r=distToLine(S.gps.lat, S.gps.lon, ps.boat.lat, ps.boat.lon, ps.pin.lat, ps.pin.lon);
+  return r.dist;
+}
+
 // Näyttökynnys: tämän alle SOG näytetään "ei nopeutta" (--), ei harhaanjohtavaa 0.0.
 // Nappaa GPS:n coords.speed===0 -dropoutit (ja alle 0.05 kn kohinan, joka pyöristyisi 0.0:ksi).
 // Vain näyttö — raakalokia, polaarikeräystä ja O1 rangeBufia ei kosketa (white paper 9.2).
@@ -1083,6 +1168,10 @@ const Polar = (function(){
       sog: Math.round(S.gps.sog*100)/100, // 2 desimaalia tallennukseen (näyttö pyöristää 1:een)
       windAge: windAgeSec() // vaihe 1: sekunteja viimeisimmästä mean-asetuksesta, pelkkä kirjanpito
     };
+    // Pre-start datatila (erä 1): additiivinen lippu — vanhat lukijat sivuuttavat
+    // tuntemattoman kentän, uudet voivat suodattaa lähtöä edeltävän manööveroinnin
+    // pois polaari-/suorituskykyanalyysistä. Ei uutta object storea, ei skeemamuutosta.
+    if(S.preStart.active) pt.preStart = true;
     log.push(pt);       // write-through-välimuisti: lukijat näkevät pisteen heti
     _persistPoint(pt);  // pysyväistallennus IndexedDB:hen (v0.90)
   }
@@ -1424,6 +1513,30 @@ function evalShift(){
   else status = lifted>0 ? 'lift':'header';
   return {liftedDeg:lifted, status};
 }
+/* ---------- ulkoinen BLE-näyttötoistin (repeater) ----------
+   Työntää jo lasketut näyttöarvot ulos. Kaksi ulostuloa, molemmat valinnaisia:
+   1) natiivikuori (iOS WKWebView + CoreBluetooth) jos silta on olemassa
+   2) selaintestisivu (§13): jos sivu on upotettu iframeen, postataan emolle
+   Tavallisessa selaimessa (ei kuorta, ei emokehystä) tämä on TÄYSIN no-op:
+   window.parent===window kun ei olla iframessa → ei posteta mitään.
+   EI muuta mitään ydinlaskennassa — vain lukee valmiit arvot ja lähettää. */
+function pushToRepeater(o){
+  try{
+    const nb = window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.tackcallBLE;
+    if(nb) nb.postMessage(o);                 // iOS-natiivikuori (Vaihe 2)
+    if(window.AndroidBridge && typeof window.AndroidBridge.postMessage==='function')
+      window.AndroidBridge.postMessage(JSON.stringify(o)); // Android-natiivikuori (Vaihe 1)
+    if(window.parent && window.parent!==window)
+      window.parent.postMessage({__tackcall:true, payload:o}, '*'); // selaintesti
+  }catch(e){ /* hiljainen: toistin ei saa koskaan kaataa sovellusta */ }
+}
+let _rptLast=0, _rptSeq=0;
+function maybePushRepeater(o){
+  const now=Date.now();
+  if(now-_rptLast < 1000) return;            // 1 paketti / s (§4.1)
+  _rptLast=now; o.seq=(_rptSeq=(_rptSeq+1)&0xFF);
+  pushToRepeater(o);
+}
 function estWind(){
   if(!meansValid()) return null; // fyysisesti mahdoton pari (tai mean puuttuu) → ei tuulen suuntaa
   const half = S.settings.tackAngle/2;
@@ -1724,6 +1837,13 @@ function applyGps(){
     S.gps.watch=navigator.geolocation.watchPosition(p=>{
       const sp=p.coords.speed;
       S.gps.sog = sp!=null && !isNaN(sp) ? sp*1.943844 : S.gps.sog;
+      // Pre-start-linjan geometria vaatii sijainnin (lat/lon) — otetaan talteen
+      // aina kun GPS on päällä. accuracy talteen, jotta linjan asetuksessa voi
+      // näyttää GPS-tarkkuuden (huono fix → epäluotettava linja).
+      if(p.coords.latitude!=null && !isNaN(p.coords.latitude)){
+        S.gps.lat=p.coords.latitude; S.gps.lon=p.coords.longitude;
+        S.gps.acc=(p.coords.accuracy!=null&&!isNaN(p.coords.accuracy))?p.coords.accuracy:null;
+      }
       if(p.coords.heading!=null && !isNaN(p.coords.heading)) S.gps.cog=p.coords.heading;
       // Offshore-tila: COG korvaa kompassin kokonaan. p.coords.heading on null kun nopeus
       // on liian alhainen (selaimen oma suoja) — silloin setHeading ei ylikirjoita edellistä
@@ -2276,6 +2396,20 @@ function render(){
   label('VMG', colTopRight, yEy, Math.max(10,small*0.024*sScale), PAL.label,'center');
   drawNumber(vmgStr, colTopRight, yVal, small*0.092*sScale, vmgCol, false);
 
+  // --- ulkoinen näyttötoistin: työnnä juuri lasketut arvot (1×/s, §4) ---
+  // Käytetään dispStatus/dispLifted (ei raaka evalShift): peilaa täsmälleen ruutua,
+  // ml. downwind/no-go-vaimennus. GPS-riippuvaiset (_pd/_vmg/_sogNow) → null → laite '--'.
+  maybePushRepeater({
+    meansValid: meansValid(),
+    gpsValid:   _sogNow!=null,
+    state:      dispStatus,                    // 'groove'|'lift'|'header'|'nomean'
+    hdg:        (S.heading!=null ? Math.round(S.heading) : null),
+    shift:      (dispLifted!=null ? Math.round(dispLifted) : null),
+    perf:       (_pd && _pd.state!=='none' && _pd.pct!=null ? _pd.pct : null),
+    vmg:        _vmg,
+    sog:        _sogNow
+  });
+
   // --- SOG (suoraa dataa, kuten HDG-pääluku): korostettu ylivuotopaikka ---
   // Landscapessa uloin sarake äärioikealla (colOverflow), portraitissa pääluvun alla
   // gaugen laaksossa. Väri v0.81: VMG:n entinen meripihka (PAL.sog) → erottuu kirkkaampana.
@@ -2356,7 +2490,10 @@ function render(){
 
 /* ---------- silmukat ---------- */
 function loop(){
-  try{ if(S.demo) stepDemo(); render(); }catch(e){}
+  try{ if(S.demo) stepDemo(); render();
+    // Pre-start (erä 1): päivitä etäisyyslukema livenä kun sheet on auki.
+    if(S.preStart.active && !$("preStartSheet").classList.contains("hidden")) renderPreStart();
+  }catch(e){}
   requestAnimationFrame(loop);
 }
 setInterval(()=>{
@@ -2435,6 +2572,45 @@ $("btnOpenSummary").addEventListener("click", ()=>{
   Polar.ready().then(()=>{ if(ld) ld.style.display='none'; renderSessionSummary(); });
 });
 $("btnCloseSummary").addEventListener("click", ()=>{ ssStopAnim(); $("sessionSummary").classList.add("hidden"); });
+
+// ---------- Pre-start (erä 1) ----------
+function preStartFmtEnd(pt){
+  if(!pt) return '—';
+  return 'SET' + (pt.acc!=null ? ' ±'+Math.round(pt.acc)+'m' : '');
+}
+function renderPreStart(){
+  $("psBoat").textContent = preStartFmtEnd(S.preStart.boat);
+  $("psPin").textContent  = preStartFmtEnd(S.preStart.pin);
+  const d=preStartDist();
+  $("psDist").textContent = (d==null) ? '—' : Math.round(d)+' m';
+  const hint=$("psGpsHint");
+  if(hint){
+    if(S.gps.lat==null) hint.textContent='Waiting for GPS fix… turn GPS on in settings if needed.';
+    else if(S.gps.acc!=null) hint.textContent='Current GPS accuracy ±'+Math.round(S.gps.acc)+' m. A poor fix makes the line unreliable.';
+    else hint.textContent='GPS accuracy shown once available. A poor fix makes the line unreliable.';
+  }
+}
+function preStartMarkEnd(which){
+  if(S.gps.lat==null){ return; } // ei fixiä — ei merkitä mitään
+  S.preStart[which]={ lat:S.gps.lat, lon:S.gps.lon, acc:S.gps.acc, ts:Date.now() };
+  renderPreStart();
+}
+$("btnOpenPreStart").addEventListener("click", ()=>{
+  $("sheet").classList.add("hidden");
+  $("preStartSheet").classList.remove("hidden");
+  S.preStart.active=true; // datatila päälle: collectPoint merkitsee preStart:true
+  renderPreStart();
+});
+$("btnClosePreStart").addEventListener("click", ()=>{
+  $("preStartSheet").classList.add("hidden");
+  S.preStart.active=false; // datatila pois
+});
+$("btnSetBoat").addEventListener("click", ()=>preStartMarkEnd('boat'));
+$("btnSetPin").addEventListener("click", ()=>preStartMarkEnd('pin'));
+$("btnClearLine").addEventListener("click", ()=>{
+  S.preStart.boat=null; S.preStart.pin=null; renderPreStart();
+});
+
 $("btnToggleKeep").addEventListener("click", ()=>{
   const sessions = Polar.splitSessions();
   const ci = ssCurrentIdx(sessions);
@@ -3161,7 +3337,7 @@ document.querySelectorAll(".stepper").forEach(st=>{
 });
 
 /* ---------- init ---------- */
-const APP_VERSION="🇫🇮 Tackcall v1.0";
+const APP_VERSION="🇫🇮 Tackcall v1.3";
 (function(){
   const e=$("verEnable"); if(e) e.textContent=APP_VERSION;
   const n=$("verNote"); if(n) n.textContent=APP_VERSION+" · shares engine with index.html";
