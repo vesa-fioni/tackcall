@@ -1,5 +1,12 @@
 <!DOCTYPE html>
 <!-- Tackcall Meter — MIT License — Copyright (c) 2026 Vesa Lindqvist — Contributors: Joonas Sandholm -->
+<!-- v1.4 (Pre-start erä 2): marginaali + oikea palkki + lähtöajastin. Ajastin (aseta minuutit,
+     Start, Sync pyöristää lähimpään tasominuuttiin). Tavoitenopeus = upwind-P90 (Polar.sectorSpeeds,
+     O-PS-5: lähestymiskulman vauhti). Marginaali = projectedDistanceIfPushNow − DIST TO LINE
+     (diskreetti sekunti-simulaatio, kiihdytys 20 s). Sanallinen tila WAIT/CLOSING/PUSH SOON/
+     PUSH FULL NOW/OCS johdetaan MARGINAALISTA (§5). Oikea palkki + neula; NOW-laukaisuraja
+     terävänä valkoisena reunana (O-PS-6). Reaktiopuskuri viivyttää laukaisun (§7). Aikataulu +
+     vasen palkki tulevat erässä 3 (ks. Pre-Start valmistusohje v2 §9). -->
 <!-- v1.3 (Pre-start erä 1): PRE-START-näkymä + datatila. GPS ottaa nyt talteen lat/lon/accuracy
      (S.gps.lat/lon/acc). Uusi S.preStart{active,boat,pin}. Linjan asetus SET BOAT/SET PIN
      (kumpi tahansa ensin, molemmat ajamalla), oikea DIST TO LINE kohtisuorana etäisyytenä
@@ -548,6 +555,37 @@ body.portrait #btnMean{top:22%; height:22%;}
 
 <!-- Pre-start (erä 1): linjan asetus + oikea kohtisuora DIST TO LINE.
      Marginaali, aikataulu ja neulat tulevat erässä 2–3 (ks. valmistusohje v2 §9). -->
+<style>
+/* Pre-start erä 2: ajastin + marginaali + oikea palkki (mittari-paletti) */
+.psTimerBtns{display:flex;gap:8px;margin:8px 0;}
+.psTimerBtns button{flex:1;}
+.psDurStep{display:flex;align-items:center;justify-content:center;gap:14px;margin:8px 0;}
+.psDurStep button{width:52px;height:40px;font-size:20px;background:#141414;border:1px solid var(--line,#1c232b);border-radius:10px;color:#eef2f5;}
+.psDurStep .psDurVal{font-family:var(--mono);font-size:22px;font-weight:700;min-width:70px;text-align:center;color:#eef2f5;}
+/* Tactical: keskilukemat + pystypalkki oikealla */
+.psTactical{display:flex;gap:12px;align-items:stretch;margin:6px 0 2px;}
+.psTacMid{flex:1;display:flex;flex-direction:column;justify-content:center;gap:8px;min-width:0;}
+.psState{font-family:var(--mono);font-size:20px;font-weight:800;letter-spacing:.04em;text-align:center;min-height:26px;}
+.psState.st-wait{color:var(--cyan,#19e0e0);}
+.psState.st-closing{color:var(--yellow,#ffd11a);}
+.psState.st-soon{color:var(--orange,#ff8a1e);}
+.psState.st-urgent{color:var(--red,#ff2b2b);animation:psPulse .7s ease-in-out infinite;}
+.psState.st-idle{color:#7d8791;font-size:14px;font-weight:600;}
+@keyframes psPulse{0%,100%{opacity:1;}50%{opacity:.35;}}
+.psMarginBar{position:relative;width:64px;flex:0 0 64px;border:1px solid var(--line,#1c232b);border-radius:12px;overflow:hidden;background:#050708;}
+.psZone{position:absolute;left:0;right:0;display:flex;align-items:center;justify-content:center;}
+.psZone span{font-family:var(--mono);font-size:10px;font-weight:700;letter-spacing:.05em;writing-mode:vertical-rl;transform:rotate(180deg);opacity:.85;}
+.psZ-wait{top:0;height:56%;background:linear-gradient(to bottom,rgba(25,224,224,.15),rgba(25,224,224,.4));}
+.psZ-closing{top:56%;height:22%;background:rgba(255,209,26,.5);}
+.psZ-now{top:78%;height:22%;background:rgba(25,226,106,.85);}
+/* NOW-laukaisuraja (O-PS-6): terävä valkoinen raja NOW-vyöhykkeen yläreunassa = "toimi tässä" */
+.psNowEdge{position:absolute;left:0;right:0;top:78%;height:3px;margin-top:-1.5px;background:#fff;box-shadow:0 0 8px 1px rgba(255,255,255,.85);z-index:3;}
+.psNowEdge::after{content:"▶";position:absolute;left:-11px;top:-7px;font-size:11px;color:#fff;}
+.psNeedle{position:absolute;left:-3px;right:-3px;height:4px;margin-top:-2px;background:#fff;box-shadow:0 0 10px 2px rgba(255,255,255,.75);z-index:4;transition:top .2s ease;}
+.psNeedle.hidden{display:none;}
+.psTacReadout{font-family:var(--mono);font-size:13px;color:#c7ced4;text-align:center;}
+.psTacReadout b{color:#eef2f5;font-size:15px;}
+</style>
 <div class="sheet hidden" id="preStartSheet">
 <div class="panel">
 <h2>Pre-start</h2>
@@ -566,6 +604,41 @@ body.portrait #btnMean{top:22%; height:22%;}
   <div class="ssCard" style="flex:1;"><div class="ssLbl">DIST TO LINE</div><div class="ssNum" id="psDist">—</div></div>
 </div>
 <div class="ssHint" id="psGpsHint">GPS accuracy shown once you set an end. A poor fix makes the line unreliable.</div>
+
+<!-- erä 2: ajastin -->
+<div class="ssSub">Start timer</div>
+<div class="ssRow">
+  <div class="ssCard" style="flex:1;"><div class="ssLbl">TIME TO START</div><div class="ssNum" id="psTime">—:—</div></div>
+</div>
+<div class="psDurStep">
+  <button id="btnPsDurMinus" type="button">–</button>
+  <span class="psDurVal" id="psDurVal">5:00</span>
+  <button id="btnPsDurPlus" type="button">+</button>
+</div>
+<div class="psTimerBtns">
+  <button class="close" id="btnPsStart">Start</button>
+  <button class="close" id="btnPsSync">Sync</button>
+  <button class="close reset" id="btnPsReset">Reset</button>
+</div>
+<div class="ssHint">Set the sequence length, tap <b>Start</b>. When the first signal sounds, tap <b>Sync</b> — it snaps the clock to the nearest whole minute. Tap Sync again at any whole-minute signal to re-align.</div>
+
+<!-- erä 2: marginaali + oikea palkki -->
+<div class="ssSub">Margin — when to commit</div>
+<div class="psTactical">
+  <div class="psTacMid">
+    <div class="psState st-idle" id="psState">Set line, target &amp; timer</div>
+    <div class="psTacReadout">TGT <b id="psTgt">—</b> · SOG <b id="psTacSog">—</b></div>
+  </div>
+  <div class="psMarginBar" id="psMarginBar">
+    <div class="psZone psZ-wait"><span>WAIT</span></div>
+    <div class="psZone psZ-closing"><span>CLOSING</span></div>
+    <div class="psZone psZ-now"><span>NOW</span></div>
+    <div class="psNowEdge"></div>
+    <div class="psNeedle hidden" id="psNeedle"></div>
+  </div>
+</div>
+<div class="ssHint">Margin is the honest signal: if you push to full speed now, do you still reach the line at target pace by the gun? The white line at the green edge is the moment to commit — don't wait for the needle to reach the bottom.</div>
+
 <button class="close reset" id="btnClearLine">Clear line</button>
 <button class="close" id="btnClosePreStart">Done</button>
 </div>
@@ -609,7 +682,9 @@ const S = {
   // collectPoint-pisteisiin preStart:true (lukija voi suodattaa lähtöä edeltävän
   // manööveroinnin analyysistä). boat/pin ovat linjan päätepisteet {lat,lon,ts};
   // linja EI persistoidu istuntojen yli — napautetaan uudelleen joka lähdössä.
-  preStart:{ active:false, boat:null, pin:null },
+  preStart:{ active:false, boat:null, pin:null,
+             durS:300, gunTs:null,        // erä 2: ajastin — durS = asetettu sekvenssin pituus, gunTs = laukaushetken absoluuttinen aika (null = ei käynnissä)
+             targetKn:null, scaleRefM:null }, // erä 2: tavoitenopeus (upwind-P90, O-PS-5) + palkin täysasteikon referenssi
   wakeLock:null,
   demo:false, demoT:0,
   settings:{ deadband:3, tackThresh:20, tackAngle:90, gps:true, wake:false, smooth:5, audio:false, gaugeScale:20, headingFocus:false, headingOffset:0, orientationLock:'auto', offshoreCog:false, monoScheme:false, autoMeanRefresh:false }, // tackThresh oletus = skaalan max, käyttäjä kiristää itse; headingOffset = asennuskorjaus, orientationLock = Portrait/Landscape/Automatic; offshoreCog = korvaa kompassin GPS-COG:lla; monoScheme = valkoinen/harmaa duotone-väriskeema kirkkaaseen aurinkoon; autoMeanRefresh = tuulennollapisteen automaattinen virkistys käännöspareista (oletus pois, ks. valmistusohjeet)
@@ -679,6 +754,29 @@ function preStartDist(){
   if(!ps.boat || !ps.pin || S.gps.lat==null) return null;
   const r=distToLine(S.gps.lat, S.gps.lon, ps.boat.lat, ps.boat.lon, ps.pin.lat, ps.pin.lon);
   return r.dist;
+}
+
+// ---- erä 2: marginaali ----
+const PRESTART_KN_TO_MS = 0.514444;
+const PRESTART_ACCEL_S  = 20;   // kiihdytysaika 0 → täysi vauhti (kiinteä; kalibroitava kenttädatalla)
+const PRESTART_NOW_EDGE = 0.78; // NOW-vyöhykkeen yläreuna palkilla (O-PS-6: laukaisuraja)
+// Diskreetti sekunti-simulaatio: "jos painan täysille NYT, montako metriä etenen ennen
+// laukausta?" Sama nopeuden rajoitus kuin todellinen tikki (kiihdytyskaari + täysvauhtinen
+// loppu) — jatkuva kaava tuotti systemaattisen ylityksen, diskreetti täsmää ~1 m.
+function projectedDistanceIfPushNow(secondsLeftInt, s0Ms, targetMs, accelTimeS){
+  const maxDelta = targetMs>0 ? targetMs/accelTimeS : 0;
+  let speed=s0Ms, d=0;
+  const n=Math.max(0, Math.round(secondsLeftInt));
+  for(let i=0;i<n;i++){
+    if(speed<targetMs) speed=Math.min(targetMs, speed+maxDelta);
+    d+=speed;
+  }
+  return d;
+}
+// Sekunteja laukaisuun (voi olla negatiivinen), tai null jos ajastin ei käynnissä.
+function preStartTimeToStartS(){
+  if(S.preStart.gunTs==null) return null;
+  return (S.preStart.gunTs - Date.now())/1000;
 }
 
 // Näyttökynnys: tämän alle SOG näytetään "ei nopeutta" (--), ei harhaanjohtavaa 0.0.
@@ -2578,6 +2676,12 @@ function preStartFmtEnd(pt){
   if(!pt) return '—';
   return 'SET' + (pt.acc!=null ? ' ±'+Math.round(pt.acc)+'m' : '');
 }
+function preStartFmtClock(s){
+  if(s==null) return '—:—';
+  const neg=s<0; let a=Math.abs(Math.round(s));
+  const m=Math.floor(a/60), r=a%60;
+  return (neg?'-':'')+m+':'+(r<10?'0':'')+r;
+}
 function renderPreStart(){
   $("psBoat").textContent = preStartFmtEnd(S.preStart.boat);
   $("psPin").textContent  = preStartFmtEnd(S.preStart.pin);
@@ -2589,6 +2693,62 @@ function renderPreStart(){
     else if(S.gps.acc!=null) hint.textContent='Current GPS accuracy ±'+Math.round(S.gps.acc)+' m. A poor fix makes the line unreliable.';
     else hint.textContent='GPS accuracy shown once available. A poor fix makes the line unreliable.';
   }
+  renderPreStartTimerMargin(d);
+}
+// erä 2: ajastin + marginaali + oikea palkki
+function renderPreStartTimerMargin(distM){
+  const ps=S.preStart;
+  const tts=preStartTimeToStartS();          // sekunteja laukaisuun (voi olla null / negat.)
+  $("psDurVal").textContent = preStartFmtClock(ps.durS);
+  $("psTime").textContent   = preStartFmtClock(tts!=null ? tts : ps.durS);
+  $("psTgt").textContent    = ps.targetKn!=null ? ps.targetKn.toFixed(1)+' kn' : '—';
+  $("psTacSog").textContent = S.gps.sog!=null ? S.gps.sog.toFixed(1)+' kn' : '—';
+
+  const st=$("psState"), needle=$("psNeedle");
+  const targetMs = ps.targetKn!=null ? ps.targetKn*PRESTART_KN_TO_MS : null;
+  const sMs      = S.gps.sog!=null ? S.gps.sog*PRESTART_KN_TO_MS : 0;
+
+  // Marginaali vaatii linjan (etäisyys), tavoitenopeuden ja käynnissä olevan ajastimen.
+  if(distM==null || targetMs==null || tts==null){
+    needle.classList.add("hidden");
+    st.className='psState st-idle';
+    st.textContent = (targetMs==null) ? 'No polar data yet — sail to learn target'
+                   : (distM==null)    ? 'Set the start line'
+                   : 'Start the timer';
+    return;
+  }
+
+  const scaleRefM = ps.scaleRefM || Math.max(distM*0.6, 20);
+  const cautionM  = scaleRefM*0.28;
+  const warnM     = scaleRefM*0.16;
+  const bufferM   = Math.max(3, scaleRefM*0.05); // reaktiopuskuri (§7): laukaisu marginaalin ollessa jo lievästi negat.
+  const proj = projectedDistanceIfPushNow(Math.max(0,tts), sMs, targetMs, PRESTART_ACCEL_S);
+  const marginM = proj - distM;
+
+  // Neulan sijainti: margin=scaleRefM → yläreuna (WAIT); margin=-buffer → NOW-yläreuna (laukaisu).
+  let pos;
+  if(marginM >= -bufferM){
+    const frac=(scaleRefM - marginM)/(scaleRefM + bufferM);
+    pos = Math.max(0,Math.min(1,frac))*PRESTART_NOW_EDGE;
+  } else {
+    const over=(-bufferM - marginM);
+    pos = PRESTART_NOW_EDGE + Math.min(1,over/scaleRefM)*(1-PRESTART_NOW_EDGE);
+  }
+  needle.classList.remove("hidden");
+  needle.style.top=(pos*100)+'%';
+
+  // Sanallinen tila johdetaan MARGINAALISTA (§5), ei aikataulusta.
+  if(distM<0){
+    st.className='psState st-urgent'; st.textContent='OCS RISK';
+  } else if(marginM <= -bufferM){
+    st.className='psState st-urgent'; st.textContent='PUSH FULL NOW';
+  } else if(marginM > cautionM){
+    st.className='psState st-wait'; st.textContent='WAIT';
+  } else if(marginM > warnM){
+    st.className='psState st-closing'; st.textContent='CLOSING';
+  } else {
+    st.className='psState st-soon'; st.textContent='PUSH SOON';
+  }
 }
 function preStartMarkEnd(which){
   if(S.gps.lat==null){ return; } // ei fixiä — ei merkitä mitään
@@ -2599,6 +2759,11 @@ $("btnOpenPreStart").addEventListener("click", ()=>{
   $("sheet").classList.add("hidden");
   $("preStartSheet").classList.remove("hidden");
   S.preStart.active=true; // datatila päälle: collectPoint merkitsee preStart:true
+  // Tavoitenopeus = upwind-P90 (O-PS-5). Haetaan polaarin latauduttua, kiinteä approach-kulmalle.
+  Polar.ready().then(()=>{
+    try{ const ss=Polar.sectorSpeeds(); S.preStart.targetKn=(ss&&ss.upwind&&ss.upwind.p90!=null)?ss.upwind.p90:null; }catch(e){ S.preStart.targetKn=null; }
+    renderPreStart();
+  });
   renderPreStart();
 });
 $("btnClosePreStart").addEventListener("click", ()=>{
@@ -2609,6 +2774,32 @@ $("btnSetBoat").addEventListener("click", ()=>preStartMarkEnd('boat'));
 $("btnSetPin").addEventListener("click", ()=>preStartMarkEnd('pin'));
 $("btnClearLine").addEventListener("click", ()=>{
   S.preStart.boat=null; S.preStart.pin=null; renderPreStart();
+});
+// erä 2: ajastimen napit
+$("btnPsDurMinus").addEventListener("click", ()=>{
+  if(S.preStart.gunTs!=null) return; // ei muuteta kesken sekvenssin
+  S.preStart.durS=Math.max(60, S.preStart.durS-60); renderPreStart();
+});
+$("btnPsDurPlus").addEventListener("click", ()=>{
+  if(S.preStart.gunTs!=null) return;
+  S.preStart.durS=Math.min(600, S.preStart.durS+60); renderPreStart();
+});
+$("btnPsStart").addEventListener("click", ()=>{
+  S.preStart.gunTs=Date.now()+S.preStart.durS*1000;
+  const d=preStartDist();
+  S.preStart.scaleRefM=Math.max((d!=null?d:50)*0.6, 20); // palkin täysasteikko lähestymisen alkaessa
+  renderPreStart();
+});
+$("btnPsSync").addEventListener("click", ()=>{
+  if(S.preStart.gunTs==null) return;
+  // Pyöristä jäljellä oleva aika lähimpään tasominuuttiin (committee-merkki).
+  const remMs=S.preStart.gunTs-Date.now();
+  const snapped=Math.round(remMs/60000)*60000;
+  S.preStart.gunTs=Date.now()+snapped;
+  renderPreStart();
+});
+$("btnPsReset").addEventListener("click", ()=>{
+  S.preStart.gunTs=null; S.preStart.scaleRefM=null; renderPreStart();
 });
 
 $("btnToggleKeep").addEventListener("click", ()=>{
@@ -3337,7 +3528,7 @@ document.querySelectorAll(".stepper").forEach(st=>{
 });
 
 /* ---------- init ---------- */
-const APP_VERSION="🇫🇮 Tackcall v1.3";
+const APP_VERSION="🇫🇮 Tackcall v1.4";
 (function(){
   const e=$("verEnable"); if(e) e.textContent=APP_VERSION;
   const n=$("verNote"); if(n) n.textContent=APP_VERSION+" · shares engine with index.html";
