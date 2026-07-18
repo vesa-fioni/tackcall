@@ -1,40 +1,40 @@
 <!DOCTYPE html>
 <!-- Tackcall Meter — MIT License — Copyright (c) 2026 Vesa Lindqvist — Contributors: Joonas Sandholm -->
-<!-- v1.9 (Pre-start): automaattinen paluu kompassitilaan lähdön jälkeen. Minuutti laukaisusta
+<!-- v1.27 (Pre-start): automaattinen paluu kompassitilaan lähdön jälkeen. Minuutti laukaisusta
      (PRESTART_AUTO_EXIT_S=60, kalibroitava; ehdokas asetukseksi) pre-start sulkeutuu, datatila pois
      ja kompassinäkymä palautuu — kilpailu on alkanut. Sekvenssin tila nollataan (linja jää muistiin).
      preStartCheckAutoExit() ajetaan loopissa. -->
-<!-- v1.8 (Pre-start erä 4/5): AT GUN -snapshot + PERFECT START. Kellon ylittäessä 0 lukemat
+<!-- v1.26 (Pre-start erä 4/5): AT GUN -snapshot + PERFECT START. Kellon ylittäessä 0 lukemat
      (DIST, SOG) jäädytetään kerran laukaisuhetkeen ja palkit lukittuvat gun-asentoonsa.
      Tilateksti: OCS AT GUN (yli linjan) / PERFECT START (≤2 m, ei OCS, ≥98% P90) / AT GUN (muu).
      Ilman polaaria ei voi olla PERFECT (pace vaatii tavoitenopeuden). Start ja Reset tyhjentävät
      snapshotin. Kellon napautus-Sync estetty laukaisun jälkeen. Taktinen dual-bar nyt kokonainen. -->
-<!-- v1.7 (Pre-start erä 3): aikataulu + vasen palkki + re-planointi. Vasen palkki näyttää nyt
+<!-- v1.25 (Pre-start erä 3): aikataulu + vasen palkki + re-planointi. Vasen palkki näyttää nyt
      sijaintipoikkeaman lineaarisesta lähestymiskäyrästä (PUSH=jäljessä / ON PATH / EASE=edellä),
      ankkuroitu Start-hetkellä (glide d0/t0, profiili lineaarinen — valitsin siirretty myöhemmäksi).
      Vauhtirangaistus nostaa PUSH-suuntaan kun nopeus vajaa, nollataan täydellä vauhdilla. Re-planointi
      (§6): kun täysi vauhti (SOG ≥ 90% tavoitteesta) ensi kertaa saavutetaan, aikataulu ankkuroidaan
      uusiksi lineaariseksi loppusprintiksi. Aikataulu on KONTEKSTI, marginaali on totuus (§5).
      Seuraavaksi: AT GUN -snapshot + PERFECT START (erä 4/5). -->
-<!-- v1.6 (Pre-start erä 2, korjauspaketti): (1) marginaali-esikatselu poistettu setup-näkymästä
+<!-- v1.24 (Pre-start erä 2, korjauspaketti): (1) marginaali-esikatselu poistettu setup-näkymästä
      (päällekkäinen taktisen kanssa — setup on vain linja + kello). (2) preStartUpdateView() ajetaan
      nyt joka framessa loopissa, joten taktinen näkymä avautuu heti kun linja + kello valmiit, tilan
      muutostavasta riippumatta; ‹ SETUP-lippu (forceSetup) estää auto-palautuksen. (3) Kello rajattu
      −1:00:aan (PRESTART_MIN_TTS) — ei enää juokse rajatta miinukselle (aiemmin −227:10 mahdollinen). -->
-<!-- v1.5 (Pre-start erä 2, taktinen näkymä): mockupin dual-bar-layout tuotantoon. Aktivoituu
+<!-- v1.23 (Pre-start erä 2, taktinen näkymä): mockupin dual-bar-layout tuotantoon. Aktivoituu
      automaattisesti kun linja + kello asetettu (setup-sheet piiloon). Iso 7-segmenttikello keskellä
      (napauta = Sync), DIST/SOG 7-seg ylä/ala. Oikea palkki = marginaali (aktiivinen, neula + NOW-raja).
      Vasen palkki = aikataulu (erä 3, nyt vain värivyöhykkeet, ei neulaa). ‹ SETUP palaa asetuksiin
      kellon pysähtymättä. Setup-sheetin kapea marginaalipalkki poistettu (pystytarrat sekaisin
      kapealla) — korvattu esikatselutekstillä. Aikataulu + re-planointi erässä 3. -->
-<!-- v1.4 (Pre-start erä 2): marginaali + oikea palkki + lähtöajastin. Ajastin (aseta minuutit,
+<!-- v1.22 (Pre-start erä 2): marginaali + oikea palkki + lähtöajastin. Ajastin (aseta minuutit,
      Start, Sync pyöristää lähimpään tasominuuttiin). Tavoitenopeus = upwind-P90 (Polar.sectorSpeeds,
      O-PS-5: lähestymiskulman vauhti). Marginaali = projectedDistanceIfPushNow − DIST TO LINE
      (diskreetti sekunti-simulaatio, kiihdytys 20 s). Sanallinen tila WAIT/CLOSING/PUSH SOON/
      PUSH FULL NOW/OCS johdetaan MARGINAALISTA (§5). Oikea palkki + neula; NOW-laukaisuraja
      terävänä valkoisena reunana (O-PS-6). Reaktiopuskuri viivyttää laukaisun (§7). Aikataulu +
      vasen palkki tulevat erässä 3 (ks. Pre-Start valmistusohje v2 §9). -->
-<!-- v1.3 (Pre-start erä 1): PRE-START-näkymä + datatila. GPS ottaa nyt talteen lat/lon/accuracy
+<!-- v1.21 (Pre-start erä 1): PRE-START-näkymä + datatila. GPS ottaa nyt talteen lat/lon/accuracy
      (S.gps.lat/lon/acc). Uusi S.preStart{active,boat,pin}. Linjan asetus SET BOAT/SET PIN
      (kumpi tahansa ensin, molemmat ajamalla), oikea DIST TO LINE kohtisuorana etäisyytenä
      linjasegmenttiin (distToLine/preStartDist — O-PS-1, EI SOG-integraatio). collectPoint
@@ -3801,7 +3801,7 @@ document.querySelectorAll(".stepper").forEach(st=>{
 });
 
 /* ---------- init ---------- */
-const APP_VERSION="🇫🇮 Tackcall v1.9";
+const APP_VERSION="🇫🇮 Tackcall v1.27";
 (function(){
   const e=$("verEnable"); if(e) e.textContent=APP_VERSION;
   const n=$("verNote"); if(n) n.textContent=APP_VERSION+" · shares engine with index.html";
