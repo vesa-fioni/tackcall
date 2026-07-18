@@ -1,5 +1,12 @@
 <!DOCTYPE html>
 <!-- Tackcall Meter — MIT License — Copyright (c) 2026 Vesa Lindqvist — Contributors: Joonas Sandholm -->
+<!-- v1.7 (Pre-start erä 3): aikataulu + vasen palkki + re-planointi. Vasen palkki näyttää nyt
+     sijaintipoikkeaman lineaarisesta lähestymiskäyrästä (PUSH=jäljessä / ON PATH / EASE=edellä),
+     ankkuroitu Start-hetkellä (glide d0/t0, profiili lineaarinen — valitsin siirretty myöhemmäksi).
+     Vauhtirangaistus nostaa PUSH-suuntaan kun nopeus vajaa, nollataan täydellä vauhdilla. Re-planointi
+     (§6): kun täysi vauhti (SOG ≥ 90% tavoitteesta) ensi kertaa saavutetaan, aikataulu ankkuroidaan
+     uusiksi lineaariseksi loppusprintiksi. Aikataulu on KONTEKSTI, marginaali on totuus (§5).
+     Seuraavaksi: AT GUN -snapshot + PERFECT START (erä 4/5). -->
 <!-- v1.6 (Pre-start erä 2, korjauspaketti): (1) marginaali-esikatselu poistettu setup-näkymästä
      (päällekkäinen taktisen kanssa — setup on vain linja + kello). (2) preStartUpdateView() ajetaan
      nyt joka framessa loopissa, joten taktinen näkymä avautuu heti kun linja + kello valmiit, tilan
@@ -692,6 +699,7 @@ body.portrait #btnMean{top:22%; height:22%;}
       <div class="ptZone ptL-push"><span>PUSH</span></div>
       <div class="ptZone ptL-onpath"><span>ON PATH</span></div>
       <div class="ptZone ptL-ease"><span>EASE</span></div>
+      <div class="ptNeedle hidden" id="ptNeedleLeft"></div>
     </div>
     <div class="ptMid">
       <div class="ptBox top">
@@ -760,6 +768,7 @@ const S = {
   preStart:{ active:false, boat:null, pin:null,
              durS:300, gunTs:null,        // erä 2: ajastin — durS = asetettu sekvenssin pituus, gunTs = laukaushetken absoluuttinen aika (null = ei käynnissä)
              targetKn:null, scaleRefM:null, // erä 2: tavoitenopeus (upwind-P90, O-PS-5) + palkin täysasteikon referenssi
+             glide:null, replanned:false, // erä 3: aikataulun ankkuri {d0,t0,k} + re-planointilippu (§6)
              forceSetup:false }, // erä 2: käyttäjä valitsi ‹ SETUP → pysy setup-näkymässä vaikka ehdot täyttyisivät
   wakeLock:null,
   demo:false, demoT:0,
@@ -856,6 +865,30 @@ function preStartTimeToStartS(){
   if(S.preStart.gunTs==null) return null;
   const t=(S.preStart.gunTs - Date.now())/1000;
   return t<PRESTART_MIN_TTS ? PRESTART_MIN_TTS : t;
+}
+
+// ---- erä 3: aikataulu (vasen palkki) ----
+const PRESTART_PROFILE_K = 1;        // profiilin muoto: lineaarinen (turvallisin, ei ristiriitainen — §6). Valitsin siirretty myöhemmäksi.
+const PRESTART_FULLSPEED_FRAC = 0.9; // "täysi vauhti" = SOG >= tämä osuus tavoitteesta (re-planoinnin + vauhtirangaistuksen laukaisin)
+// Ihanne-etäisyys hetkellä t suunnitellulla lähestymiskäyrällä: d0·(t/t0)^(1/k).
+function preStartIdealDist(t){
+  const g=S.preStart.glide; if(!g) return null;
+  const frac=Math.max(0, Math.min(1, t/g.t0));
+  return g.d0 * Math.pow(frac, 1/g.k);
+}
+// Vasemman palkin neulan sijainti (%, 0=ylä/PUSH, 50=ON PATH, 100=ala/EASE).
+// dev>0 (kauempana kuin ihanne) → jäljessä → PUSH (ylös). Vauhtirangaistus nostaa PUSH-suuntaan
+// jos nopeus on vajaa; nollataan täydellä vauhdilla (silloin annat jo kaiken — ei "paina lisää").
+function preStartScheduleNeedlePct(d, tts, atFullSpeed, paceRatioClamped){
+  const ideal=preStartIdealDist(tts);
+  if(ideal==null) return null;
+  const dev=d-ideal;
+  const MIN=8; const scaleRef=Math.max(ideal, MIN);
+  const speedDeficit=Math.max(0, 1-paceRatioClamped);
+  const penalty=atFullSpeed ? 0 : speedDeficit*(scaleRef*0.25);
+  const combined=dev+penalty;
+  const scaleM=Math.max(scaleRef*0.6, MIN*0.6);
+  return Math.max(4, Math.min(96, 50 - (combined/scaleM)*45));
 }
 
 // Näyttökynnys: tämän alle SOG näytetään "ei nopeutta" (--), ei harhaanjohtavaa 0.0.
@@ -2882,6 +2915,31 @@ function renderPreStartTactical(){
     needle.style.top=(m.pos*100)+'%';
     st.className='ptState '+m.cls; st.textContent=m.txt;
   }
+
+  // vasen palkki (aikataulu) + re-planointi (erä 3)
+  const barL=$("ptBarLeft"), needleL=$("ptNeedleLeft");
+  let schedPct=null;
+  if(ps.glide && distM!=null && tts!=null && tts>0){
+    const targetMs = ps.targetKn!=null ? ps.targetKn*PRESTART_KN_TO_MS : null;
+    const sMs = S.gps.sog!=null ? S.gps.sog*PRESTART_KN_TO_MS : 0;
+    const atFull = targetMs!=null && sMs >= targetMs*PRESTART_FULLSPEED_FRAC;
+    // Re-planointi (§6): kun täysi vauhti ensi kertaa saavutetaan, ankkuroi aikataulu uusiksi
+    // nykyisestä sijainnista lineaariseksi loppusprintiksi — vanha profiilioletus ei enää päde.
+    if(!ps.replanned && atFull){
+      ps.glide={ d0:distM, t0:Math.max(1,tts), k:1 };
+      ps.replanned=true;
+    }
+    const paceRatio = (targetMs!=null && targetMs>0) ? Math.max(0, Math.min(1.2, sMs/targetMs)) : 0;
+    schedPct=preStartScheduleNeedlePct(distM, tts, atFull, paceRatio);
+  }
+  if(schedPct!=null){
+    barL.classList.remove("inactive");
+    needleL.classList.remove("hidden");
+    needleL.style.top=schedPct+'%';
+  } else {
+    barL.classList.add("inactive");
+    needleL.classList.add("hidden");
+  }
 }
 function preStartMarkEnd(which){
   if(S.gps.lat==null){ return; } // ei fixiä — ei merkitä mitään
@@ -2924,6 +2982,9 @@ $("btnPsStart").addEventListener("click", ()=>{
   S.preStart.forceSetup=false; // Start → salli taktinen näkymä
   const d=preStartDist();
   S.preStart.scaleRefM=Math.max((d!=null?d:50)*0.6, 20); // palkin täysasteikko lähestymisen alkaessa
+  // erä 3: ankkuroi aikataulu lähestymisen alkuun (lineaarinen profiili)
+  S.preStart.glide={ d0:(d!=null?d:50), t0:S.preStart.durS, k:PRESTART_PROFILE_K };
+  S.preStart.replanned=false;
   renderPreStart(); preStartUpdateView(); // linja + kello → taktinen näkymä
 });
 $("btnPsSync").addEventListener("click", ()=>{
@@ -2935,7 +2996,9 @@ $("btnPsSync").addEventListener("click", ()=>{
   renderPreStart();
 });
 $("btnPsReset").addEventListener("click", ()=>{
-  S.preStart.gunTs=null; S.preStart.scaleRefM=null; renderPreStart(); preStartUpdateView();
+  S.preStart.gunTs=null; S.preStart.scaleRefM=null;
+  S.preStart.glide=null; S.preStart.replanned=false; // erä 3: nollaa aikataulu
+  renderPreStart(); preStartUpdateView();
 });
 // erä 2: taktisen näkymän napit
 $("btnPtExit").addEventListener("click", ()=>{
@@ -3679,7 +3742,7 @@ document.querySelectorAll(".stepper").forEach(st=>{
 });
 
 /* ---------- init ---------- */
-const APP_VERSION="🇫🇮 Tackcall v1.6";
+const APP_VERSION="🇫🇮 Tackcall v1.7";
 (function(){
   const e=$("verEnable"); if(e) e.textContent=APP_VERSION;
   const n=$("verNote"); if(n) n.textContent=APP_VERSION+" · shares engine with index.html";
