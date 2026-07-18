@@ -1,5 +1,9 @@
 <!DOCTYPE html>
 <!-- Tackcall Meter — MIT License — Copyright (c) 2026 Vesa Lindqvist — Contributors: Joonas Sandholm -->
+<!-- v1.9 (Pre-start): automaattinen paluu kompassitilaan lähdön jälkeen. Minuutti laukaisusta
+     (PRESTART_AUTO_EXIT_S=60, kalibroitava; ehdokas asetukseksi) pre-start sulkeutuu, datatila pois
+     ja kompassinäkymä palautuu — kilpailu on alkanut. Sekvenssin tila nollataan (linja jää muistiin).
+     preStartCheckAutoExit() ajetaan loopissa. -->
 <!-- v1.8 (Pre-start erä 4/5): AT GUN -snapshot + PERFECT START. Kellon ylittäessä 0 lukemat
      (DIST, SOG) jäädytetään kerran laukaisuhetkeen ja palkit lukittuvat gun-asentoonsa.
      Tilateksti: OCS AT GUN (yli linjan) / PERFECT START (≤2 m, ei OCS, ≥98% P90) / AT GUN (muu).
@@ -878,6 +882,27 @@ function preStartTimeToStartS(){
 // ---- erä 3: aikataulu (vasen palkki) ----
 const PRESTART_PROFILE_K = 1;        // profiilin muoto: lineaarinen (turvallisin, ei ristiriitainen — §6). Valitsin siirretty myöhemmäksi.
 const PRESTART_FULLSPEED_FRAC = 0.9; // "täysi vauhti" = SOG >= tämä osuus tavoitteesta (re-planoinnin + vauhtirangaistuksen laukaisin)
+// ---- erä 4/5: automaattinen paluu kompassitilaan lähdön jälkeen ----
+// Sekunteja laukaisusta, jonka jälkeen pre-start sulkeutuu ja kompassinäkymä palautuu.
+// Alustava 60 s (kalibroitava; ehdokas asetukseksi myöhemmin).
+const PRESTART_AUTO_EXIT_S = 60;
+// Sulje pre-start ja palaa kompassiin. Nollaa sekvenssin tila seuraavaa lähtöä varten
+// (linja jää muistiin — se ei silti persistoidu istuntojen yli, §0).
+function preStartExitToCompass(){
+  $("preStartTactical").classList.remove("show");
+  $("preStartSheet").classList.add("hidden");
+  S.preStart.active=false;      // datatila pois (lähtö ohi — kilpailu alkaa)
+  S.preStart.gunTs=null; S.preStart.snapshot=null;
+  S.preStart.glide=null; S.preStart.replanned=false;
+  S.preStart.scaleRefM=null; S.preStart.forceSetup=false;
+}
+// Tarkista onko aika palata kompassiin (kutsutaan loopista). Palauttaa true jos siirtymä tehtiin.
+function preStartCheckAutoExit(){
+  if(S.preStart.gunTs==null) return false;
+  const elapsed=(Date.now()-S.preStart.gunTs)/1000; // sekunteja laukaisusta (positiivinen kun ohi)
+  if(elapsed>=PRESTART_AUTO_EXIT_S){ preStartExitToCompass(); return true; }
+  return false;
+}
 // Ihanne-etäisyys hetkellä t suunnitellulla lähestymiskäyrällä: d0·(t/t0)^(1/k).
 function preStartIdealDist(t){
   const g=S.preStart.glide; if(!g) return null;
@@ -2711,9 +2736,11 @@ function loop(){
   try{ if(S.demo) stepDemo(); render();
     // Pre-start: päivitä livenä joko taktinen näkymä tai setup-sheet, kumpi näkyvissä.
     if(S.preStart.active){
-      preStartUpdateView(); // tarkista joka framessa: linja + kello → taktinen näkymä auki
-      if($("preStartTactical").classList.contains("show")) renderPreStartTactical();
-      else if(!$("preStartSheet").classList.contains("hidden")) renderPreStart();
+      if(!preStartCheckAutoExit()){ // minuutti lähdön jälkeen → kompassiin (ei jatketa päivitystä)
+        preStartUpdateView(); // tarkista joka framessa: linja + kello → taktinen näkymä auki
+        if($("preStartTactical").classList.contains("show")) renderPreStartTactical();
+        else if(!$("preStartSheet").classList.contains("hidden")) renderPreStart();
+      }
     }
   }catch(e){}
   requestAnimationFrame(loop);
@@ -3774,7 +3801,7 @@ document.querySelectorAll(".stepper").forEach(st=>{
 });
 
 /* ---------- init ---------- */
-const APP_VERSION="🇫🇮 Tackcall v1.8";
+const APP_VERSION="🇫🇮 Tackcall v1.9";
 (function(){
   const e=$("verEnable"); if(e) e.textContent=APP_VERSION;
   const n=$("verNote"); if(n) n.textContent=APP_VERSION+" · shares engine with index.html";
