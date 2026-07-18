@@ -1,5 +1,11 @@
 <!DOCTYPE html>
 <!-- Tackcall Meter — MIT License — Copyright (c) 2026 Vesa Lindqvist — Contributors: Joonas Sandholm -->
+<!-- v1.5 (Pre-start erä 2, taktinen näkymä): mockupin dual-bar-layout tuotantoon. Aktivoituu
+     automaattisesti kun linja + kello asetettu (setup-sheet piiloon). Iso 7-segmenttikello keskellä
+     (napauta = Sync), DIST/SOG 7-seg ylä/ala. Oikea palkki = marginaali (aktiivinen, neula + NOW-raja).
+     Vasen palkki = aikataulu (erä 3, nyt vain värivyöhykkeet, ei neulaa). ‹ SETUP palaa asetuksiin
+     kellon pysähtymättä. Setup-sheetin kapea marginaalipalkki poistettu (pystytarrat sekaisin
+     kapealla) — korvattu esikatselutekstillä. Aikataulu + re-planointi erässä 3. -->
 <!-- v1.4 (Pre-start erä 2): marginaali + oikea palkki + lähtöajastin. Ajastin (aseta minuutit,
      Start, Sync pyöristää lähimpään tasominuuttiin). Tavoitenopeus = upwind-P90 (Polar.sectorSpeeds,
      O-PS-5: lähestymiskulman vauhti). Marginaali = projectedDistanceIfPushNow − DIST TO LINE
@@ -585,6 +591,48 @@ body.portrait #btnMean{top:22%; height:22%;}
 .psNeedle.hidden{display:none;}
 .psTacReadout{font-family:var(--mono);font-size:13px;color:#c7ced4;text-align:center;}
 .psTacReadout b{color:#eef2f5;font-size:15px;}
+
+/* ===== erä 2: taktinen dual-bar-näkymä (aktivoituu kun linja + kello asetettu) ===== */
+#preStartTactical{position:fixed;inset:0;z-index:60;background:#000;display:none;}
+#preStartTactical.show{display:block;}
+.ptStage{display:flex;gap:6px;padding:8px;padding-top:calc(8px + env(safe-area-inset-top));padding-bottom:calc(8px + env(safe-area-inset-bottom));height:100%;box-sizing:border-box;}
+.ptBar{width:19%;flex:0 0 19%;border-radius:14px;overflow:hidden;border:1px solid #1c232b;position:relative;background:#050708;}
+.ptBar.inactive{opacity:.4;}
+.ptZone{position:absolute;left:0;right:0;display:flex;align-items:center;justify-content:center;}
+.ptZone span{font-family:var(--mono);font-size:11px;font-weight:800;letter-spacing:.05em;writing-mode:vertical-rl;transform:rotate(180deg);color:#fff;text-shadow:0 0 6px rgba(0,0,0,.8);}
+/* vasen palkki (aikataulu) — erä 3; nyt vain värivyöhykkeet, ei neulaa */
+.ptL-push{top:0;height:41%;background:linear-gradient(to bottom,rgba(255,43,43,.9),rgba(255,138,30,.4));}
+.ptL-onpath{top:41%;height:18%;background:rgba(25,226,106,.9);}
+.ptL-ease{top:59%;height:41%;background:linear-gradient(to top,rgba(25,224,224,.85),rgba(25,224,224,.3));}
+/* oikea palkki (marginaali) — aktiivinen */
+.ptR-wait{top:0;height:56%;background:linear-gradient(to bottom,rgba(25,224,224,.2),rgba(25,224,224,.5));}
+.ptR-closing{top:56%;height:22%;background:rgba(255,209,26,.55);}
+.ptR-now{top:78%;height:22%;background:rgba(25,226,106,.9);}
+.ptNowEdge{position:absolute;left:0;right:0;top:78%;height:3px;margin-top:-1.5px;background:#fff;box-shadow:0 0 8px 1px rgba(255,255,255,.85);z-index:3;}
+.ptNowEdge::after{content:"▶";position:absolute;left:-11px;top:-7px;font-size:11px;color:#fff;}
+.ptNeedle{position:absolute;left:-3px;right:-3px;height:4px;margin-top:-2px;background:#fff;box-shadow:0 0 10px 2px rgba(255,255,255,.75);z-index:4;transition:top .2s ease;}
+.ptNeedle.hidden{display:none;}
+/* keskisarake */
+.ptMid{flex:1;display:flex;flex-direction:column;gap:6px;min-width:0;}
+.ptBox{background:#0b0d10;border:1px solid #1c232b;border-radius:14px;text-align:center;display:flex;flex-direction:column;align-items:center;justify-content:center;}
+.ptBox.top,.ptBox.bot{flex:0 0 auto;padding:10px 8px;}
+.ptBox.hero{flex:1;gap:2px;}
+.ptLbl{font-family:var(--mono);font-size:12px;color:#7d8791;letter-spacing:.1em;}
+.ptSeg{display:flex;align-items:baseline;justify-content:center;gap:5px;}
+.ptSeg svg.seg{width:auto;display:block;}
+.ptSeg svg.seg polygon,.ptSeg svg.seg circle{fill:#eef2f5;}
+.ptBox.top .ptSeg svg.seg,.ptBox.bot .ptSeg svg.seg{height:min(8vw,40px);}
+.ptBox.hero .ptSeg svg.seg{height:min(19vw,120px);}
+.ptUnit{font-family:var(--mono);font-size:min(4.5vw,20px);color:#7d8791;}
+.ptHeroLbl{font-family:var(--mono);font-size:13px;color:#7d8791;letter-spacing:.14em;margin-top:2px;}
+.ptState{font-family:var(--mono);font-size:15px;font-weight:800;letter-spacing:.05em;margin-top:8px;min-height:20px;}
+.ptState.st-wait{color:var(--cyan);}
+.ptState.st-closing{color:var(--yellow);}
+.ptState.st-soon{color:var(--orange);}
+.ptState.st-urgent{color:var(--red);animation:psPulse .7s ease-in-out infinite;}
+.ptState.st-hidden{visibility:hidden;}
+.ptExit{position:absolute;top:calc(10px + env(safe-area-inset-top));left:14px;z-index:70;font-family:var(--mono);font-size:12px;font-weight:700;color:#7d8791;background:rgba(11,13,16,.8);border:1px solid #1c232b;border-radius:9px;padding:6px 10px;letter-spacing:.06em;}
+.ptSyncHint{position:absolute;bottom:calc(6px + env(safe-area-inset-bottom));left:0;right:0;text-align:center;font-family:var(--mono);font-size:10px;color:#4a4a4a;letter-spacing:.06em;pointer-events:none;}
 </style>
 <div class="sheet hidden" id="preStartSheet">
 <div class="panel">
@@ -622,26 +670,56 @@ body.portrait #btnMean{top:22%; height:22%;}
 </div>
 <div class="ssHint">Set the sequence length, tap <b>Start</b>. When the first signal sounds, tap <b>Sync</b> — it snaps the clock to the nearest whole minute. Tap Sync again at any whole-minute signal to re-align.</div>
 
-<!-- erä 2: marginaali + oikea palkki -->
+<!-- erä 2: marginaali-esikatselu (varsinainen palkki taktisessa näkymässä) -->
 <div class="ssSub">Margin — when to commit</div>
 <div class="psTactical">
   <div class="psTacMid">
     <div class="psState st-idle" id="psState">Set line, target &amp; timer</div>
     <div class="psTacReadout">TGT <b id="psTgt">—</b> · SOG <b id="psTacSog">—</b></div>
   </div>
-  <div class="psMarginBar" id="psMarginBar">
-    <div class="psZone psZ-wait"><span>WAIT</span></div>
-    <div class="psZone psZ-closing"><span>CLOSING</span></div>
-    <div class="psZone psZ-now"><span>NOW</span></div>
-    <div class="psNowEdge"></div>
-    <div class="psNeedle hidden" id="psNeedle"></div>
-  </div>
 </div>
-<div class="ssHint">Margin is the honest signal: if you push to full speed now, do you still reach the line at target pace by the gun? The white line at the green edge is the moment to commit — don't wait for the needle to reach the bottom.</div>
+<div class="ssHint">When the line is set and the timer is started, the full tactical view opens automatically with the margin bar.</div>
 
 <button class="close reset" id="btnClearLine">Clear line</button>
 <button class="close" id="btnClosePreStart">Done</button>
 </div>
+</div>
+
+<!-- erä 2: taktinen dual-bar-näkymä. Aktivoituu kun linja + kello asetettu.
+     Oikea palkki = marginaali (aktiivinen). Vasen palkki = aikataulu (erä 3, nyt vain vyöhykkeet).
+     Kello 7-segmenttinä; napauta kelloa = Sync. -->
+<div id="preStartTactical">
+  <button class="ptExit" id="btnPtExit">‹ SETUP</button>
+  <div class="ptStage">
+    <div class="ptBar inactive" id="ptBarLeft">
+      <div class="ptZone ptL-push"><span>PUSH</span></div>
+      <div class="ptZone ptL-onpath"><span>ON PATH</span></div>
+      <div class="ptZone ptL-ease"><span>EASE</span></div>
+    </div>
+    <div class="ptMid">
+      <div class="ptBox top">
+        <div class="ptLbl">DIST TO LINE</div>
+        <div class="ptSeg" id="ptDist">—</div>
+      </div>
+      <div class="ptBox hero" id="ptClockBox">
+        <div class="ptSeg" id="ptClock">—</div>
+        <div class="ptHeroLbl">TO START</div>
+        <div class="ptState st-hidden" id="ptState">—</div>
+      </div>
+      <div class="ptBox bot">
+        <div class="ptLbl">SOG</div>
+        <div class="ptSeg" id="ptSog">—</div>
+      </div>
+    </div>
+    <div class="ptBar" id="ptBarRight">
+      <div class="ptZone ptR-wait"><span>WAIT</span></div>
+      <div class="ptZone ptR-closing"><span>CLOSING</span></div>
+      <div class="ptZone ptR-now"><span>NOW</span></div>
+      <div class="ptNowEdge"></div>
+      <div class="ptNeedle hidden" id="ptNeedle"></div>
+    </div>
+  </div>
+  <div class="ptSyncHint">Tap the clock to Sync · ‹ SETUP to adjust</div>
 </div>
 
 <!-- asennusohjaus (Edellytys / A: offset / B: kallistustesti — ks. valmistusohjeet v2) -->
@@ -2589,8 +2667,11 @@ function render(){
 /* ---------- silmukat ---------- */
 function loop(){
   try{ if(S.demo) stepDemo(); render();
-    // Pre-start (erä 1): päivitä etäisyyslukema livenä kun sheet on auki.
-    if(S.preStart.active && !$("preStartSheet").classList.contains("hidden")) renderPreStart();
+    // Pre-start: päivitä livenä joko taktinen näkymä tai setup-sheet, kumpi näkyvissä.
+    if(S.preStart.active){
+      if($("preStartTactical").classList.contains("show")) renderPreStartTactical();
+      else if(!$("preStartSheet").classList.contains("hidden")) renderPreStart();
+    }
   }catch(e){}
   requestAnimationFrame(loop);
 }
@@ -2676,6 +2757,39 @@ function preStartFmtEnd(pt){
   if(!pt) return '—';
   return 'SET' + (pt.acc!=null ? ' ±'+Math.round(pt.acc)+'m' : '');
 }
+// ---- erä 2: 7-segmenttinumerot inline-SVG:nä (portattu pre-start-mockupista) ----
+var PS_SEG7={'0':[1,1,1,1,1,1,0],'1':[0,1,1,0,0,0,0],'2':[1,1,0,1,1,0,1],'3':[1,1,1,1,0,0,1],
+  '4':[0,1,1,0,0,1,1],'5':[1,0,1,1,0,1,1],'6':[1,0,1,1,1,1,1],'7':[1,1,1,0,0,0,0],
+  '8':[1,1,1,1,1,1,1],'9':[1,1,1,1,0,1,1],'-':[0,0,0,0,0,0,1],' ':[0,0,0,0,0,0,0]};
+function psHPoly(cx,cy,len,t){var h=t/2;return [[cx-len/2,cy],[cx-len/2+h,cy-h],[cx+len/2-h,cy-h],[cx+len/2,cy],[cx+len/2-h,cy+h],[cx-len/2+h,cy+h]];}
+function psVPoly(cx,cy,len,t){var h=t/2;return [[cx,cy-len/2],[cx+h,cy-len/2+h],[cx+h,cy+len/2-h],[cx,cy+len/2],[cx-h,cy+len/2-h],[cx-h,cy-len/2+h]];}
+function psPolyStr(pts){return pts.map(function(p){return p[0].toFixed(1)+','+p[1].toFixed(1);}).join(' ');}
+function psDigitPolys(ch,ox,w,h,t){
+  var s=PS_SEG7[ch]||PS_SEG7[' ']; var g=t*0.18;
+  var lx=ox+t/2, rx=ox+w-t/2, yA=t/2, yM=h/2, yD=h-t/2;
+  var vlen=(h-t)/2-2*g, uY=(yA+yM)/2, dY=(yM+yD)/2, hlen=w-t-2*g, out=[];
+  if(s[0]) out.push(psHPoly(ox+w/2,yA,hlen,t));
+  if(s[1]) out.push(psVPoly(rx,uY,vlen,t));
+  if(s[2]) out.push(psVPoly(rx,dY,vlen,t));
+  if(s[3]) out.push(psHPoly(ox+w/2,yD,hlen,t));
+  if(s[4]) out.push(psVPoly(lx,dY,vlen,t));
+  if(s[5]) out.push(psVPoly(lx,uY,vlen,t));
+  if(s[6]) out.push(psHPoly(ox+w/2,yM,hlen,t));
+  return out;
+}
+function psSegSVG(str){
+  var H=100, dw=62, t=16, gap=12, x=0, polys=[], dots=[];
+  for(var k=0;k<str.length;k++){
+    var ch=str[k];
+    if(ch===':'){ var cw=dw*0.42; dots.push([x+cw/2,H*0.34],[x+cw/2,H*0.68]); x+=cw+gap; }
+    else if(ch==='.'){ var pw=dw*0.34; dots.push([x+pw/2,H-t*0.6]); x+=pw+gap; }
+    else { psDigitPolys(ch,x,dw,H,t).forEach(function(p){polys.push(p);}); x+=dw+gap; }
+  }
+  var totalW=Math.max(1,x-gap), parts='';
+  polys.forEach(function(p){ parts+='<polygon points="'+psPolyStr(p)+'"/>'; });
+  dots.forEach(function(d){ parts+='<circle cx="'+d[0].toFixed(1)+'" cy="'+d[1].toFixed(1)+'" r="'+(t*0.55).toFixed(1)+'"/>'; });
+  return '<svg class="seg" viewBox="0 0 '+totalW.toFixed(1)+' '+H+'" preserveAspectRatio="xMidYMid meet">'+parts+'</svg>';
+}
 function preStartFmtClock(s){
   if(s==null) return '—:—';
   const neg=s<0; let a=Math.abs(Math.round(s));
@@ -2695,59 +2809,89 @@ function renderPreStart(){
   }
   renderPreStartTimerMargin(d);
 }
-// erä 2: ajastin + marginaali + oikea palkki
+// erä 2: jaettu marginaalilaskenta — sama logiikka setup-esikatselulle ja taktiselle näkymälle.
+// Palauttaa null jos marginaalia ei voi laskea (puuttuu linja / tavoite / käynnissä oleva kello).
+function preStartComputeMargin(distM, tts){
+  const ps=S.preStart;
+  const targetMs = ps.targetKn!=null ? ps.targetKn*PRESTART_KN_TO_MS : null;
+  if(distM==null || targetMs==null || tts==null) return null;
+  const sMs = S.gps.sog!=null ? S.gps.sog*PRESTART_KN_TO_MS : 0;
+  const scaleRefM = ps.scaleRefM || Math.max(distM*0.6, 20);
+  const cautionM=scaleRefM*0.28, warnM=scaleRefM*0.16;
+  const bufferM=Math.max(3, scaleRefM*0.05); // reaktiopuskuri (§7)
+  const proj=projectedDistanceIfPushNow(Math.max(0,tts), sMs, targetMs, PRESTART_ACCEL_S);
+  const marginM=proj-distM;
+  // neulan sijainti: margin=scaleRefM → yläreuna; margin=-buffer → NOW-yläreuna (laukaisu)
+  let pos;
+  if(marginM >= -bufferM){ const frac=(scaleRefM-marginM)/(scaleRefM+bufferM); pos=Math.max(0,Math.min(1,frac))*PRESTART_NOW_EDGE; }
+  else { const over=(-bufferM-marginM); pos=PRESTART_NOW_EDGE+Math.min(1,over/scaleRefM)*(1-PRESTART_NOW_EDGE); }
+  // sanallinen tila johdetaan MARGINAALISTA (§5)
+  let cls,txt;
+  if(distM<0){ cls='st-urgent'; txt='OCS RISK'; }
+  else if(marginM<=-bufferM){ cls='st-urgent'; txt='PUSH FULL NOW'; }
+  else if(marginM>cautionM){ cls='st-wait'; txt='WAIT'; }
+  else if(marginM>warnM){ cls='st-closing'; txt='CLOSING'; }
+  else { cls='st-soon'; txt='PUSH SOON'; }
+  return { marginM, pos, cls, txt };
+}
+// erä 2: setup-sheetin marginaali-esikatselu (TGT/SOG + tilateksti, ei palkkia)
 function renderPreStartTimerMargin(distM){
   const ps=S.preStart;
-  const tts=preStartTimeToStartS();          // sekunteja laukaisuun (voi olla null / negat.)
+  const tts=preStartTimeToStartS();
   $("psDurVal").textContent = preStartFmtClock(ps.durS);
   $("psTime").textContent   = preStartFmtClock(tts!=null ? tts : ps.durS);
   $("psTgt").textContent    = ps.targetKn!=null ? ps.targetKn.toFixed(1)+' kn' : '—';
   $("psTacSog").textContent = S.gps.sog!=null ? S.gps.sog.toFixed(1)+' kn' : '—';
-
-  const st=$("psState"), needle=$("psNeedle");
-  const targetMs = ps.targetKn!=null ? ps.targetKn*PRESTART_KN_TO_MS : null;
-  const sMs      = S.gps.sog!=null ? S.gps.sog*PRESTART_KN_TO_MS : 0;
-
-  // Marginaali vaatii linjan (etäisyys), tavoitenopeuden ja käynnissä olevan ajastimen.
-  if(distM==null || targetMs==null || tts==null){
-    needle.classList.add("hidden");
+  const st=$("psState");
+  const m=preStartComputeMargin(distM, tts);
+  if(!m){
     st.className='psState st-idle';
-    st.textContent = (targetMs==null) ? 'No polar data yet — sail to learn target'
-                   : (distM==null)    ? 'Set the start line'
+    st.textContent = (ps.targetKn==null) ? 'No polar data yet — sail to learn target'
+                   : (distM==null)       ? 'Set the start line'
                    : 'Start the timer';
     return;
   }
-
-  const scaleRefM = ps.scaleRefM || Math.max(distM*0.6, 20);
-  const cautionM  = scaleRefM*0.28;
-  const warnM     = scaleRefM*0.16;
-  const bufferM   = Math.max(3, scaleRefM*0.05); // reaktiopuskuri (§7): laukaisu marginaalin ollessa jo lievästi negat.
-  const proj = projectedDistanceIfPushNow(Math.max(0,tts), sMs, targetMs, PRESTART_ACCEL_S);
-  const marginM = proj - distM;
-
-  // Neulan sijainti: margin=scaleRefM → yläreuna (WAIT); margin=-buffer → NOW-yläreuna (laukaisu).
-  let pos;
-  if(marginM >= -bufferM){
-    const frac=(scaleRefM - marginM)/(scaleRefM + bufferM);
-    pos = Math.max(0,Math.min(1,frac))*PRESTART_NOW_EDGE;
+  st.className='psState '+m.cls;
+  st.textContent=m.txt;
+}
+// erä 2: näkymän ohjaus — taktinen näkymä auki kun linja + kello asetettu.
+function preStartViewActive(){
+  return S.preStart.active && S.preStart.gunTs!=null && S.preStart.boat && S.preStart.pin;
+}
+function preStartUpdateView(){
+  const tac=$("preStartTactical");
+  if(preStartViewActive()){
+    $("preStartSheet").classList.add("hidden");
+    tac.classList.add("show");
   } else {
-    const over=(-bufferM - marginM);
-    pos = PRESTART_NOW_EDGE + Math.min(1,over/scaleRefM)*(1-PRESTART_NOW_EDGE);
+    tac.classList.remove("show");
   }
-  needle.classList.remove("hidden");
-  needle.style.top=(pos*100)+'%';
-
-  // Sanallinen tila johdetaan MARGINAALISTA (§5), ei aikataulusta.
-  if(distM<0){
-    st.className='psState st-urgent'; st.textContent='OCS RISK';
-  } else if(marginM <= -bufferM){
-    st.className='psState st-urgent'; st.textContent='PUSH FULL NOW';
-  } else if(marginM > cautionM){
-    st.className='psState st-wait'; st.textContent='WAIT';
-  } else if(marginM > warnM){
-    st.className='psState st-closing'; st.textContent='CLOSING';
+}
+// erä 2: taktisen dual-bar-näkymän renderöinti (kutsutaan loopista kun näkyvissä)
+function renderPreStartTactical(){
+  const ps=S.preStart;
+  const distM=preStartDist();
+  const tts=preStartTimeToStartS();
+  // DIST TO LINE (7-seg) + OVER-merkintä jos yli
+  let distEl=$("ptDist");
+  if(distM==null){ distEl.innerHTML='<span class="ptUnit">— m</span>'; }
+  else { const over=distM<0; const n=Math.round(Math.abs(distM));
+    distEl.innerHTML=psSegSVG(String(n))+'<span class="ptUnit">m'+(over?' OVER':'')+'</span>'; }
+  // kello (7-seg)
+  $("ptClock").innerHTML=psSegSVG(preStartFmtClock(tts!=null?tts:ps.durS));
+  // SOG (7-seg)
+  const sog=S.gps.sog!=null?S.gps.sog:0;
+  $("ptSog").innerHTML=psSegSVG(sog.toFixed(1))+'<span class="ptUnit">kn</span>';
+  // oikea palkki (marginaali) + tilateksti
+  const m=preStartComputeMargin(distM, tts);
+  const needle=$("ptNeedle"), st=$("ptState");
+  if(!m){
+    needle.classList.add("hidden");
+    st.className='ptState st-hidden'; st.textContent='—';
   } else {
-    st.className='psState st-soon'; st.textContent='PUSH SOON';
+    needle.classList.remove("hidden");
+    needle.style.top=(m.pos*100)+'%';
+    st.className='ptState '+m.cls; st.textContent=m.txt;
   }
 }
 function preStartMarkEnd(which){
@@ -2769,11 +2913,12 @@ $("btnOpenPreStart").addEventListener("click", ()=>{
 $("btnClosePreStart").addEventListener("click", ()=>{
   $("preStartSheet").classList.add("hidden");
   S.preStart.active=false; // datatila pois
+  preStartUpdateView();
 });
 $("btnSetBoat").addEventListener("click", ()=>preStartMarkEnd('boat'));
 $("btnSetPin").addEventListener("click", ()=>preStartMarkEnd('pin'));
 $("btnClearLine").addEventListener("click", ()=>{
-  S.preStart.boat=null; S.preStart.pin=null; renderPreStart();
+  S.preStart.boat=null; S.preStart.pin=null; renderPreStart(); preStartUpdateView();
 });
 // erä 2: ajastimen napit
 $("btnPsDurMinus").addEventListener("click", ()=>{
@@ -2788,7 +2933,7 @@ $("btnPsStart").addEventListener("click", ()=>{
   S.preStart.gunTs=Date.now()+S.preStart.durS*1000;
   const d=preStartDist();
   S.preStart.scaleRefM=Math.max((d!=null?d:50)*0.6, 20); // palkin täysasteikko lähestymisen alkaessa
-  renderPreStart();
+  renderPreStart(); preStartUpdateView(); // linja + kello → taktinen näkymä
 });
 $("btnPsSync").addEventListener("click", ()=>{
   if(S.preStart.gunTs==null) return;
@@ -2799,8 +2944,22 @@ $("btnPsSync").addEventListener("click", ()=>{
   renderPreStart();
 });
 $("btnPsReset").addEventListener("click", ()=>{
-  S.preStart.gunTs=null; S.preStart.scaleRefM=null; renderPreStart();
+  S.preStart.gunTs=null; S.preStart.scaleRefM=null; renderPreStart(); preStartUpdateView();
 });
+// erä 2: taktisen näkymän napit
+$("btnPtExit").addEventListener("click", ()=>{
+  // takaisin setup-sheetiin ilman että kello pysähtyy
+  $("preStartTactical").classList.remove("show");
+  $("preStartSheet").classList.remove("hidden");
+  renderPreStart();
+});
+$("ptClockBox").addEventListener("click", ()=>{
+  // napauta kelloa = Sync (committee-merkillä)
+  if(S.preStart.gunTs==null) return;
+  const remMs=S.preStart.gunTs-Date.now();
+  S.preStart.gunTs=Date.now()+Math.round(remMs/60000)*60000;
+});
+
 
 $("btnToggleKeep").addEventListener("click", ()=>{
   const sessions = Polar.splitSessions();
@@ -3528,7 +3687,7 @@ document.querySelectorAll(".stepper").forEach(st=>{
 });
 
 /* ---------- init ---------- */
-const APP_VERSION="🇫🇮 Tackcall v1.4";
+const APP_VERSION="🇫🇮 Tackcall v1.5";
 (function(){
   const e=$("verEnable"); if(e) e.textContent=APP_VERSION;
   const n=$("verNote"); if(n) n.textContent=APP_VERSION+" · shares engine with index.html";
