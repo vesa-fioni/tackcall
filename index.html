@@ -1,5 +1,12 @@
 <!DOCTYPE html>
 <!-- Tackcall Meter — MIT License — Copyright (c) 2026 Vesa Lindqvist — Contributors: Joonas Sandholm -->
+<!-- v1.35 (Pre-start: setup-näkymän käytettävyys): ajastin-osio on nyt vain kesto (näyttö + stepper),
+     Start/Sync/Reset poistettu sieltä. Sekvenssin käynnistys on nyt alalaidan primääri "Start sequence"
+     -nappi (syaani-korostus) — looginen "konfiguroi ylhäällä, käynnistä alhaalla" -virtaus. Sync tapahtuu
+     vain taktisessa näkymässä (napauta kelloa); setup-Sync poistettu (siellä sitä ei voinut käyttää
+     mielekkäästi — synkkaus tapahtuu signaalin soidessa = sekvenssin aikana). Käynnistysnappi
+     kontekstitietoinen: "Start sequence" kun kello pysähdyksissä, "Resume start view" kun palattu
+     ‹ SETUP:sta (ei uudelleenkäynnistä, synkkaus säilyy). Reset timer + Clear line sekundaarisina, Done sulkee. -->
 <!-- v1.34 (Pre-start: aikatauluprofiilin valitsin): vasemman palkin (aikataulu) profiili on nyt
      valittavissa — linear / moderate / late (ideal = d0·frac^(1/k), k = 1/2/3). Oletus MODERATE
      (mockupissa validoitu; suurin osa testeistä tehtiin sillä). Valitsin setup-sheetissä, aktiivinen
@@ -636,6 +643,7 @@ body.portrait #btnMean{top:22%; height:22%;}
 .psTimerBtns{display:flex;gap:8px;margin:8px 0;}
 .psTimerBtns button{flex:1;}
 .psProf.psProfActive{border-color:var(--cyan)!important;color:var(--cyan)!important;box-shadow:0 0 0 1px var(--cyan) inset;}
+.psLaunch{border-color:var(--cyan)!important;color:var(--cyan)!important;box-shadow:0 0 0 1px var(--cyan) inset;font-weight:600;}
 .psDurStep{display:flex;align-items:center;justify-content:center;gap:14px;margin:8px 0;}
 .psDurStep button{width:52px;height:40px;font-size:20px;background:#141414;border:1px solid var(--line,#1c232b);border-radius:10px;color:#eef2f5;}
 .psDurStep .psDurVal{font-family:var(--mono);font-size:22px;font-weight:700;min-width:70px;text-align:center;color:#eef2f5;}
@@ -736,12 +744,7 @@ body.portrait #btnMean{top:22%; height:22%;}
   <span class="psDurVal" id="psDurVal">5:00</span>
   <button id="btnPsDurPlus" type="button">+</button>
 </div>
-<div class="psTimerBtns">
-  <button class="close" id="btnPsStart">Start</button>
-  <button class="close" id="btnPsSync">Sync</button>
-  <button class="close reset" id="btnPsReset">Reset</button>
-</div>
-<div class="ssHint">Set the sequence length, tap <b>Start</b>. When the first signal sounds, tap <b>Sync</b> — it snaps the clock to the nearest whole minute. Tap Sync again at any whole-minute signal to re-align.</div>
+<div class="ssHint">Set how long the start sequence lasts. Launch it with <b>Start sequence</b> below. Once running, tap the clock to <b>Sync</b> it to a signal.</div>
 
 <div class="ssSub">Approach profile</div>
 <div class="psProfBtns" style="display:flex;gap:8px;margin:6px 0;">
@@ -751,12 +754,14 @@ body.portrait #btnMean{top:22%; height:22%;}
 </div>
 <div class="ssHint">Shapes the left (schedule) bar. <b>Linear</b>: steady approach. <b>Moderate</b>: hold back, then sprint. <b>Late</b>: hold back hard, sprint late. The margin bar stays the truth either way.</div>
 
-<div class="ssHint">When the line is set and the timer is started, the full tactical view opens automatically with the margin bar.</div>
-
 <div class="ssHint" id="psAccelHint"></div>
 
-<button class="close reset" id="btnClearLine">Clear line</button>
-<button class="close" id="btnClosePreStart">Done</button>
+<button class="close psLaunch" id="btnPsStart">Start sequence</button>
+<div style="display:flex;gap:8px;margin-top:8px;">
+  <button class="close reset" id="btnPsReset" style="flex:1;">Reset timer</button>
+  <button class="close reset" id="btnClearLine" style="flex:1;">Clear line</button>
+</div>
+<button class="close" id="btnClosePreStart" style="margin-top:8px;">Done</button>
 </div>
 </div>
 
@@ -3052,6 +3057,9 @@ function renderPreStart(){
     else if(ps.accelState==='dim')  ah.innerHTML='Acceleration: <b>'+ps.accelS.toFixed(0)+' s</b>, still learning ('+ps.accelN+' tack'+(ps.accelN===1?'':'s')+') — treat as rough.';
     else                            ah.innerHTML='Acceleration: <b>'+PRESTART_ACCEL_S+' s</b> assumed — sail and tack to learn your own.';
   }
+  // Käynnistysnapin teksti: käynnistä uusi sekvenssi vs. jatka jo käynnissä olevaa (ei uudelleenkäynnistystä).
+  const lb=$("btnPsStart");
+  if(lb) lb.textContent = (S.preStart.gunTs==null) ? 'Start sequence' : 'Resume start view';
   renderPreStartTimerMargin(d);
 }
 // Palauttaa null jos marginaalia ei voi laskea (puuttuu linja / tavoite / käynnissä oleva kello).
@@ -3217,14 +3225,17 @@ $("btnPsDurPlus").addEventListener("click", ()=>{
   S.preStart.durS=Math.min(600, S.preStart.durS+60); renderPreStart();
 });
 $("btnPsStart").addEventListener("click", ()=>{
-  S.preStart.gunTs=Date.now()+S.preStart.durS*1000;
-  S.preStart.forceSetup=false; // Start → salli taktinen näkymä
-  const d=preStartDist();
-  S.preStart.scaleRefM=Math.max((d!=null?d:50)*0.6, 20); // palkin täysasteikko lähestymisen alkaessa
-  // erä 3: ankkuroi aikataulu lähestymisen alkuun (valittu profiili, preStartProfileK)
-  S.preStart.glide={ d0:(d!=null?d:50), t0:S.preStart.durS, k:preStartProfileK() };
-  S.preStart.replanned=false;
-  S.preStart.snapshot=null; // erä 4/5: uusi sekvenssi → tyhjennä laukaisusnapshot
+  // Kontekstitietoinen: jos kello ei käynnissä → käynnistä sekvenssi. Jos jo käynnissä (palattu
+  // ‹ SETUP:sta) → jatka taktiseen ilman uudelleenkäynnistystä (synkkaus säilyy). Reset nollaa kellon.
+  if(S.preStart.gunTs==null){
+    S.preStart.gunTs=Date.now()+S.preStart.durS*1000;
+    const d=preStartDist();
+    S.preStart.scaleRefM=Math.max((d!=null?d:50)*0.6, 20); // palkin täysasteikko lähestymisen alkaessa
+    S.preStart.glide={ d0:(d!=null?d:50), t0:S.preStart.durS, k:preStartProfileK() }; // ankkuroi aikataulu (valittu profiili)
+    S.preStart.replanned=false;
+    S.preStart.snapshot=null;
+  }
+  S.preStart.forceSetup=false; // salli taktinen näkymä (käynnistys tai jatko)
   renderPreStart(); preStartUpdateView(); // linja + kello → taktinen näkymä
 });
 // Aikatauluprofiilin valinta. Päivittää glide.k jos kello käynnissä eikä re-planoitu
@@ -3241,14 +3252,7 @@ document.querySelectorAll(".psProf").forEach(b=>{
     syncPsProfBtns();
   });
 });
-$("btnPsSync").addEventListener("click", ()=>{
-  if(S.preStart.gunTs==null) return;
-  // Pyöristä jäljellä oleva aika lähimpään tasominuuttiin (committee-merkki).
-  const remMs=S.preStart.gunTs-Date.now();
-  const snapped=Math.round(remMs/60000)*60000;
-  S.preStart.gunTs=Date.now()+snapped;
-  renderPreStart();
-});
+// Sync tapahtuu vain taktisessa näkymässä (napauta kelloa) — setup-Sync poistettu käytettävyyssyistä.
 $("btnPsReset").addEventListener("click", ()=>{
   S.preStart.gunTs=null; S.preStart.scaleRefM=null;
   S.preStart.glide=null; S.preStart.replanned=false; // erä 3: nollaa aikataulu
@@ -4007,7 +4011,7 @@ document.querySelectorAll(".stepper").forEach(st=>{
 });
 
 /* ---------- init ---------- */
-const APP_VERSION="🇫🇮 Tackcall v1.34";
+const APP_VERSION="🇫🇮 Tackcall v1.35";
 (function(){
   const e=$("verEnable"); if(e) e.textContent=APP_VERSION;
   const n=$("verNote"); if(n) n.textContent=APP_VERSION+" · shares engine with index.html";
