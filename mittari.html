@@ -1,5 +1,47 @@
 <!DOCTYPE html>
 <!-- Tackcall Meter — MIT License — Copyright (c) 2026 Vesa Lindqvist — Contributors: Joonas Sandholm -->
+<!-- v1.34 (Pre-start: aikatauluprofiilin valitsin): vasemman palkin (aikataulu) profiili on nyt
+     valittavissa — linear / moderate / late (ideal = d0·frac^(1/k), k = 1/2/3). Oletus MODERATE
+     (mockupissa validoitu; suurin osa testeistä tehtiin sillä). Valitsin setup-sheetissä, aktiivinen
+     korostettu syaanilla. Profiilin vaihto päivittää glide.k jos kello käynnissä eikä re-planoitu;
+     sprintti pysyy lineaarisena re-planoinnin jälkeen. Marginaali (oikea palkki) pysyy totuutena
+     profiilista riippumatta — vasen on konteksti. Kenttävalidoitava: mikä profiili sopii parhaiten
+     (O-PS-11). PRESTART_PROFILE_K skalaarista mapiksi. -->
+<!-- v1.33 (Olosuhdemarginaali §3, tarkennus: upwind-suodatus): kiihtyvyys-oppija käyttää nyt
+     VAIN luovin käännöksiä, ei myötätuulen jiibejä. Pre-startin kiihdytys on luovissa; jiibin
+     toipuminen on eri profiili (nopeampi) ja sotki estimaattia ei-konservatiiviseen suuntaan.
+     Luokittelu ennen-ikkunan TWA-mediaanista (pisteiden omat meanit, _preStartPointTWA), raja
+     PRESTART_UPWIND_TWA_MAX=60°. Ei-luokiteltavissa (ei meaneja) → skip. minSog-suodatus lievensi
+     tätä jo osittain (jiibit menettävät vähemmän vauhtia), nyt aukoton. Kynnys kalibroitava (O-PS-8). -->
+<!-- v1.32 (Olosuhdemarginaali §3: opittu kiihtyvyys, taso 1): kiihtyvyysaika opitaan nyt
+     käännöstoipumisdatasta kiinteän 20 s vakion sijaan. Toipumislaskenta (preSog/minSog/recSec)
+     irrotettu jaetuksi funktioksi tackRecoveryMetrics — YKSI totuuden lähde renderLegQualityn (§7)
+     ja kiihtyvyys-oppijan kesken (todennettu identtiseksi, ei käytösmuutosta legilaatuun).
+     preStartLearnAccel skannaa käännökset (jaettu tackEvents), suodattaa minSog:llä syvälle pudonneet
+     (nollasta-kiihdytyksen analogit), aggregoi mediaanin, konservatiivinen bias ×1.10 (§5: oleta
+     hitaampi → varovaisempi marginaali → ei OCS). Luottamus none/dim/bright näytemäärän mukaan,
+     fallback 20 s vakioon. Cachetetaan avattaessa. Setup-sheetissä PERF-tyylinen indikaattori
+     (opittu / oppimassa / oletettu). Kaikki kynnykset kalibroitavia (O-PS-8). -->
+<!-- v1.31 (Olosuhdemarginaali §4: mean-semantiikan ohjeteksti): kevyt selitys ettei settled
+     close-hauled -mean tallenna vain suuntaa vaan myös kelin ylämäkivauhdin, jota pre-start käyttää
+     tavoitteena (tapa A, §2). Ei uutta toimintaohjetta — settled close-hauled jo implikoi täyttä
+     vauhtia; teksti tekee näkyväksi mihin vauhtia käytetään. Help: vaihe-teksti + oma kappale
+     "Mean speed & the start". Laajempi hyöty: parempi mean-vauhti parantaa myös PERF/polaaria. -->
+<!-- v1.30 (Olosuhdemarginaali §2: tuuleen ankkuroitu tavoitenopeus — tapa A): TARGET SOG luetaan
+     nyt settled close-hauled mean-asetuksen absoluuttisesta vauhdista (§1) — mittaa mitä TÄSSÄ kelissä
+     on saavutettavissa, ilman tuulimittaria. P90 (cachetettu targetP90-kenttään avattaessa) jää
+     varajärjestelmäksi. preStartComputeTarget(): molemmat halssit → hitaampi (min, konservatiivinen);
+     ×PRESTART_TARGET_CAUTION_FRAC (0.98) — asymmetrinen varovaisuus (§5), jää mieluummin vajaaksi kuin yli.
+     Null-vartija: mean-SOG vain kun mean itse ei-null. targetKn lasketaan livenä loopissa (seuraa
+     mean-päivityksiä), jäädytetään snapshotiin gun-hetkellä. Sivuvaikutus: PERFECT START -kriteeri
+     (≥98%) mitataan nyt kelin tavoitetta vasten, ei historian P90 — reilumpi kevyessä/kovassa tuulessa. -->
+<!-- v1.29 (Olosuhdemarginaali §1: absoluuttisen mean-SOG:n talteenotto — jaettu perusta):
+     mean-asetus säilöö nyt myös absoluuttisen settled close-hauled -vauhdin (S.meanStbSogKn/
+     meanBbSogKn, kn) sekä manuaalisessa (onMeanSet) että automaattisessa polussa (_pendingRefresh
+     → _commitPending). Serialisoidaan localStorage-mean-tietueeseen (tackcall_polar_means_v1),
+     ladataan tuoreuden portin sisällä, nollataan onReset:ssä. Additiivinen: raakalokin skeema EI
+     muutu, vanhat tallenteet → null → fallback. EI vielä käytössä päätöksissä — tavan A (tuuleen
+     ankkuroitu tavoite) esiehto, tulee §2:ssa. Aiemmin avgSog laskettiin mutta heitettiin pois. -->
 <!-- v1.28 (Pre-start): OCS-tunnistus toimii nyt oikeasti. preStartDist palauttaa ETUMERKILLISEN
      etäisyyden: negatiivinen = yli linjan (tuulen/radan puoli). Yli-puoli määritetään meaneista
      lasketusta tuuliakselista (preStartWindAxis, kehämean stb/bb). Ilman meaneja etumerkitön
@@ -491,8 +533,8 @@ body.portrait #btnMean{top:22%; height:22%;}
 <div class="panel">
 <h2>How to use</h2>
 <ol class="helpsteps">
-<li>Sail steadily on one tack and settle into your groove.</li>
-<li>Tap <b>SET UPWIND MEAN</b> to store your average heading. Do this on both starboard and port.</li>
+<li>Sail steadily on one tack and settle into your groove at full upwind speed.</li>
+<li>Tap <b>SET UPWIND MEAN</b> to store your average heading — and, because you're settled at full speed, your boat's top upwind speed for these conditions. Do this on both starboard and port.</li>
 <li>The bar then shows how far you've shifted from that mean, and the tones tell you lift, header or time to tack.</li>
 </ol>
 <div class="helph">The bar</div>
@@ -514,6 +556,8 @@ body.portrait #btnMean{top:22%; height:22%;}
 <p class="helpp">In Settings, turn on <b>Offshore (COG)</b> to replace the compass with GPS course over ground — useful if you want to avoid compass mounting/tilt issues entirely. The heading number turns pink/violet to show it's GPS-based. GPS switches on automatically if it wasn't already. Below 3 kn SOG, GPS course is unreliable, so the display shows "WAITING FOR SPEED" until you're back up to speed. Note that COG includes leeway (it's not exactly the boat's true heading), and it lags a few seconds after each tack while the GPS fix settles.</p>
 <div class="helph">Sounds</div>
 <p class="helpp">Audio alerts play distinct tones for lift, header and tack. Turn them on or off in Settings.</p>
+<div class="helph">Mean speed &amp; the start</div>
+<p class="helpp">Setting a mean while settled close-hauled records not just your heading but your boat's top upwind speed in the current wind. The pre-start assistant uses that speed as its target — no wind instrument needed, because the boat's own speed measures what's achievable right now. Set your means in the breeze you'll start in, and re-set them if the wind strength changes.</p>
 <div class="helph">Tip</div>
 <p class="helpp">Re-set the mean whenever the average wind direction shifts, or use "Reset means" in Settings to start over.</p>
 <button class="close" id="btnMountFlow">Test mounting</button>
@@ -591,6 +635,7 @@ body.portrait #btnMean{top:22%; height:22%;}
 /* Pre-start erä 2: ajastin + marginaali + oikea palkki (mittari-paletti) */
 .psTimerBtns{display:flex;gap:8px;margin:8px 0;}
 .psTimerBtns button{flex:1;}
+.psProf.psProfActive{border-color:var(--cyan)!important;color:var(--cyan)!important;box-shadow:0 0 0 1px var(--cyan) inset;}
 .psDurStep{display:flex;align-items:center;justify-content:center;gap:14px;margin:8px 0;}
 .psDurStep button{width:52px;height:40px;font-size:20px;background:#141414;border:1px solid var(--line,#1c232b);border-radius:10px;color:#eef2f5;}
 .psDurStep .psDurVal{font-family:var(--mono);font-size:22px;font-weight:700;min-width:70px;text-align:center;color:#eef2f5;}
@@ -698,7 +743,17 @@ body.portrait #btnMean{top:22%; height:22%;}
 </div>
 <div class="ssHint">Set the sequence length, tap <b>Start</b>. When the first signal sounds, tap <b>Sync</b> — it snaps the clock to the nearest whole minute. Tap Sync again at any whole-minute signal to re-align.</div>
 
+<div class="ssSub">Approach profile</div>
+<div class="psProfBtns" style="display:flex;gap:8px;margin:6px 0;">
+  <button class="close psProf" data-prof="linear" style="flex:1;">Linear</button>
+  <button class="close psProf" data-prof="moderate" style="flex:1;">Moderate</button>
+  <button class="close psProf" data-prof="late" style="flex:1;">Late</button>
+</div>
+<div class="ssHint">Shapes the left (schedule) bar. <b>Linear</b>: steady approach. <b>Moderate</b>: hold back, then sprint. <b>Late</b>: hold back hard, sprint late. The margin bar stays the truth either way.</div>
+
 <div class="ssHint">When the line is set and the timer is started, the full tactical view opens automatically with the margin bar.</div>
+
+<div class="ssHint" id="psAccelHint"></div>
 
 <button class="close reset" id="btnClearLine">Clear line</button>
 <button class="close" id="btnClosePreStart">Done</button>
@@ -775,6 +830,7 @@ const S = {
   tack:null, meanStb:null, meanBb:null, meanStbTs:null, meanBbTs:null,
   meanStbStability:null, meanBbStability:null,
   meanStbSogRatio:null, meanBbSogRatio:null, // O1 SOG-ristivalidointi (white paper 4.5) — talteenotto, ei vielä käytössä päätöksissä
+  meanStbSogKn:null, meanBbSogKn:null, // olosuhdemarginaali §1: absoluuttinen settled close-hauled -vauhti (kn) tavoitteen ankkuroinnille (tapa A)
   rangeBuf:[],
   gps:{cog:null, sog:null, lat:null, lon:null, acc:null, on:false, watch:null},
   // Pre-start (erä 1): oma taktinen tila + datatila. active-lippu merkitsee
@@ -783,8 +839,10 @@ const S = {
   // linja EI persistoidu istuntojen yli — napautetaan uudelleen joka lähdössä.
   preStart:{ active:false, boat:null, pin:null,
              durS:300, gunTs:null,        // erä 2: ajastin — durS = asetettu sekvenssin pituus, gunTs = laukaushetken absoluuttinen aika (null = ei käynnissä)
-             targetKn:null, scaleRefM:null, // erä 2: tavoitenopeus (upwind-P90, O-PS-5) + palkin täysasteikon referenssi
+             targetKn:null, targetP90:null, scaleRefM:null, // §2: targetKn = efektiivinen tavoite (mean-SOG tai P90); targetP90 = cachetettu P90-fallback (kallis, haetaan avattaessa)
+             accelS:null, accelN:0, accelState:'none', // §3: opittu kiihtyvyysaika (s), näytemäärä, luottamus — cachetetaan avattaessa
              glide:null, replanned:false, // erä 3: aikataulun ankkuri {d0,t0,k} + re-planointilippu (§6)
+             profile:'moderate', // aikataulun profiili (linear/moderate/late) — moderate validoitu mockupissa
              snapshot:null, // erä 4/5: laukaisuhetkellä jäädytetyt lukemat {distM,sogKn,targetKn} (AT GUN / PERFECT START)
              forceSetup:false }, // erä 2: käyttäjä valitsi ‹ SETUP → pysy setup-näkymässä vaikka ehdot täyttyisivät
   wakeLock:null,
@@ -850,6 +908,74 @@ function distToLine(pLat, pLon, aLat, aLon, bLat, bLon){
   const side=Math.sign(dx*(P.y-A.y)-dy*(P.x-A.x)); // ristitulo → kumpi puoli
   return { dist, side, t:tc };
 }
+// §3 (olosuhdemarginaali): opittu kiihtyvyys, taso 1. Skalaari käännöstoipumisdatasta.
+// Kiihtyvyysaika = aika saavuttaa lähes täysi vauhti pysähdyksestä. recSec (jaettu funktio
+// tackRecoveryMetrics) mittaa juuri tämän: aika minSog-pohjasta 0.95×preSog:iin. minSog-suodatus
+// valitsee ne käännökset joissa vauhti putosi syvälle — parhaat nollasta-kiihdytyksen analogit.
+const PRESTART_ACCEL_S = 20;                 // fallback-vakio kun opittua ei ole (aiempi kiinteä arvo)
+const PRESTART_ACCEL_MINSOG_FRAC = 0.35;     // näyte kelpaa vain jos minSog < tämä × preSog (syvä pudotus)
+const PRESTART_ACCEL_CAUTION     = 1.10;     // asymmetrinen varovaisuus (§5): oleta 10% hitaampi kiihtyvyys
+const PRESTART_ACCEL_N_DIM       = 2;        // vähintään näin monta näytettä ⇒ himmeä (opittu, epävarma)
+const PRESTART_ACCEL_N_BRIGHT    = 5;        // vähintään näin monta ⇒ kirkas (luotettava)
+const PRESTART_ACCEL_MIN_S = 4, PRESTART_ACCEL_MAX_S = 60; // järkevät rajat (poikkeamasuoja)
+const PRESTART_UPWIND_TWA_MAX = 60; // upwind-suodatus: käännös kelpaa vain jos ennen-ikkunan TWA < tämä (luovi, ei jiibi)
+// Per-piste TWA raakapisteestä (pisteen omat meanStb/meanBb) — sama kaava kuin sisäinen _twa,
+// mutta pre-startin skoopissa. Palauttaa itseisarvo-TWA:n (°) tai null jos meaneja/suuntaa ei ole.
+function _preStartPointTWA(p){
+  if(p.meanStb==null || p.meanBb==null || p.heading==null) return null;
+  const a=p.meanStb*Math.PI/180, b=p.meanBb*Math.PI/180;
+  const axis=Math.atan2((Math.sin(a)+Math.sin(b))/2,(Math.cos(a)+Math.cos(b))/2)*180/Math.PI;
+  let d=(p.heading-axis)%360; if(d>180)d-=360; if(d<-180)d+=360;
+  return Math.abs(d);
+}
+// Skannaa raakalokin käännökset ja aggregoi kiihtyvyysajan. Palauttaa { s, n, state }:
+//   s = efektiivinen kiihtyvyysaika (konservatiivinen), n = näytemäärä, state = 'none'|'dim'|'bright'.
+// state 'none' ⇒ käytä fallback-vakiota. Puhdas lukija; kutsutaan avattaessa (cachetetaan).
+function preStartLearnAccel(rawlog){
+  const src = rawlog || (typeof Polar!=='undefined' && Polar.rawLog ? Polar.rawLog() : []);
+  const evs = tackEvents(src);
+  const samples = [];
+  for(let k=0;k<evs.length;k++){
+    const winEnd = (k+1<evs.length) ? evs[k+1].ts : src[src.length-1].ts+1;
+    // Upwind-suodatus: pre-startin kiihdytys on luovissa, joten käytä vain luovin käännöksiä.
+    // Luokittele ennen-ikkunan TWA-mediaanista (pisteiden omat meanit). Ei-luokiteltavissa → skip.
+    const preWin = src.filter(p=>p.ts>=evs[k].ts-TACK_PRE_WINDOW_MS && p.ts<evs[k].ts);
+    const twas = preWin.map(_preStartPointTWA).filter(t=>t!=null);
+    if(!twas.length) continue;                                  // ei tuulireferenssiä → ei luokiteltavissa
+    if(_ssMedian(twas) > PRESTART_UPWIND_TWA_MAX) continue;     // myötätuulen jiibi → pois
+    const rm = tackRecoveryMetrics(src, evs[k], winEnd);
+    if(rm.recSec==null || rm.preSog==null || rm.minSog==null) continue;
+    // minSog-suodatus: vain syvälle pudonneet käännökset ovat nollasta-kiihdytyksen analogeja
+    if(rm.minSog >= PRESTART_ACCEL_MINSOG_FRAC * rm.preSog) continue;
+    if(rm.recSec < PRESTART_ACCEL_MIN_S || rm.recSec > PRESTART_ACCEL_MAX_S) continue; // poikkeamasuoja
+    samples.push(rm.recSec);
+  }
+  const n = samples.length;
+  if(n < PRESTART_ACCEL_N_DIM) return { s:PRESTART_ACCEL_S, n, state:'none' };
+  const med = _ssMedian(samples);
+  const s = Math.max(PRESTART_ACCEL_MIN_S, med * PRESTART_ACCEL_CAUTION); // konservatiivinen bias
+  const state = n >= PRESTART_ACCEL_N_BRIGHT ? 'bright' : 'dim';
+  return { s, n, state };
+}
+
+
+//   ensisijaisesti settled close-hauled mean-asetuksen absoluuttinen vauhti (§1) — mittaa mitä
+//   TÄSSÄ kelissä on saavutettavissa, ilman tuulimittaria. P90 (cachetettu avattaessa) varajärjestelmänä.
+// Null-vartija: mean-SOG käytetään vain kun mean itse on ei-null (vanhentunut sogKn + null-mean → fallback).
+// Asymmetrinen varovaisuus (§5): jos molemmat halssit tiedossa, käytä HITAAMPaa (min) — oleta pienempi
+//   saavutettava vauhti; ja pieni konservatiivinen kerroin, koska loppusprintissä nollasta ei ehkä ehdi
+//   settled-vauhtiin viivalle mennessä. Aliarviointi jättää korkeintaan vajaaksi; yliarviointi → OCS.
+const PRESTART_TARGET_CAUTION_FRAC = 0.98; // konservatiivinen bias tavoitteeseen (kalibroitava, O-PS-9/10)
+function preStartComputeTarget(){
+  const stbOk = S.meanStb!=null && S.meanStbSogKn!=null;
+  const bbOk  = S.meanBb!=null  && S.meanBbSogKn!=null;
+  let base=null;
+  if(stbOk && bbOk) base=Math.min(S.meanStbSogKn, S.meanBbSogKn); // konservatiivinen: hitaampi halssi
+  else if(stbOk)    base=S.meanStbSogKn;
+  else if(bbOk)     base=S.meanBbSogKn;
+  if(base!=null && base>0) return base*PRESTART_TARGET_CAUTION_FRAC;
+  return S.preStart.targetP90; // fallback (voi olla null jos polaaria ei ole)
+}
 // Tuuliakseli (suunta suoraan tuuleen, upwind) kahden mean-halssin kehämeaana, tai null jos
 // meaneja ei ole. Sama määritelmä kuin sovelluksen sisäinen _cm2, mutta pre-startille saatavilla.
 function preStartWindAxis(){
@@ -879,7 +1005,7 @@ function preStartDist(){
 
 // ---- erä 2: marginaali ----
 const PRESTART_KN_TO_MS = 0.514444;
-const PRESTART_ACCEL_S  = 20;   // kiihdytysaika 0 → täysi vauhti (kiinteä; kalibroitava kenttädatalla)
+// (PRESTART_ACCEL_S määritelty §3-lohkossa fallback-vakiona — opittu kiihtyvyys korvaa sen kun dataa on)
 const PRESTART_NOW_EDGE = 0.78; // NOW-vyöhykkeen yläreuna palkilla (O-PS-6: laukaisuraja)
 // Diskreetti sekunti-simulaatio: "jos painan täysille NYT, montako metriä etenen ennen
 // laukausta?" Sama nopeuden rajoitus kuin todellinen tikki (kiihdytyskaari + täysvauhtinen
@@ -904,7 +1030,12 @@ function preStartTimeToStartS(){
 }
 
 // ---- erä 3: aikataulu (vasen palkki) ----
-const PRESTART_PROFILE_K = 1;        // profiilin muoto: lineaarinen (turvallisin, ei ristiriitainen — §6). Valitsin siirretty myöhemmäksi.
+// Aikataulun profiilin muoto (vasen palkki). Kolme valittavaa, kenttävalidoitava (O-PS-11):
+//   linear = tasainen lähestyminen; moderate = lievä hold-back-then-sprint (mockupissa validoitu);
+//   late = voimakas hold-back. ideal = d0·frac^(1/k), joten suurempi k pitää etäisyyden korkeammalla
+//   pidempään (myöhäisempi sulkeutuminen). Marginaali (oikea palkki) pysyy totuutena profiilista riippumatta.
+const PRESTART_PROFILE_K = { linear:1, moderate:2, late:3 };
+function preStartProfileK(){ return PRESTART_PROFILE_K[S.preStart.profile] || PRESTART_PROFILE_K.moderate; }
 const PRESTART_FULLSPEED_FRAC = 0.9; // "täysi vauhti" = SOG >= tämä osuus tavoitteesta (re-planoinnin + vauhtirangaistuksen laukaisin)
 // ---- erä 4/5: automaattinen paluu kompassitilaan lähdön jälkeen ----
 // Sekunteja laukaisusta, jonka jälkeen pre-start sulkeutuu ja kompassinäkymä palautuu.
@@ -1235,6 +1366,7 @@ const Polar = (function(){
         meanStb:S.meanStb, meanStbTs:S.meanStbTs, meanStbStability:S.meanStbStability,
         meanBb:S.meanBb,   meanBbTs:S.meanBbTs,   meanBbStability:S.meanBbStability,
         meanStbSogRatio:S.meanStbSogRatio, meanBbSogRatio:S.meanBbSogRatio,
+        meanStbSogKn:S.meanStbSogKn, meanBbSogKn:S.meanBbSogKn, // olosuhdemarginaali §1
         learnedTackAngle:learnedTackAngle
       }));
     }catch(e){ /* ei kaadeta */ }
@@ -1250,11 +1382,13 @@ const Polar = (function(){
         S.meanStb = d.meanStb; S.meanStbTs = d.meanStbTs;
         S.meanStbStability = (d.meanStbStability!=null) ? d.meanStbStability : null;
         S.meanStbSogRatio = (d.meanStbSogRatio!=null) ? d.meanStbSogRatio : null;
+        S.meanStbSogKn = (d.meanStbSogKn!=null) ? d.meanStbSogKn : null; // §1: tuoreuden portin sisällä (vauhti vanhenee meanin mukana)
       }
       if(d.meanBb!=null && d.meanBbTs!=null && (now-d.meanBbTs)<=MEAN_MAX_AGE_MS){
         S.meanBb = d.meanBb; S.meanBbTs = d.meanBbTs;
         S.meanBbStability = (d.meanBbStability!=null) ? d.meanBbStability : null;
         S.meanBbSogRatio = (d.meanBbSogRatio!=null) ? d.meanBbSogRatio : null;
+        S.meanBbSogKn = (d.meanBbSogKn!=null) ? d.meanBbSogKn : null; // §1
       }
       // learnedTackAngle on opittu veneen ominaisuus, ei ajanhetken mittaus —
       // ei vanhene mean-aikaleiman tavoin, joten ladataan ehdoitta jos tallessa.
@@ -1391,8 +1525,8 @@ const Polar = (function(){
     _pendingRefresh = {
       fromStb:S.meanStb, toStb:_candStb.hdg, tsStb:_candStb.ts,
       fromBb:S.meanBb,   toBb:_candBb.hdg,   tsBb:_candBb.ts,
-      stabStb:_candStb.stability, sogStb:_candStb.sogRatio,
-      stabBb:_candBb.stability,   sogBb:_candBb.sogRatio,
+      stabStb:_candStb.stability, sogStb:_candStb.sogRatio, sogKnStb:_candStb.sog,
+      stabBb:_candBb.stability,   sogBb:_candBb.sogRatio,   sogKnBb:_candBb.sog,
       created: Date.now()
     };
     _candStb=null; _candBb=null;
@@ -1403,8 +1537,8 @@ const Polar = (function(){
   function _commitPending(){
     if(!_pendingRefresh) return;
     const p = _pendingRefresh;
-    S.meanStb=p.toStb; S.meanStbTs=p.tsStb; S.meanStbStability=p.stabStb; S.meanStbSogRatio=p.sogStb;
-    S.meanBb=p.toBb;   S.meanBbTs=p.tsBb;   S.meanBbStability=p.stabBb;   S.meanBbSogRatio=p.sogBb;
+    S.meanStb=p.toStb; S.meanStbTs=p.tsStb; S.meanStbStability=p.stabStb; S.meanStbSogRatio=p.sogStb; S.meanStbSogKn=(p.sogKnStb!=null)?p.sogKnStb:null;
+    S.meanBb=p.toBb;   S.meanBbTs=p.tsBb;   S.meanBbStability=p.stabBb;   S.meanBbSogRatio=p.sogBb;   S.meanBbSogKn=(p.sogKnBb!=null)?p.sogKnBb:null;
     // v0.96: opeta closehauled-kulma vain fyysisesti mahdollisesta parista (sama portti kuin onMeanSet).
     if(Math.abs(_na(S.meanStb - S.meanBb)) >= MIN_TACK_SEP){
       learnedTackAngle = Math.abs(_na(S.meanStb - S.meanBb));
@@ -1512,8 +1646,8 @@ const Polar = (function(){
       const avgSog = computeAvgSog();
       const tackP90 = tackSogP90(S.tack);
       const ratio = (avgSog!=null && tackP90!=null && tackP90>0) ? avgSog/tackP90 : null;
-      if(S.tack==='stb'){ S.meanStbStability = computeStability(); S.meanStbSogRatio = ratio; }
-      else if(S.tack==='bb'){ S.meanBbStability = computeStability(); S.meanBbSogRatio = ratio; }
+      if(S.tack==='stb'){ S.meanStbStability = computeStability(); S.meanStbSogRatio = ratio; S.meanStbSogKn = avgSog; }
+      else if(S.tack==='bb'){ S.meanBbStability = computeStability(); S.meanBbSogRatio = ratio; S.meanBbSogKn = avgSog; }
       // Bootstrap: ensimmäinen manuaalinen mean-pari opettaa closehauled-kulman
       // automaattiselle virkistykselle. Manuaalinen asetus myös päivittää sen aina,
       // koska käyttäjän tarkoituksellinen asetus on paras saatavilla oleva totuus.
@@ -1531,6 +1665,7 @@ const Polar = (function(){
       S.meanStbTs=null; S.meanBbTs=null;
       S.meanStbStability=null; S.meanBbStability=null;
       S.meanStbSogRatio=null; S.meanBbSogRatio=null;
+      S.meanStbSogKn=null; S.meanBbSogKn=null; // §1: nollaa myös absoluuttinen vauhti
       learnedTackAngle=null; amrReset();
       clearMeans();
     },
@@ -1553,7 +1688,7 @@ const Polar = (function(){
       _pendingRefresh = {
         fromStb:S.meanStb, toStb:norm(S.meanStb+sh), tsStb:Date.now(),
         fromBb:S.meanBb,   toBb:norm(S.meanBb+sh),   tsBb:Date.now(),
-        stabStb:1, sogStb:1, stabBb:1, sogBb:1, created:Date.now(), ttlMs:9000
+        stabStb:1, sogStb:1, sogKnStb:null, stabBb:1, sogBb:1, sogKnBb:null, created:Date.now(), ttlMs:9000
       };
     },
     demoClearRefresh(){ if(S.demo) _pendingRefresh=null; },
@@ -2761,6 +2896,9 @@ function loop(){
     // Pre-start: päivitä livenä joko taktinen näkymä tai setup-sheet, kumpi näkyvissä.
     if(S.preStart.active){
       if(!preStartCheckAutoExit()){ // minuutti lähdön jälkeen → kompassiin (ei jatketa päivitystä)
+        // §2: tavoite seuraa mean-päivityksiä livenä (halpa; mean-SOG vaihtuu vain mean-asetuksessa).
+        // Ei ylikirjoiteta laukaisun jälkeen — snapshot jäädyttää tavoitteen gun-hetkeen.
+        if(!S.preStart.snapshot) S.preStart.targetKn=preStartComputeTarget();
         preStartUpdateView(); // tarkista joka framessa: linja + kello → taktinen näkymä auki
         if($("preStartTactical").classList.contains("show")) renderPreStartTactical();
         else if(!$("preStartSheet").classList.contains("hidden")) renderPreStart();
@@ -2905,9 +3043,17 @@ function renderPreStart(){
     if(S.meanStb==null || S.meanBb==null) base += ' Set upwind means (both tacks) to enable OVER / OCS detection.';
     hint.textContent=base;
   }
+  // §3: kiihtyvyyden luottamusindikaattori (PERF-tyylinen). Kertoo nojaako marginaali opittuun
+  // vai oletettuun kiihtyvyyteen — rehellisyys kuten PERF (--/dim/bright).
+  const ah=$("psAccelHint");
+  if(ah){
+    const ps=S.preStart;
+    if(ps.accelState==='bright')    ah.innerHTML='Acceleration: <b>'+ps.accelS.toFixed(0)+' s</b>, learned from your tacks.';
+    else if(ps.accelState==='dim')  ah.innerHTML='Acceleration: <b>'+ps.accelS.toFixed(0)+' s</b>, still learning ('+ps.accelN+' tack'+(ps.accelN===1?'':'s')+') — treat as rough.';
+    else                            ah.innerHTML='Acceleration: <b>'+PRESTART_ACCEL_S+' s</b> assumed — sail and tack to learn your own.';
+  }
   renderPreStartTimerMargin(d);
 }
-// erä 2: jaettu marginaalilaskenta — sama logiikka setup-esikatselulle ja taktiselle näkymälle.
 // Palauttaa null jos marginaalia ei voi laskea (puuttuu linja / tavoite / käynnissä oleva kello).
 function preStartComputeMargin(distM, tts){
   const ps=S.preStart;
@@ -2917,7 +3063,8 @@ function preStartComputeMargin(distM, tts){
   const scaleRefM = ps.scaleRefM || Math.max(distM*0.6, 20);
   const cautionM=scaleRefM*0.28, warnM=scaleRefM*0.16;
   const bufferM=Math.max(3, scaleRefM*0.05); // reaktiopuskuri (§7)
-  const proj=projectedDistanceIfPushNow(Math.max(0,tts), sMs, targetMs, PRESTART_ACCEL_S);
+  const accelS = (ps.accelS!=null) ? ps.accelS : PRESTART_ACCEL_S; // §3: opittu kiihtyvyys, fallback vakio
+  const proj=projectedDistanceIfPushNow(Math.max(0,tts), sMs, targetMs, accelS);
   const marginM=proj-distM;
   // neulan sijainti: margin=scaleRefM → yläreuna; margin=-buffer → NOW-yläreuna (laukaisu)
   let pos;
@@ -3036,11 +3183,18 @@ $("btnOpenPreStart").addEventListener("click", ()=>{
   $("preStartSheet").classList.remove("hidden");
   S.preStart.active=true; // datatila päälle: collectPoint merkitsee preStart:true
   S.preStart.forceSetup=false; // avattaessa salli taktinen näkymä jos ehdot täyttyvät
-  // Tavoitenopeus = upwind-P90 (O-PS-5). Haetaan polaarin latauduttua, kiinteä approach-kulmalle.
+  syncPsProfBtns(); // korosta valittu aikatauluprofiili
+  // §2: efektiivinen tavoite = mean-SOG (tapa A) tai P90-fallback. P90 on kallis (iteroi raakalokin),
+  // joten se cachetetaan avattaessa targetP90-kenttään; targetKn lasketaan livenä preStartComputeTarget:lla.
   Polar.ready().then(()=>{
-    try{ const ss=Polar.sectorSpeeds(); S.preStart.targetKn=(ss&&ss.upwind&&ss.upwind.p90!=null)?ss.upwind.p90:null; }catch(e){ S.preStart.targetKn=null; }
+    try{ const ss=Polar.sectorSpeeds(); S.preStart.targetP90=(ss&&ss.upwind&&ss.upwind.p90!=null)?ss.upwind.p90:null; }catch(e){ S.preStart.targetP90=null; }
+    // §3: opi kiihtyvyys käännöstoipumisdatasta (cachetetaan; kallis skannaus, ei joka framessa)
+    try{ const ac=preStartLearnAccel(); S.preStart.accelS=(ac.state==='none')?null:ac.s; S.preStart.accelN=ac.n; S.preStart.accelState=ac.state; }
+    catch(e){ S.preStart.accelS=null; S.preStart.accelN=0; S.preStart.accelState='none'; }
+    S.preStart.targetKn=preStartComputeTarget();
     renderPreStart();
   });
+  S.preStart.targetKn=preStartComputeTarget(); // heti näkyviin (mean-SOG jos on; P90 päivittyy Polar.ready:ssä)
   renderPreStart();
 });
 $("btnClosePreStart").addEventListener("click", ()=>{
@@ -3067,11 +3221,25 @@ $("btnPsStart").addEventListener("click", ()=>{
   S.preStart.forceSetup=false; // Start → salli taktinen näkymä
   const d=preStartDist();
   S.preStart.scaleRefM=Math.max((d!=null?d:50)*0.6, 20); // palkin täysasteikko lähestymisen alkaessa
-  // erä 3: ankkuroi aikataulu lähestymisen alkuun (lineaarinen profiili)
-  S.preStart.glide={ d0:(d!=null?d:50), t0:S.preStart.durS, k:PRESTART_PROFILE_K };
+  // erä 3: ankkuroi aikataulu lähestymisen alkuun (valittu profiili, preStartProfileK)
+  S.preStart.glide={ d0:(d!=null?d:50), t0:S.preStart.durS, k:preStartProfileK() };
   S.preStart.replanned=false;
   S.preStart.snapshot=null; // erä 4/5: uusi sekvenssi → tyhjennä laukaisusnapshot
   renderPreStart(); preStartUpdateView(); // linja + kello → taktinen näkymä
+});
+// Aikatauluprofiilin valinta. Päivittää glide.k jos kello käynnissä eikä re-planoitu
+// (profiili vaikuttaa vain pre-commit-vaiheeseen; sprintti pysyy lineaarisena re-planoinnin jälkeen).
+function syncPsProfBtns(){
+  document.querySelectorAll(".psProf").forEach(b=>{
+    b.classList.toggle("psProfActive", b.getAttribute("data-prof")===S.preStart.profile);
+  });
+}
+document.querySelectorAll(".psProf").forEach(b=>{
+  b.addEventListener("click", ()=>{
+    S.preStart.profile=b.getAttribute("data-prof");
+    if(S.preStart.glide && !S.preStart.replanned) S.preStart.glide.k=preStartProfileK();
+    syncPsProfBtns();
+  });
 });
 $("btnPsSync").addEventListener("click", ()=>{
   if(S.preStart.gunTs==null) return;
@@ -3561,6 +3729,33 @@ function _ssMedian(arr){
   return a.length%2 ? a[m] : (a[m-1]+a[m])/2;
 }
 
+// Yhden käännöksen toipumismetriikat raakalokista. Puhdas funktio — yksi totuuden lähde
+// jota käyttävät sekä renderLegQuality (§7 näyttö) että kiihtyvyys-oppija (olosuhdemarginaali §3).
+// pts: session/loki pisteet aikajärjestyksessä; ev: tackEvents-tapahtuma; winEnd: seuraavan
+// käännöksen ts tai lokin loppu. Palauttaa { preSog, minSog, recSec } (kukin voi olla null).
+//   preSog: 10 s ennen-ikkunan keskinopeus (dropout-nollat pois, min 3 pistettä)
+//   minSog: käännöksen pohja (0–20 s käännöksestä, dropout-nollat mukana — kuuluvat kuvaan)
+//   recSec: sekunteja saavuttaa TACK_RECOVER_RATIO×preSog ja pysyä DWELL ajan (tai null)
+function tackRecoveryMetrics(pts, ev, winEnd){
+  const pre = pts.filter(p=>p.ts>=ev.ts-TACK_PRE_WINDOW_MS && p.ts<ev.ts && p.sog!=null && p.sog>=SOG_DISPLAY_MIN).map(p=>p.sog);
+  const preSog = pre.length>=3 ? pre.reduce((a,b)=>a+b,0)/pre.length : null;
+  const after = pts.filter(p=>p.ts>=ev.ts && p.ts<winEnd);
+  const minWin = after.filter(p=>p.sog!=null && p.ts<ev.ts+20000).map(p=>p.sog);
+  const minSog = minWin.length ? Math.min(...minWin) : null;
+  let recSec=null;
+  if(preSog!=null){
+    const thr=TACK_RECOVER_RATIO*preSog;
+    for(let a=0;a<after.length;a++){
+      if(after[a].sog==null || after[a].sog<thr) continue;
+      const holdUntil=after[a].ts+TACK_RECOVER_DWELL_S*1000;
+      let held=true;
+      for(let b=a;b<after.length && after[b].ts<=holdUntil;b++){ if(after[b].sog!=null && after[b].sog<thr){ held=false; break; } }
+      if(held){ recSec=Math.round((after[a].ts-ev.ts)/1000); break; }
+    }
+  }
+  return { preSog, minSog, recSec };
+}
+
 // §6 — Upwind angle & speed. Puhdas lukija cur.points:sta. Legit johdetaan
 // tackEvents-rajoista; kukin legi = kahden vahvistetun käännöksen välinen span
 // (plus alku→1. ja viimeinen→loppu). Tavoitekulma haetaan session omasta polaarista.
@@ -3679,26 +3874,9 @@ function renderTackPerf(cur){
   for(let k=0;k<evs.length;k++){
     const ev=evs[k];
     const winEnd = (k+1<evs.length) ? evs[k+1].ts : pts[pts.length-1].ts+1;
-    // ennen-nopeus: 10 s ikkuna ennen käännöstä, dropout-nollat pois, min 3 pistettä
-    const pre = pts.filter(p=>p.ts>=ev.ts-TACK_PRE_WINDOW_MS && p.ts<ev.ts && p.sog!=null && p.sog>=SOG_DISPLAY_MIN).map(p=>p.sog);
-    const preSog = pre.length>=3 ? pre.reduce((a,b)=>a+b,0)/pre.length : null;
-    // käännöksen jälkeiset pisteet ikkunan sisällä
-    const after = pts.filter(p=>p.ts>=ev.ts && p.ts<winEnd);
-    // min-SOG käännöksen ympärillä (näyttöä varten; dropout-nollat mukaan tässä, ne kuuluvat kuvaan)
-    const minWin = after.filter(p=>p.sog!=null && p.ts<ev.ts+20000).map(p=>p.sog);
-    const minSog = minWin.length ? Math.min(...minWin) : null;
-    // saavuttaminen: SOG ylittää RATIO×preSog ja pysyy DWELL ajan
-    let recSec=null;
-    if(preSog!=null){
-      const thr=TACK_RECOVER_RATIO*preSog;
-      for(let a=0;a<after.length;a++){
-        if(after[a].sog==null || after[a].sog<thr) continue;
-        const holdUntil=after[a].ts+TACK_RECOVER_DWELL_S*1000;
-        let held=true;
-        for(let b=a;b<after.length && after[b].ts<=holdUntil;b++){ if(after[b].sog!=null && after[b].sog<thr){ held=false; break; } }
-        if(held){ recSec=Math.round((after[a].ts-ev.ts)/1000); break; }
-      }
-    }
+    // §7: toipumismetriikat jaetusta funktiosta (yksi totuuden lähde kiihtyvyys-oppijan kanssa)
+    const rm = tackRecoveryMetrics(pts, ev, winEnd);
+    const preSog = rm.preSog, minSog = rm.minSog, recSec = rm.recSec;
     // sparkline: SOG (ennen-ikkuna → recovery+puskuri), normalisoitu
     const sparkEnd = recSec!=null ? ev.ts+(recSec+4)*1000 : Math.min(winEnd, ev.ts+40000);
     const sp = pts.filter(p=>p.ts>=ev.ts-TACK_PRE_WINDOW_MS && p.ts<=sparkEnd && p.sog!=null);
@@ -3829,7 +4007,7 @@ document.querySelectorAll(".stepper").forEach(st=>{
 });
 
 /* ---------- init ---------- */
-const APP_VERSION="🇫🇮 Tackcall v1.28";
+const APP_VERSION="🇫🇮 Tackcall v1.34";
 (function(){
   const e=$("verEnable"); if(e) e.textContent=APP_VERSION;
   const n=$("verNote"); if(n) n.textContent=APP_VERSION+" · shares engine with index.html";
