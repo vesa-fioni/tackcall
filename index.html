@@ -1,5 +1,10 @@
 <!DOCTYPE html>
 <!-- Tackcall Meter — MIT License — Copyright (c) 2026 Vesa Lindqvist — Contributors: Joonas Sandholm -->
+<!-- v1.45 (Pre-start korjaus: suosiollisempi pää jäi tyhjäksi kun päät liian lähellä): kun linja ja
+     meanit on asetettu mutta päät ovat <3m päässä (esim. kuivatesti samasta paikasta), preStartFavoredEnd
+     palautti null → kohta jäi tyhjäksi ilman palautetta. Nyt näyttää "Line ends too close to compare —
+     set them further apart." jotta käyttäjä tietää miksi arvoa ei ole. Oikealla linjalla (kymmeniä metrejä)
+     arvo näkyy normaalisti. -->
 <!-- v1.44 (Pre-start: suosiollisempi pää setup-sheetiin): DISTANCE TO LINE -osion alle taustatieto
      kumpi linjan pää on suosiollisempi (enemmän tuulen puolella) ja linjan vinouskulma. preStartFavoredEnd
      laskee upwind-projektiosta (tuuliakseli meaneista) kumpi pää on tuulen puolella; biasDeg = asin(|dotUp|/len)
@@ -3155,12 +3160,15 @@ function renderPreStart(){
   // Suosiollisempi pää — taustatietoa linjan vinoudesta suhteessa tuuliakseliin.
   const fe=$("psFavored");
   if(fe){
-    const ps0=S.preStart, fav=preStartFavoredEnd();
+    const ps0=S.preStart;
     if(!ps0.boat || !ps0.pin)                 fe.innerHTML='';  // linja kesken
     else if(preStartWindAxis()==null)         fe.innerHTML='Favored end shown once upwind means are set.';
-    else if(!fav)                             fe.innerHTML='';  // päät liian lähellä
-    else if(fav.end==='even')                 fe.innerHTML='Line is <b>square</b> to the wind';
-    else fe.innerHTML='Favored end: <b>'+(fav.end==='pin'?'Pin':'Boat')+'</b> · '+fav.biasDeg.toFixed(0)+'°';
+    else {
+      const fav=preStartFavoredEnd();
+      if(!fav)                                fe.innerHTML='Line ends too close to compare — set them further apart.';
+      else if(fav.end==='even')               fe.innerHTML='Line is <b>square</b> to the wind';
+      else fe.innerHTML='Favored end: <b>'+(fav.end==='pin'?'Pin':'Boat')+'</b> · '+fav.biasDeg.toFixed(0)+'°';
+    }
   }
   // §3: kiihtyvyyden luottamusindikaattori (PERF-tyylinen). Kertoo nojaako marginaali opittuun
   // vai oletettuun kiihtyvyyteen — rehellisyys kuten PERF (--/dim/bright).
@@ -4171,7 +4179,7 @@ document.querySelectorAll(".stepper").forEach(st=>{
 });
 
 /* ---------- init ---------- */
-const APP_VERSION="🇫🇮 Tackcall v1.44";
+const APP_VERSION="🇫🇮 Tackcall v1.45";
 (function(){
   const e=$("verEnable"); if(e) e.textContent=APP_VERSION;
   const n=$("verNote"); if(n) n.textContent=APP_VERSION+" · shares engine with index.html";
