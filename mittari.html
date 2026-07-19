@@ -1,5 +1,7 @@
 <!DOCTYPE html>
 <!-- Tackcall Meter — MIT License — Copyright (c) 2026 Vesa Lindqvist — Contributors: Joonas Sandholm -->
+<!-- v1.43 (Pre-start: vasempaan ON PATH -keskinimiö): johdonmukaisuus oikean CLOSING-nimiön kanssa —
+     vasemmalla lukee nyt ON PATH kahden vihreän rajaviivan välissä (50%), kuten CLOSING oikealla. -->
 <!-- v1.42 (Pre-start: täysin paneeliton ilme): poistettu .ptBox-taustapaneelit (#0b0d10 → transparent).
      DIST TO LINE / kello / SOG istuvat nyt suoraan mustalla ilman paneelia, kuten kompassinäkymässä. -->
 <!-- v1.41 (Pre-start mittarit, viimeistely): (1) Tickit ja rajaviivat samaan koordinaatistoon:
@@ -835,6 +837,7 @@ body.portrait #btnMean{top:22%; height:22%;}
     <div class="ptBar inactive" id="ptBarLeft">
       <div class="ptCap top">PUSH</div>
       <div class="ptTrack">
+        <div class="ptCap mid" style="top:50%;">ON PATH</div>
         <div class="ptTier tick" style="top:20%;"></div>
         <div class="ptTier green" style="top:40%;"></div>
         <div class="ptTier green" style="top:60%;"></div>
@@ -4131,7 +4134,7 @@ document.querySelectorAll(".stepper").forEach(st=>{
 });
 
 /* ---------- init ---------- */
-const APP_VERSION="🇫🇮 Tackcall v1.42";
+const APP_VERSION="🇫🇮 Tackcall v1.43";
 (function(){
   const e=$("verEnable"); if(e) e.textContent=APP_VERSION;
   const n=$("verNote"); if(n) n.textContent=APP_VERSION+" · shares engine with index.html";
