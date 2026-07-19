@@ -1,5 +1,10 @@
 <!DOCTYPE html>
 <!-- Tackcall Meter — MIT License — Copyright (c) 2026 Vesa Lindqvist — Contributors: Joonas Sandholm -->
+<!-- v1.44 (Pre-start: suosiollisempi pää setup-sheetiin): DISTANCE TO LINE -osion alle taustatieto
+     kumpi linjan pää on suosiollisempi (enemmän tuulen puolella) ja linjan vinouskulma. preStartFavoredEnd
+     laskee upwind-projektiosta (tuuliakseli meaneista) kumpi pää on tuulen puolella; biasDeg = asin(|dotUp|/len)
+     = poikkeama suorasta. <3° ⇒ "square". Näyttää "Favored end: Pin · 6°" / "Line is square" / kehotuksen
+     asettaa meanit jos tuuliviite puuttuu. Puhtaasti taustatietoa (ei taktisessa näkymässä). Kynnys kalibroitava. -->
 <!-- v1.43 (Pre-start: vasempaan ON PATH -keskinimiö): johdonmukaisuus oikean CLOSING-nimiön kanssa —
      vasemmalla lukee nyt ON PATH kahden vihreän rajaviivan välissä (50%), kuten CLOSING oikealla. -->
 <!-- v1.42 (Pre-start: täysin paneeliton ilme): poistettu .ptBox-taustapaneelit (#0b0d10 → transparent).
@@ -380,6 +385,8 @@ body.portrait #btnMean{top:22%; height:22%;}
 .ssNum{font-family:var(--mono); font-size:17px; font-weight:700; color:var(--cyan); margin-top:6px;
   text-shadow:0 0 12px rgba(25,224,224,.5); white-space:nowrap;}
 .ssHint{font-size:11px; line-height:1.5; color:#7a7a7a; margin:6px 0 10px; font-family:var(--sans); text-align:center;}
+.ssFav{font-family:var(--mono); font-size:13px; color:#9aa4ad; text-align:center; margin:2px 0 4px; letter-spacing:.02em;}
+.ssFav b{color:var(--cyan); font-weight:700;}
 #ssCanvas{display:block; width:100%; height:auto; margin:6px auto; max-width:360px;}
 .ssTransport{display:flex; align-items:center; gap:10px; max-width:360px; margin:2px auto 4px; padding:0 4px;}
 .ssPlay{flex:0 0 auto; width:34px; height:34px; border-radius:50%; border:1px solid #2a2a2a;
@@ -793,6 +800,7 @@ body.portrait #btnMean{top:22%; height:22%;}
 <div class="ssRow">
   <div class="ssCard" style="flex:1;"><div class="ssLbl">DIST TO LINE</div><div class="ssNum" id="psDist">—</div></div>
 </div>
+<div class="ssFav" id="psFavored"></div>
 <div class="ssHint" id="psGpsHint">GPS accuracy shown once you set an end. A poor fix makes the line unreliable.</div>
 
 <!-- erä 2: ajastin -->
@@ -1081,6 +1089,25 @@ function preStartDist(){
   const overSign=Math.sign(dx*wy - dy*wx);
   if(overSign===0) return r.dist;
   return (r.side===overSign) ? -r.dist : r.dist; // yli linjan → negatiivinen
+}
+// Suosiollisempi linjan pää = se joka on enemmän tuulen puolella (upwind). Taustatietoa linjan
+// vinoudesta suhteessa viimeisimpään tuuliakseliin (meaneista). Palauttaa { end:'boat'|'pin'|'even', biasDeg }
+// tai null jos linja kesken / ei tuulireferenssiä / päät liian lähellä.
+const PRESTART_FAVORED_EVEN_DEG = 3; // alle tämän vinous ⇒ linja käytännössä suora (kalibroitava)
+function preStartFavoredEnd(){
+  const ps=S.preStart;
+  if(!ps.boat || !ps.pin) return null;
+  const wind=preStartWindAxis();
+  if(wind==null) return null; // ei tuulireferenssiä (upwind-meanit puuttuu)
+  const A=llToXY(ps.boat.lat,ps.boat.lon,ps.boat.lat,ps.boat.lon);
+  const B=llToXY(ps.pin.lat,ps.pin.lon,ps.boat.lat,ps.boat.lon);
+  const dx=B.x-A.x, dy=B.y-A.y, len=Math.hypot(dx,dy);
+  if(len<3) return null; // päät liian lähellä toisiaan → ei mielekäs
+  const wr=wind*Math.PI/180, wx=Math.sin(wr), wy=Math.cos(wr); // upwind-yksikkövektori (itä,pohjoinen)
+  const dotUp=dx*wx+dy*wy; // pin:n upwind-projektio suhteessa boat:iin (m); >0 ⇒ pin tuulen puolella
+  const biasDeg=Math.asin(Math.min(1,Math.abs(dotUp)/len))*180/Math.PI; // linjan poikkeama suorasta
+  const end = biasDeg < PRESTART_FAVORED_EVEN_DEG ? 'even' : (dotUp>0 ? 'pin' : 'boat');
+  return { end, biasDeg };
 }
 
 // ---- erä 2: marginaali ----
@@ -3125,6 +3152,16 @@ function renderPreStart(){
     if(S.meanStb==null || S.meanBb==null) base += ' Set upwind means (both tacks) to enable OVER / OCS detection.';
     hint.textContent=base;
   }
+  // Suosiollisempi pää — taustatietoa linjan vinoudesta suhteessa tuuliakseliin.
+  const fe=$("psFavored");
+  if(fe){
+    const ps0=S.preStart, fav=preStartFavoredEnd();
+    if(!ps0.boat || !ps0.pin)                 fe.innerHTML='';  // linja kesken
+    else if(preStartWindAxis()==null)         fe.innerHTML='Favored end shown once upwind means are set.';
+    else if(!fav)                             fe.innerHTML='';  // päät liian lähellä
+    else if(fav.end==='even')                 fe.innerHTML='Line is <b>square</b> to the wind';
+    else fe.innerHTML='Favored end: <b>'+(fav.end==='pin'?'Pin':'Boat')+'</b> · '+fav.biasDeg.toFixed(0)+'°';
+  }
   // §3: kiihtyvyyden luottamusindikaattori (PERF-tyylinen). Kertoo nojaako marginaali opittuun
   // vai oletettuun kiihtyvyyteen — rehellisyys kuten PERF (--/dim/bright).
   const ah=$("psAccelHint");
@@ -4134,7 +4171,7 @@ document.querySelectorAll(".stepper").forEach(st=>{
 });
 
 /* ---------- init ---------- */
-const APP_VERSION="🇫🇮 Tackcall v1.43";
+const APP_VERSION="🇫🇮 Tackcall v1.44";
 (function(){
   const e=$("verEnable"); if(e) e.textContent=APP_VERSION;
   const n=$("verNote"); if(n) n.textContent=APP_VERSION+" · shares engine with index.html";
