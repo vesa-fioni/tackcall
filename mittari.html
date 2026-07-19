@@ -1,5 +1,12 @@
 <!DOCTYPE html>
 <!-- Tackcall Meter — MIT License — Copyright (c) 2026 Vesa Lindqvist — Contributors: Joonas Sandholm -->
+<!-- v1.42 (Pre-start: täysin paneeliton ilme): poistettu .ptBox-taustapaneelit (#0b0d10 → transparent).
+     DIST TO LINE / kello / SOG istuvat nyt suoraan mustalla ilman paneelia, kuten kompassinäkymässä. -->
+<!-- v1.41 (Pre-start mittarit, viimeistely): (1) Tickit ja rajaviivat samaan koordinaatistoon:
+     gradientti-tickit (piirsi merkin yläreunasta → ~1px heitto rajaviivaan) korvattu keskitetyillä
+     scale-tick-elementeillä VAIN ruudukkokohtiin joissa ei ole väriviivaa (vasen 20/80, oikea 20/40).
+     Nyt yksi merkki per kohta, ei päällekkäisyyttä. (2) Poistettu elementtien rajaukset (border)
+     .ptBar ja .ptBox — täsmää kompassinäkymän reunattomaan ilmeeseen (napit säilyttävät omansa). -->
 <!-- v1.40 (Pre-start mittarit, 3 korjausta kenttäpalautteesta): (1) BUGI: oikea pallo vilkkui punaista
      (OCS) vielä WAIT-alueella, koska väri tuli distM<0:sta mutta sijainti marginaalista (ristiriita).
      Nyt yli linjan → pallo pohjaan (100%), väri ja sijainti täsmäävät. (2) Tickit ja tilaviivat samaan
@@ -713,7 +720,7 @@ body.portrait #btnMean{top:22%; height:22%;}
 #preStartTactical{position:fixed;inset:0;z-index:60;background:#000;display:none;}
 #preStartTactical.show{display:block;}
 .ptStage{display:flex;gap:6px;padding:8px;padding-top:calc(8px + env(safe-area-inset-top));padding-bottom:calc(8px + env(safe-area-inset-bottom));height:100%;box-sizing:border-box;}
-.ptBar{width:19%;flex:0 0 19%;border-radius:14px;border:1px solid #1c232b;position:relative;background:#050708;
+.ptBar{width:19%;flex:0 0 19%;position:relative;background:transparent;
   display:flex;flex-direction:column;align-items:center;padding:46px 0 28px;box-sizing:border-box;}
 .ptBar.inactive{opacity:.4;}
 /* nimiöt (kevyet mutta luettavat) */
@@ -721,10 +728,9 @@ body.portrait #btnMean{top:22%; height:22%;}
 .ptCap.mid{position:absolute;left:50%;transform:translate(-50%,-50%);white-space:nowrap;color:#8b949c;font-size:11px;z-index:2;}
 /* ohut neutraali raita, tickit repeating-gradientilla (5 väliä) */
 .ptTrack{position:relative;flex:1 1 auto;width:2px;margin:8px 0;background:rgba(255,255,255,.16);border-radius:2px;}
-.ptTrack::before{content:"";position:absolute;left:50%;top:0;bottom:0;width:16px;transform:translateX(-50%);
-  background:repeating-linear-gradient(to bottom, rgba(255,255,255,.22) 0 2px, transparent 2px 20%);}
 /* tilaviivat (tavoiteväli / värinvaihtorajat) — ohut, väri vihjaa mihin väriin merkki vaihtuu */
 .ptTier{position:absolute;left:50%;width:22px;height:2px;transform:translate(-50%,-50%);z-index:3;background:rgba(255,255,255,.35);}
+.ptTier.tick{width:14px;background:rgba(255,255,255,.18);box-shadow:none;}
 .ptTier.green{background:rgba(25,226,106,.6);box-shadow:0 0 5px rgba(25,226,106,.4);}
 .ptTier.amber{background:rgba(255,138,30,.6);box-shadow:0 0 5px rgba(255,138,30,.4);}
 .ptTier.red{background:rgba(255,43,43,.65);box-shadow:0 0 5px rgba(255,43,43,.45);}
@@ -742,7 +748,7 @@ body.portrait #btnMean{top:22%; height:22%;}
 @keyframes ptDotFlash{0%,100%{opacity:1;}50%{opacity:.25;}}
 /* keskisarake */
 .ptMid{flex:1;display:flex;flex-direction:column;gap:6px;min-width:0;}
-.ptBox{background:#0b0d10;border:1px solid #1c232b;border-radius:14px;text-align:center;display:flex;flex-direction:column;align-items:center;justify-content:center;}
+.ptBox{background:transparent;text-align:center;display:flex;flex-direction:column;align-items:center;justify-content:center;}
 .ptBox.top,.ptBox.bot{flex:0 0 auto;padding:10px 8px;}
 .ptBox.hero{flex:1;gap:2px;}
 .ptLbl{font-family:var(--mono);font-size:12px;color:#7d8791;letter-spacing:.1em;}
@@ -829,8 +835,10 @@ body.portrait #btnMean{top:22%; height:22%;}
     <div class="ptBar inactive" id="ptBarLeft">
       <div class="ptCap top">PUSH</div>
       <div class="ptTrack">
+        <div class="ptTier tick" style="top:20%;"></div>
         <div class="ptTier green" style="top:40%;"></div>
         <div class="ptTier green" style="top:60%;"></div>
+        <div class="ptTier tick" style="top:80%;"></div>
         <div class="ptMark line hidden" id="ptNeedleLeft"></div>
       </div>
       <div class="ptCap bot">PULL</div>
@@ -854,6 +862,8 @@ body.portrait #btnMean{top:22%; height:22%;}
       <div class="ptCap top">WAIT</div>
       <div class="ptTrack">
         <div class="ptCap mid" style="top:70%;">CLOSING</div>
+        <div class="ptTier tick" style="top:20%;"></div>
+        <div class="ptTier tick" style="top:40%;"></div>
         <div class="ptTier amber" style="top:60%;"></div>
         <div class="ptTier red edge" style="top:80%;"></div>
         <div class="ptMark dot hidden" id="ptNeedle"></div>
@@ -4121,7 +4131,7 @@ document.querySelectorAll(".stepper").forEach(st=>{
 });
 
 /* ---------- init ---------- */
-const APP_VERSION="🇫🇮 Tackcall v1.40";
+const APP_VERSION="🇫🇮 Tackcall v1.42";
 (function(){
   const e=$("verEnable"); if(e) e.textContent=APP_VERSION;
   const n=$("verNote"); if(n) n.textContent=APP_VERSION+" · shares engine with index.html";
