@@ -1,5 +1,12 @@
 <!DOCTYPE html>
 <!-- Tackcall Meter — MIT License — Copyright (c) 2026 Vesa Lindqvist — Contributors: Joonas Sandholm -->
+<!-- v1.40 (Pre-start mittarit, 3 korjausta kenttäpalautteesta): (1) BUGI: oikea pallo vilkkui punaista
+     (OCS) vielä WAIT-alueella, koska väri tuli distM<0:sta mutta sijainti marginaalista (ristiriita).
+     Nyt yli linjan → pallo pohjaan (100%), väri ja sijainti täsmäävät. (2) Tickit ja tilaviivat samaan
+     20% ruudukkoon: ON PATH 41/59→40/60, oikean rajat 56/78→60/80 (NOW_EDGE 0.78→0.80), CLOSING-nimiö
+     67→70%. Nyt kaikki tilaviivat osuvat tasavälitickeihin. (3) Nimiöt: paddingia ylös (46px) ja alas
+     (28px) niin etteivät PUSH/WAIT törmää ‹SETUP/SYNC-nappeihin eikä PULL/NOW alavihjeeseen; kirkkaammat
+     ja isommat (11→12px, #7d8791→#b0b8bf; mid 10→11px). -->
 <!-- v1.39 (Pre-start mittarit, hienosäätö kenttäpalautteen pohjalta): (1) Vasemmalle lisätty ON PATH
      -tavoiteväli näkyviin kahtena vihreänä tilaviivana (41%/59%) — käyttäjä näkee missä merkki muuttuu
      vihreäksi. (2) Merkit paksummiksi/isommiksi (viiva 34→52px leveä, 4→6px paksu, päänäkymän neulan
@@ -707,11 +714,11 @@ body.portrait #btnMean{top:22%; height:22%;}
 #preStartTactical.show{display:block;}
 .ptStage{display:flex;gap:6px;padding:8px;padding-top:calc(8px + env(safe-area-inset-top));padding-bottom:calc(8px + env(safe-area-inset-bottom));height:100%;box-sizing:border-box;}
 .ptBar{width:19%;flex:0 0 19%;border-radius:14px;border:1px solid #1c232b;position:relative;background:#050708;
-  display:flex;flex-direction:column;align-items:center;padding:10px 0;box-sizing:border-box;}
+  display:flex;flex-direction:column;align-items:center;padding:46px 0 28px;box-sizing:border-box;}
 .ptBar.inactive{opacity:.4;}
-/* nimiöt (kevyet, ei taustaa) */
-.ptCap{font-family:var(--mono);font-size:11px;font-weight:800;letter-spacing:.06em;color:#7d8791;flex:0 0 auto;}
-.ptCap.mid{position:absolute;left:50%;transform:translate(-50%,-50%);white-space:nowrap;color:#5f6871;font-size:10px;z-index:2;}
+/* nimiöt (kevyet mutta luettavat) */
+.ptCap{font-family:var(--mono);font-size:12px;font-weight:800;letter-spacing:.06em;color:#b0b8bf;flex:0 0 auto;}
+.ptCap.mid{position:absolute;left:50%;transform:translate(-50%,-50%);white-space:nowrap;color:#8b949c;font-size:11px;z-index:2;}
 /* ohut neutraali raita, tickit repeating-gradientilla (5 väliä) */
 .ptTrack{position:relative;flex:1 1 auto;width:2px;margin:8px 0;background:rgba(255,255,255,.16);border-radius:2px;}
 .ptTrack::before{content:"";position:absolute;left:50%;top:0;bottom:0;width:16px;transform:translateX(-50%);
@@ -822,8 +829,8 @@ body.portrait #btnMean{top:22%; height:22%;}
     <div class="ptBar inactive" id="ptBarLeft">
       <div class="ptCap top">PUSH</div>
       <div class="ptTrack">
-        <div class="ptTier green" style="top:41%;"></div>
-        <div class="ptTier green" style="top:59%;"></div>
+        <div class="ptTier green" style="top:40%;"></div>
+        <div class="ptTier green" style="top:60%;"></div>
         <div class="ptMark line hidden" id="ptNeedleLeft"></div>
       </div>
       <div class="ptCap bot">PULL</div>
@@ -846,9 +853,9 @@ body.portrait #btnMean{top:22%; height:22%;}
     <div class="ptBar" id="ptBarRight">
       <div class="ptCap top">WAIT</div>
       <div class="ptTrack">
-        <div class="ptCap mid" style="top:67%;">CLOSING</div>
-        <div class="ptTier amber" style="top:56%;"></div>
-        <div class="ptTier red edge" style="top:78%;"></div>
+        <div class="ptCap mid" style="top:70%;">CLOSING</div>
+        <div class="ptTier amber" style="top:60%;"></div>
+        <div class="ptTier red edge" style="top:80%;"></div>
         <div class="ptMark dot hidden" id="ptNeedle"></div>
       </div>
       <div class="ptCap bot">NOW</div>
@@ -1066,7 +1073,7 @@ function preStartDist(){
 // ---- erä 2: marginaali ----
 const PRESTART_KN_TO_MS = 0.514444;
 // (PRESTART_ACCEL_S määritelty §3-lohkossa fallback-vakiona — opittu kiihtyvyys korvaa sen kun dataa on)
-const PRESTART_NOW_EDGE = 0.78; // NOW-vyöhykkeen yläreuna palkilla (O-PS-6: laukaisuraja)
+const PRESTART_NOW_EDGE = 0.80; // NOW-vyöhykkeen yläreuna palkilla (O-PS-6: laukaisuraja; 20% ruudukko)
 // Diskreetti sekunti-simulaatio: "jos painan täysille NYT, montako metriä etenen ennen
 // laukausta?" Sama nopeuden rajoitus kuin todellinen tikki (kiihdytyskaari + täysvauhtinen
 // loppu) — jatkuva kaava tuotti systemaattisen ylityksen, diskreetti täsmää ~1 m.
@@ -3240,14 +3247,14 @@ function renderPreStartTactical(){
     needle.className='ptMark dot hidden';
     st.className='ptState st-hidden'; st.textContent='—';
   } else {
-    let dotCls;
-    if(distM!=null && distM<0)               dotCls='ocs';    // yli linjan → vilkkuva punainen
-    else if(m.pos>=PRESTART_NOW_EDGE)         dotCls='now';    // ≥78% (laukaisuraja) → punainen
-    else if(m.pos>=0.56)                      dotCls='amber';  // ≥56% → amber
+    st.className='ptState '+m.cls; st.textContent=m.txt;
+    let pos=m.pos, dotCls;
+    if(distM!=null && distM<0){ dotCls='ocs'; pos=1; }        // yli linjan → pohja + vilkkuva (väri ja sijainti täsmäävät)
+    else if(pos>=PRESTART_NOW_EDGE)           dotCls='now';    // ≥80% (laukaisuraja) → punainen
+    else if(pos>=0.60)                        dotCls='amber';  // ≥60% → amber
     else                                      dotCls='';       // WAIT → valkoinen
     needle.className='ptMark dot'+(dotCls?(' '+dotCls):'');
-    needle.style.top=(m.pos*100)+'%';
-    st.className='ptState '+m.cls; st.textContent=m.txt;
+    needle.style.top=(pos*100)+'%';
   }
 
   // vasen palkki (aikataulu) + re-planointi (erä 3)
@@ -3267,7 +3274,7 @@ function renderPreStartTactical(){
   }
   if(schedPct!=null){
     barL.classList.remove("inactive");
-    const onpath = schedPct>=41 && schedPct<=59; // ON PATH -kaista (vastaa vanhaa vyöhykettä 41–59%)
+    const onpath = schedPct>=40 && schedPct<=60; // ON PATH -kaista (40–60%, osuu 20% ruudukkoon)
     needleL.className='ptMark line'+(onpath?' onpath':'');
     needleL.style.top=schedPct+'%';
   } else {
@@ -4114,7 +4121,7 @@ document.querySelectorAll(".stepper").forEach(st=>{
 });
 
 /* ---------- init ---------- */
-const APP_VERSION="🇫🇮 Tackcall v1.39";
+const APP_VERSION="🇫🇮 Tackcall v1.40";
 (function(){
   const e=$("verEnable"); if(e) e.textContent=APP_VERSION;
   const n=$("verNote"); if(n) n.textContent=APP_VERSION+" · shares engine with index.html";
