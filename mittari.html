@@ -1,5 +1,11 @@
 <!DOCTYPE html>
 <!-- Tackcall Meter — MIT License — Copyright (c) 2026 Vesa Lindqvist — Contributors: Joonas Sandholm -->
+<!-- v1.37 (Pre-start korjaus: käynnistysnappi ei enää epäonnistu hiljaa): taktinen näkymä vaatii
+     viivan molemmat päät (DIST + marginaali), mutta v1.35 poisti vihjeen joka kertoi tämän, joten
+     "Start sequence" / "Resume start view" ei tehnyt mitään näkyvää ilman viivaa (näytti rikkinäiseltä).
+     Nyt: nappi himmenee ja lukee "Set line to start" kun viiva puuttuu; pysyvä vihje (#psLaunchHint)
+     kertoo tarkalleen kumpi pää puuttuu (Boat/Pin/molemmat); painallus ilman viivaa ei aseta enää
+     haamukelloa (guard). Viiva valmiina nappi toimii normaalisti. -->
 <!-- v1.36 (Pre-start: taktisen näkymän käytettävyys — 2 korjausta):
      (1) Kellon synkkaus ei enää tapahdu napauttamalla keskellä olevaa kelloa (virhealtis) vaan
      erillisestä SYNC-napista oikeassa yläkulmassa (peilaa ‹ SETUP). Napautuksella flash-vahvistus.
@@ -653,6 +659,7 @@ body.portrait #btnMean{top:22%; height:22%;}
 .psTimerBtns button{flex:1;}
 .psProf.psProfActive{border-color:var(--cyan)!important;color:var(--cyan)!important;box-shadow:0 0 0 1px var(--cyan) inset;}
 .psLaunch{border-color:var(--cyan)!important;color:var(--cyan)!important;box-shadow:0 0 0 1px var(--cyan) inset;font-weight:600;}
+.psLaunch.psLaunchOff{border-color:#2a2a2a!important;color:#5a5a5a!important;box-shadow:none;}
 .psDurStep{display:flex;align-items:center;justify-content:center;gap:14px;margin:8px 0;}
 .psDurStep button{width:52px;height:40px;font-size:20px;background:#141414;border:1px solid var(--line,#1c232b);border-radius:10px;color:#eef2f5;}
 .psDurStep .psDurVal{font-family:var(--mono);font-size:22px;font-weight:700;min-width:70px;text-align:center;color:#eef2f5;}
@@ -770,6 +777,7 @@ body.portrait #btnMean{top:22%; height:22%;}
 <div class="ssHint" id="psAccelHint"></div>
 
 <button class="close psLaunch" id="btnPsStart">Start sequence</button>
+<div class="ssHint" id="psLaunchHint"></div>
 <div style="display:flex;gap:8px;margin-top:8px;">
   <button class="close reset" id="btnPsReset" style="flex:1;">Reset timer</button>
   <button class="close reset" id="btnClearLine" style="flex:1;">Clear line</button>
@@ -3074,9 +3082,22 @@ function renderPreStart(){
     else if(ps.accelState==='dim')  ah.innerHTML='Acceleration: <b>'+ps.accelS.toFixed(0)+' s</b>, still learning ('+ps.accelN+' tack'+(ps.accelN===1?'':'s')+') — treat as rough.';
     else                            ah.innerHTML='Acceleration: <b>'+PRESTART_ACCEL_S+' s</b> assumed — sail and tack to learn your own.';
   }
-  // Käynnistysnapin teksti: käynnistä uusi sekvenssi vs. jatka jo käynnissä olevaa (ei uudelleenkäynnistystä).
-  const lb=$("btnPsStart");
-  if(lb) lb.textContent = (S.preStart.gunTs==null) ? 'Start sequence' : 'Resume start view';
+  // Käynnistysnapin teksti + tila. Viiva (molemmat päät) on edellytys taktiselle näkymälle.
+  const lb=$("btnPsStart"), lineReady=!!(S.preStart.boat && S.preStart.pin);
+  if(lb){
+    if(!lineReady)                      lb.textContent='Set line to start';
+    else if(S.preStart.gunTs==null)     lb.textContent='Start sequence';
+    else                                lb.textContent='Resume start view';
+    lb.classList.toggle('psLaunchOff', !lineReady);
+  }
+  const lh=$("psLaunchHint");
+  if(lh){
+    if(!lineReady){
+      const miss = (!S.preStart.boat && !S.preStart.pin) ? 'both line ends (Boat + Pin)'
+                 : (!S.preStart.boat ? 'the Boat end' : 'the Pin end');
+      lh.textContent='Set '+miss+' above — the tactical view needs the line for distance and margin.';
+    } else lh.textContent='';
+  }
   renderPreStartTimerMargin(d);
 }
 // Palauttaa null jos marginaalia ei voi laskea (puuttuu linja / tavoite / käynnissä oleva kello).
@@ -3259,6 +3280,9 @@ $("btnPsDurPlus").addEventListener("click", ()=>{
   S.preStart.durS=Math.min(600, S.preStart.durS+60); renderPreStart();
 });
 $("btnPsStart").addEventListener("click", ()=>{
+  // Taktinen näkymä (DIST + marginaali) vaatii viivan molemmat päät. Ilman niitä ei aseteta
+  // kelloa lainkaan (ei haamukelloa). Pysyvä vihje (#psLaunchHint) kertoo mitä puuttuu.
+  if(!(S.preStart.boat && S.preStart.pin)) return;
   // Kontekstitietoinen: jos kello ei käynnissä → käynnistä sekvenssi. Jos jo käynnissä (palattu
   // ‹ SETUP:sta) → jatka taktiseen ilman uudelleenkäynnistystä (synkkaus säilyy). Reset nollaa kellon.
   if(S.preStart.gunTs==null){
@@ -4051,7 +4075,7 @@ document.querySelectorAll(".stepper").forEach(st=>{
 });
 
 /* ---------- init ---------- */
-const APP_VERSION="🇫🇮 Tackcall v1.36";
+const APP_VERSION="🇫🇮 Tackcall v1.37";
 (function(){
   const e=$("verEnable"); if(e) e.textContent=APP_VERSION;
   const n=$("verNote"); if(n) n.textContent=APP_VERSION+" · shares engine with index.html";
