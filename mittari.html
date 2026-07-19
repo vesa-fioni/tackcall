@@ -1,5 +1,13 @@
 <!DOCTYPE html>
 <!-- Tackcall Meter — MIT License — Copyright (c) 2026 Vesa Lindqvist — Contributors: Joonas Sandholm -->
+<!-- v1.38 (Pre-start: taktisen näkymän mittarien visuaalinen uudistus): sivupalkkien raskaat
+     värivyöhykkeet korvattu kevyillä mutta merkitsevillä indikaattoreilla. Molemmat = ohut neutraali
+     raita + tickit; MERKKI kantaa värin (status) ja sijainnin (missä ollaan) — päänäkymän neulan
+     idea. Vasen (aikataulu): PUSH/PULL-nimiöt, vaakaviiva, VIHREÄ vain ON PATH -kaistalla (41–59%),
+     muuten valkoinen. Oikea (marginaali): WAIT/CLOSING/NOW-nimiöt, YMPYRÄ (erottuu viivasta kiireessä),
+     WAIT valkoinen → CLOSING/SOON amber → PUSH FULL NOW punainen → OCS vilkkuva punainen. Laukaisuraja
+     (NOW edge) säilyy omana viivanaan. Sijaintilaskenta (pos/schedPct) ja keskitilateksti ennallaan —
+     vain renderöinti muuttui. Poistetut luokat: ptZone/ptL-*/ptR-*; uudet: ptTrack/ptCap/ptMark/ptNowEdge2. -->
 <!-- v1.37 (Pre-start korjaus: käynnistysnappi ei enää epäonnistu hiljaa): taktinen näkymä vaatii
      viivan molemmat päät (DIST + marginaali), mutta v1.35 poisti vihjeen joka kertoi tämän, joten
      "Start sequence" / "Resume start view" ei tehnyt mitään näkyvää ilman viivaa (näytti rikkinäiseltä).
@@ -691,22 +699,30 @@ body.portrait #btnMean{top:22%; height:22%;}
 #preStartTactical{position:fixed;inset:0;z-index:60;background:#000;display:none;}
 #preStartTactical.show{display:block;}
 .ptStage{display:flex;gap:6px;padding:8px;padding-top:calc(8px + env(safe-area-inset-top));padding-bottom:calc(8px + env(safe-area-inset-bottom));height:100%;box-sizing:border-box;}
-.ptBar{width:19%;flex:0 0 19%;border-radius:14px;overflow:hidden;border:1px solid #1c232b;position:relative;background:#050708;}
+.ptBar{width:19%;flex:0 0 19%;border-radius:14px;border:1px solid #1c232b;position:relative;background:#050708;
+  display:flex;flex-direction:column;align-items:center;padding:10px 0;box-sizing:border-box;}
 .ptBar.inactive{opacity:.4;}
-.ptZone{position:absolute;left:0;right:0;display:flex;align-items:center;justify-content:center;}
-.ptZone span{font-family:var(--mono);font-size:11px;font-weight:800;letter-spacing:.05em;writing-mode:vertical-rl;transform:rotate(180deg);color:#fff;text-shadow:0 0 6px rgba(0,0,0,.8);}
-/* vasen palkki (aikataulu) — erä 3; nyt vain värivyöhykkeet, ei neulaa */
-.ptL-push{top:0;height:41%;background:linear-gradient(to bottom,rgba(255,43,43,.9),rgba(255,138,30,.4));}
-.ptL-onpath{top:41%;height:18%;background:rgba(25,226,106,.9);}
-.ptL-ease{top:59%;height:41%;background:linear-gradient(to top,rgba(25,224,224,.85),rgba(25,224,224,.3));}
-/* oikea palkki (marginaali) — aktiivinen */
-.ptR-wait{top:0;height:56%;background:linear-gradient(to bottom,rgba(25,224,224,.2),rgba(25,224,224,.5));}
-.ptR-closing{top:56%;height:22%;background:rgba(255,209,26,.55);}
-.ptR-now{top:78%;height:22%;background:rgba(25,226,106,.9);}
-.ptNowEdge{position:absolute;left:0;right:0;top:78%;height:3px;margin-top:-1.5px;background:#fff;box-shadow:0 0 8px 1px rgba(255,255,255,.85);z-index:3;}
-.ptNowEdge::after{content:"▶";position:absolute;left:-11px;top:-7px;font-size:11px;color:#fff;}
-.ptNeedle{position:absolute;left:-3px;right:-3px;height:4px;margin-top:-2px;background:#fff;box-shadow:0 0 10px 2px rgba(255,255,255,.75);z-index:4;transition:top .2s ease;}
-.ptNeedle.hidden{display:none;}
+/* nimiöt (kevyet, ei taustaa) */
+.ptCap{font-family:var(--mono);font-size:11px;font-weight:800;letter-spacing:.06em;color:#7d8791;flex:0 0 auto;}
+.ptCap.mid{position:absolute;left:50%;transform:translate(-50%,-50%);white-space:nowrap;color:#5f6871;font-size:10px;z-index:2;}
+/* ohut neutraali raita, tickit repeating-gradientilla (5 väliä) */
+.ptTrack{position:relative;flex:1 1 auto;width:2px;margin:8px 0;background:rgba(255,255,255,.16);border-radius:2px;}
+.ptTrack::before{content:"";position:absolute;left:50%;top:0;bottom:0;width:16px;transform:translateX(-50%);
+  background:repeating-linear-gradient(to bottom, rgba(255,255,255,.22) 0 2px, transparent 2px 20%);}
+/* laukaisuraja (NOW edge) omana viivanaan */
+.ptNowEdge2{position:absolute;left:50%;top:78%;width:26px;height:2px;transform:translate(-50%,-50%);
+  background:rgba(255,255,255,.7);box-shadow:0 0 6px 1px rgba(255,255,255,.5);z-index:3;}
+.ptNowEdge2::after{content:"▶";position:absolute;left:-12px;top:50%;transform:translateY(-50%);font-size:9px;color:rgba(255,255,255,.75);}
+/* merkit: väri = status, sijainti = missä ollaan. Vasen = viiva, oikea = ympyrä (erottuvat kiireessä). */
+.ptMark{position:absolute;left:50%;transform:translate(-50%,-50%);z-index:5;transition:top .2s ease;}
+.ptMark.hidden{display:none;}
+.ptMark.line{width:34px;height:4px;border-radius:2px;background:#fff;box-shadow:0 0 10px 2px rgba(255,255,255,.6);}
+.ptMark.line.onpath{background:var(--green);box-shadow:0 0 12px 3px rgba(25,226,106,.7);}
+.ptMark.dot{width:20px;height:20px;border-radius:50%;background:#fff;box-shadow:0 0 10px 2px rgba(255,255,255,.5);}
+.ptMark.dot.amber{background:var(--orange);box-shadow:0 0 12px 3px rgba(255,138,30,.65);}
+.ptMark.dot.now{background:var(--red);box-shadow:0 0 12px 3px rgba(255,43,43,.7);}
+.ptMark.dot.ocs{background:var(--red);box-shadow:0 0 14px 4px rgba(255,43,43,.85);animation:ptDotFlash .6s ease-in-out infinite;}
+@keyframes ptDotFlash{0%,100%{opacity:1;}50%{opacity:.25;}}
 /* keskisarake */
 .ptMid{flex:1;display:flex;flex-direction:column;gap:6px;min-width:0;}
 .ptBox{background:#0b0d10;border:1px solid #1c232b;border-radius:14px;text-align:center;display:flex;flex-direction:column;align-items:center;justify-content:center;}
@@ -794,10 +810,11 @@ body.portrait #btnMean{top:22%; height:22%;}
   <button class="ptSync" id="btnPtSync">SYNC</button>
   <div class="ptStage">
     <div class="ptBar inactive" id="ptBarLeft">
-      <div class="ptZone ptL-push"><span>PUSH</span></div>
-      <div class="ptZone ptL-onpath"><span>ON PATH</span></div>
-      <div class="ptZone ptL-ease"><span>EASE</span></div>
-      <div class="ptNeedle hidden" id="ptNeedleLeft"></div>
+      <div class="ptCap top">PUSH</div>
+      <div class="ptTrack">
+        <div class="ptMark line hidden" id="ptNeedleLeft"></div>
+      </div>
+      <div class="ptCap bot">PULL</div>
     </div>
     <div class="ptMid">
       <div class="ptBox top">
@@ -815,11 +832,13 @@ body.portrait #btnMean{top:22%; height:22%;}
       </div>
     </div>
     <div class="ptBar" id="ptBarRight">
-      <div class="ptZone ptR-wait"><span>WAIT</span></div>
-      <div class="ptZone ptR-closing"><span>CLOSING</span></div>
-      <div class="ptZone ptR-now"><span>NOW</span></div>
-      <div class="ptNowEdge"></div>
-      <div class="ptNeedle hidden" id="ptNeedle"></div>
+      <div class="ptCap top">WAIT</div>
+      <div class="ptTrack">
+        <div class="ptCap mid" style="top:67%;">CLOSING</div>
+        <div class="ptNowEdge2"></div>
+        <div class="ptMark dot hidden" id="ptNeedle"></div>
+      </div>
+      <div class="ptCap bot">NOW</div>
     </div>
   </div>
   <div class="ptSyncHint" id="ptSyncHint">SYNC to snap the clock to a signal · ‹ SETUP to adjust</div>
@@ -3201,13 +3220,19 @@ function renderPreStartTactical(){
   if(syncBtn) syncBtn.classList.remove("hidden");
   if(syncHint){ syncHint.classList.remove("exitCd"); syncHint.textContent='SYNC to snap the clock to a signal · ‹ SETUP to adjust'; }
 
-  // oikea palkki (marginaali) + tilateksti
+  // oikea palkki (marginaali) — ympyrä-merkki, väri = status: WAIT valkoinen → CLOSING/SOON amber →
+  // NOW (PUSH FULL) punainen → OCS vilkkuva punainen. Keskitilateksti (m.cls/m.txt) ennallaan.
   const m=preStartComputeMargin(distM, tts);
   if(!m){
-    needle.classList.add("hidden");
+    needle.className='ptMark dot hidden';
     st.className='ptState st-hidden'; st.textContent='—';
   } else {
-    needle.classList.remove("hidden");
+    let dotCls;
+    if(m.cls==='st-wait')                              dotCls='';       // neutraali (valkoinen)
+    else if(m.cls==='st-closing' || m.cls==='st-soon') dotCls='amber';  // lähestyy
+    else if(m.txt==='OCS RISK')                        dotCls='ocs';    // yli linjan → vilkkuva punainen
+    else                                               dotCls='now';    // PUSH FULL NOW → punainen
+    needle.className='ptMark dot'+(dotCls?(' '+dotCls):'');
     needle.style.top=(m.pos*100)+'%';
     st.className='ptState '+m.cls; st.textContent=m.txt;
   }
@@ -3229,11 +3254,12 @@ function renderPreStartTactical(){
   }
   if(schedPct!=null){
     barL.classList.remove("inactive");
-    needleL.classList.remove("hidden");
+    const onpath = schedPct>=41 && schedPct<=59; // ON PATH -kaista (vastaa vanhaa vyöhykettä 41–59%)
+    needleL.className='ptMark line'+(onpath?' onpath':'');
     needleL.style.top=schedPct+'%';
   } else {
     barL.classList.add("inactive");
-    needleL.classList.add("hidden");
+    needleL.className='ptMark line hidden';
   }
 }
 function preStartMarkEnd(which){
@@ -4075,7 +4101,7 @@ document.querySelectorAll(".stepper").forEach(st=>{
 });
 
 /* ---------- init ---------- */
-const APP_VERSION="🇫🇮 Tackcall v1.37";
+const APP_VERSION="🇫🇮 Tackcall v1.38";
 (function(){
   const e=$("verEnable"); if(e) e.textContent=APP_VERSION;
   const n=$("verNote"); if(n) n.textContent=APP_VERSION+" · shares engine with index.html";
