@@ -1,5 +1,12 @@
 <!DOCTYPE html>
 <!-- Tackcall Meter — MIT License — Copyright (c) 2026 Vesa Lindqvist — Contributors: Joonas Sandholm -->
+<!-- v1.39 (Pre-start mittarit, hienosäätö kenttäpalautteen pohjalta): (1) Vasemmalle lisätty ON PATH
+     -tavoiteväli näkyviin kahtena vihreänä tilaviivana (41%/59%) — käyttäjä näkee missä merkki muuttuu
+     vihreäksi. (2) Merkit paksummiksi/isommiksi (viiva 34→52px leveä, 4→6px paksu, päänäkymän neulan
+     luokkaa; pallo 20→27px). (3) Oikealle lisätty tilaviivat värinvaihtorajoille (amber 56%, punainen
+     laukaisuraja 78% ▶). KRIITTINEN: oikean pallon väri kytketty nyt SIJAINTIKAISTOIHIN (ei m.cls),
+     jotta väri vaihtuu tarkalleen tilaviivan kohdalla — muuten viivat olisivat harhaanjohtavia.
+     ptNowEdge2 korvattu yleisellä ptTier-luokalla (green/amber/red/edge). -->
 <!-- v1.38 (Pre-start: taktisen näkymän mittarien visuaalinen uudistus): sivupalkkien raskaat
      värivyöhykkeet korvattu kevyillä mutta merkitsevillä indikaattoreilla. Molemmat = ohut neutraali
      raita + tickit; MERKKI kantaa värin (status) ja sijainnin (missä ollaan) — päänäkymän neulan
@@ -709,18 +716,21 @@ body.portrait #btnMean{top:22%; height:22%;}
 .ptTrack{position:relative;flex:1 1 auto;width:2px;margin:8px 0;background:rgba(255,255,255,.16);border-radius:2px;}
 .ptTrack::before{content:"";position:absolute;left:50%;top:0;bottom:0;width:16px;transform:translateX(-50%);
   background:repeating-linear-gradient(to bottom, rgba(255,255,255,.22) 0 2px, transparent 2px 20%);}
-/* laukaisuraja (NOW edge) omana viivanaan */
-.ptNowEdge2{position:absolute;left:50%;top:78%;width:26px;height:2px;transform:translate(-50%,-50%);
-  background:rgba(255,255,255,.7);box-shadow:0 0 6px 1px rgba(255,255,255,.5);z-index:3;}
-.ptNowEdge2::after{content:"▶";position:absolute;left:-12px;top:50%;transform:translateY(-50%);font-size:9px;color:rgba(255,255,255,.75);}
-/* merkit: väri = status, sijainti = missä ollaan. Vasen = viiva, oikea = ympyrä (erottuvat kiireessä). */
+/* tilaviivat (tavoiteväli / värinvaihtorajat) — ohut, väri vihjaa mihin väriin merkki vaihtuu */
+.ptTier{position:absolute;left:50%;width:22px;height:2px;transform:translate(-50%,-50%);z-index:3;background:rgba(255,255,255,.35);}
+.ptTier.green{background:rgba(25,226,106,.6);box-shadow:0 0 5px rgba(25,226,106,.4);}
+.ptTier.amber{background:rgba(255,138,30,.6);box-shadow:0 0 5px rgba(255,138,30,.4);}
+.ptTier.red{background:rgba(255,43,43,.65);box-shadow:0 0 5px rgba(255,43,43,.45);}
+.ptTier.edge::after{content:"▶";position:absolute;left:-12px;top:50%;transform:translateY(-50%);font-size:9px;color:rgba(255,255,255,.7);}
+/* merkit: väri = status, sijainti = missä ollaan. Vasen = viiva, oikea = ympyrä (erottuvat kiireessä).
+   Paksuus/hehku päänäkymän neulan luokkaa jotta erottuu vesillä. */
 .ptMark{position:absolute;left:50%;transform:translate(-50%,-50%);z-index:5;transition:top .2s ease;}
 .ptMark.hidden{display:none;}
-.ptMark.line{width:34px;height:4px;border-radius:2px;background:#fff;box-shadow:0 0 10px 2px rgba(255,255,255,.6);}
-.ptMark.line.onpath{background:var(--green);box-shadow:0 0 12px 3px rgba(25,226,106,.7);}
-.ptMark.dot{width:20px;height:20px;border-radius:50%;background:#fff;box-shadow:0 0 10px 2px rgba(255,255,255,.5);}
-.ptMark.dot.amber{background:var(--orange);box-shadow:0 0 12px 3px rgba(255,138,30,.65);}
-.ptMark.dot.now{background:var(--red);box-shadow:0 0 12px 3px rgba(255,43,43,.7);}
+.ptMark.line{width:52px;height:6px;border-radius:3px;background:#fff;box-shadow:0 0 12px 3px rgba(255,255,255,.65);}
+.ptMark.line.onpath{background:var(--green);box-shadow:0 0 16px 4px rgba(25,226,106,.8);}
+.ptMark.dot{width:27px;height:27px;border-radius:50%;background:#fff;box-shadow:0 0 12px 3px rgba(255,255,255,.55);}
+.ptMark.dot.amber{background:var(--orange);box-shadow:0 0 14px 4px rgba(255,138,30,.7);}
+.ptMark.dot.now{background:var(--red);box-shadow:0 0 14px 4px rgba(255,43,43,.75);}
 .ptMark.dot.ocs{background:var(--red);box-shadow:0 0 14px 4px rgba(255,43,43,.85);animation:ptDotFlash .6s ease-in-out infinite;}
 @keyframes ptDotFlash{0%,100%{opacity:1;}50%{opacity:.25;}}
 /* keskisarake */
@@ -812,6 +822,8 @@ body.portrait #btnMean{top:22%; height:22%;}
     <div class="ptBar inactive" id="ptBarLeft">
       <div class="ptCap top">PUSH</div>
       <div class="ptTrack">
+        <div class="ptTier green" style="top:41%;"></div>
+        <div class="ptTier green" style="top:59%;"></div>
         <div class="ptMark line hidden" id="ptNeedleLeft"></div>
       </div>
       <div class="ptCap bot">PULL</div>
@@ -835,7 +847,8 @@ body.portrait #btnMean{top:22%; height:22%;}
       <div class="ptCap top">WAIT</div>
       <div class="ptTrack">
         <div class="ptCap mid" style="top:67%;">CLOSING</div>
-        <div class="ptNowEdge2"></div>
+        <div class="ptTier amber" style="top:56%;"></div>
+        <div class="ptTier red edge" style="top:78%;"></div>
         <div class="ptMark dot hidden" id="ptNeedle"></div>
       </div>
       <div class="ptCap bot">NOW</div>
@@ -3220,18 +3233,18 @@ function renderPreStartTactical(){
   if(syncBtn) syncBtn.classList.remove("hidden");
   if(syncHint){ syncHint.classList.remove("exitCd"); syncHint.textContent='SYNC to snap the clock to a signal · ‹ SETUP to adjust'; }
 
-  // oikea palkki (marginaali) — ympyrä-merkki, väri = status: WAIT valkoinen → CLOSING/SOON amber →
-  // NOW (PUSH FULL) punainen → OCS vilkkuva punainen. Keskitilateksti (m.cls/m.txt) ennallaan.
+  // oikea palkki (marginaali) — ympyrä-merkki, väri = SIJAINTIKAISTA (jotta tilaviivat pitävät
+  // paikkansa: väri vaihtuu tarkalleen viivan kohdalla). OCS (yli linjan) → vilkkuva, ohittaa muut.
   const m=preStartComputeMargin(distM, tts);
   if(!m){
     needle.className='ptMark dot hidden';
     st.className='ptState st-hidden'; st.textContent='—';
   } else {
     let dotCls;
-    if(m.cls==='st-wait')                              dotCls='';       // neutraali (valkoinen)
-    else if(m.cls==='st-closing' || m.cls==='st-soon') dotCls='amber';  // lähestyy
-    else if(m.txt==='OCS RISK')                        dotCls='ocs';    // yli linjan → vilkkuva punainen
-    else                                               dotCls='now';    // PUSH FULL NOW → punainen
+    if(distM!=null && distM<0)               dotCls='ocs';    // yli linjan → vilkkuva punainen
+    else if(m.pos>=PRESTART_NOW_EDGE)         dotCls='now';    // ≥78% (laukaisuraja) → punainen
+    else if(m.pos>=0.56)                      dotCls='amber';  // ≥56% → amber
+    else                                      dotCls='';       // WAIT → valkoinen
     needle.className='ptMark dot'+(dotCls?(' '+dotCls):'');
     needle.style.top=(m.pos*100)+'%';
     st.className='ptState '+m.cls; st.textContent=m.txt;
@@ -4101,7 +4114,7 @@ document.querySelectorAll(".stepper").forEach(st=>{
 });
 
 /* ---------- init ---------- */
-const APP_VERSION="🇫🇮 Tackcall v1.38";
+const APP_VERSION="🇫🇮 Tackcall v1.39";
 (function(){
   const e=$("verEnable"); if(e) e.textContent=APP_VERSION;
   const n=$("verNote"); if(n) n.textContent=APP_VERSION+" · shares engine with index.html";
