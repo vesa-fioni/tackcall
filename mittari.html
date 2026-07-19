@@ -1,5 +1,10 @@
 <!DOCTYPE html>
 <!-- Tackcall Meter — MIT License — Copyright (c) 2026 Vesa Lindqvist — Contributors: Joonas Sandholm -->
+<!-- v1.28 (Pre-start): OCS-tunnistus toimii nyt oikeasti. preStartDist palauttaa ETUMERKILLISEN
+     etäisyyden: negatiivinen = yli linjan (tuulen/radan puoli). Yli-puoli määritetään meaneista
+     lasketusta tuuliakselista (preStartWindAxis, kehämean stb/bb). Ilman meaneja etumerkitön
+     (OCS ei väitetä — rehellinen degradaatio, vihje setupissa). Tämä aktivoi OVER / OCS RISK /
+     OCS AT GUN -tilat, jotka olivat aiemmin kuollutta koodia (dist oli aina positiivinen). -->
 <!-- v1.27 (Pre-start): automaattinen paluu kompassitilaan lähdön jälkeen. Minuutti laukaisusta
      (PRESTART_AUTO_EXIT_S=60, kalibroitava; ehdokas asetukseksi) pre-start sulkeutuu, datatila pois
      ja kompassinäkymä palautuu — kilpailu on alkanut. Sekvenssin tila nollataan (linja jää muistiin).
@@ -845,12 +850,31 @@ function distToLine(pLat, pLon, aLat, aLon, bLat, bLon){
   const side=Math.sign(dx*(P.y-A.y)-dy*(P.x-A.x)); // ristitulo → kumpi puoli
   return { dist, side, t:tc };
 }
-// Nykyinen kohtisuora etäisyys lähtölinjaan, tai null jos linjaa/positiota ei ole.
+// Tuuliakseli (suunta suoraan tuuleen, upwind) kahden mean-halssin kehämeaana, tai null jos
+// meaneja ei ole. Sama määritelmä kuin sovelluksen sisäinen _cm2, mutta pre-startille saatavilla.
+function preStartWindAxis(){
+  if(S.meanStb==null || S.meanBb==null) return null;
+  const a=S.meanStb*Math.PI/180, b=S.meanBb*Math.PI/180;
+  return Math.atan2((Math.sin(a)+Math.sin(b))/2,(Math.cos(a)+Math.cos(b))/2)*180/Math.PI;
+}
+// Etumerkillinen kohtisuora etäisyys lähtölinjaan (O-PS-1 täydennetty):
+//   positiivinen = pre-start-puoli (turvassa), negatiivinen = YLI linjan (tuulen/radan puoli, OCS).
+//   null jos linjaa/positiota ei ole. Etumerkitön (aina positiivinen) jos meaneja ei ole asetettu
+//   — silloin tuulen puolta ei voi tietää, joten OCS:ää ei väitetä (rehellinen degradaatio).
 function preStartDist(){
   const ps=S.preStart;
   if(!ps.boat || !ps.pin || S.gps.lat==null) return null;
   const r=distToLine(S.gps.lat, S.gps.lon, ps.boat.lat, ps.boat.lon, ps.pin.lat, ps.pin.lon);
-  return r.dist;
+  const wind=preStartWindAxis();
+  if(wind==null || r.side===0) return r.dist; // ei tuuliestimaattia → etumerkitön
+  // "Yli"-puoli = se linjan puoli johon tuuliakseli (upwind) osoittaa.
+  const A=llToXY(ps.boat.lat,ps.boat.lon,ps.boat.lat,ps.boat.lon);
+  const B=llToXY(ps.pin.lat,ps.pin.lon,ps.boat.lat,ps.boat.lon);
+  const dx=B.x-A.x, dy=B.y-A.y;
+  const wr=wind*Math.PI/180, wx=Math.sin(wr), wy=Math.cos(wr); // bearing → (x=itä, y=pohjoinen)
+  const overSign=Math.sign(dx*wy - dy*wx);
+  if(overSign===0) return r.dist;
+  return (r.side===overSign) ? -r.dist : r.dist; // yli linjan → negatiivinen
 }
 
 // ---- erä 2: marginaali ----
@@ -2873,9 +2897,13 @@ function renderPreStart(){
   $("psDist").textContent = (d==null) ? '—' : Math.round(d)+' m';
   const hint=$("psGpsHint");
   if(hint){
-    if(S.gps.lat==null) hint.textContent='Waiting for GPS fix… turn GPS on in settings if needed.';
-    else if(S.gps.acc!=null) hint.textContent='Current GPS accuracy ±'+Math.round(S.gps.acc)+' m. A poor fix makes the line unreliable.';
-    else hint.textContent='GPS accuracy shown once available. A poor fix makes the line unreliable.';
+    let base;
+    if(S.gps.lat==null) base='Waiting for GPS fix… turn GPS on in settings if needed.';
+    else if(S.gps.acc!=null) base='Current GPS accuracy ±'+Math.round(S.gps.acc)+' m. A poor fix makes the line unreliable.';
+    else base='GPS accuracy shown once available. A poor fix makes the line unreliable.';
+    // OCS-tunnistus (yli linjan) vaatii tuuliviitteen = upwind-meanit molemmilta halsseilta.
+    if(S.meanStb==null || S.meanBb==null) base += ' Set upwind means (both tacks) to enable OVER / OCS detection.';
+    hint.textContent=base;
   }
   renderPreStartTimerMargin(d);
 }
@@ -3801,7 +3829,7 @@ document.querySelectorAll(".stepper").forEach(st=>{
 });
 
 /* ---------- init ---------- */
-const APP_VERSION="🇫🇮 Tackcall v1.27";
+const APP_VERSION="🇫🇮 Tackcall v1.28";
 (function(){
   const e=$("verEnable"); if(e) e.textContent=APP_VERSION;
   const n=$("verNote"); if(n) n.textContent=APP_VERSION+" · shares engine with index.html";
