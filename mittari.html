@@ -1,5 +1,14 @@
 <!DOCTYPE html>
 <!-- Tackcall Meter — MIT License — Copyright (c) 2026 Vesa Lindqvist — Contributors: Joonas Sandholm -->
+<!-- v1.36 (Pre-start: taktisen näkymän käytettävyys — 2 korjausta):
+     (1) Kellon synkkaus ei enää tapahdu napauttamalla keskellä olevaa kelloa (virhealtis) vaan
+     erillisestä SYNC-napista oikeassa yläkulmassa (peilaa ‹ SETUP). Napautuksella flash-vahvistus.
+     Nurkkanappi ei osu vahingossa kuten iso keskikello.
+     (2) Laukaisun jälkeinen auto-paluu kompassiin on nyt sanoitettu näkyvällä laskurilla
+     ("Back to compass in Ns") — käyttäjä näkee milloin siirtymä tapahtuu ja ehtii lukea tuloksen
+     (OCS vai metrejä linjasta). ‹ SETUP laukaisun jälkeen PYSÄYTTÄÄ paluun (autoExitHeld) → "Auto-return
+     paused · Done to race", jotta tuloksen voi lukea rauhassa. Lippu nollataan uudella sekvenssillä /
+     Resetillä / kompassiin palatessa. SYNC-nappi piilossa laukaisun jälkeen (synkkaus ei enää relevanttia). -->
 <!-- v1.35 (Pre-start: setup-näkymän käytettävyys): ajastin-osio on nyt vain kesto (näyttö + stepper),
      Start/Sync/Reset poistettu sieltä. Sekvenssin käynnistys on nyt alalaidan primääri "Start sequence"
      -nappi (syaani-korostus) — looginen "konfiguroi ylhäällä, käynnistä alhaalla" -virtaus. Sync tapahtuu
@@ -713,6 +722,10 @@ body.portrait #btnMean{top:22%; height:22%;}
 .ptState.st-perfect{color:var(--green);text-shadow:0 0 14px rgba(25,226,106,.75);}
 .ptState.st-hidden{visibility:hidden;}
 .ptExit{position:absolute;top:calc(10px + env(safe-area-inset-top));left:14px;z-index:70;font-family:var(--mono);font-size:12px;font-weight:700;color:#7d8791;background:rgba(11,13,16,.8);border:1px solid #1c232b;border-radius:9px;padding:6px 10px;letter-spacing:.06em;}
+.ptSync{position:absolute;top:calc(10px + env(safe-area-inset-top));right:14px;z-index:70;font-family:var(--mono);font-size:12px;font-weight:700;color:var(--cyan);background:rgba(11,13,16,.8);border:1px solid var(--cyan);border-radius:9px;padding:6px 14px;letter-spacing:.06em;}
+.ptSync.flash{background:var(--cyan);color:#0b0d10;}
+.ptSync.hidden{display:none;}
+.ptSyncHint.exitCd{color:var(--yellow);font-size:12px;}
 .ptSyncHint{position:absolute;bottom:calc(6px + env(safe-area-inset-bottom));left:0;right:0;text-align:center;font-family:var(--mono);font-size:10px;color:#4a4a4a;letter-spacing:.06em;pointer-events:none;}
 </style>
 <div class="sheet hidden" id="preStartSheet">
@@ -770,6 +783,7 @@ body.portrait #btnMean{top:22%; height:22%;}
      Kello 7-segmenttinä; napauta kelloa = Sync. -->
 <div id="preStartTactical">
   <button class="ptExit" id="btnPtExit">‹ SETUP</button>
+  <button class="ptSync" id="btnPtSync">SYNC</button>
   <div class="ptStage">
     <div class="ptBar inactive" id="ptBarLeft">
       <div class="ptZone ptL-push"><span>PUSH</span></div>
@@ -800,7 +814,7 @@ body.portrait #btnMean{top:22%; height:22%;}
       <div class="ptNeedle hidden" id="ptNeedle"></div>
     </div>
   </div>
-  <div class="ptSyncHint">Tap the clock to Sync · ‹ SETUP to adjust</div>
+  <div class="ptSyncHint" id="ptSyncHint">SYNC to snap the clock to a signal · ‹ SETUP to adjust</div>
 </div>
 
 <!-- asennusohjaus (Edellytys / A: offset / B: kallistustesti — ks. valmistusohjeet v2) -->
@@ -849,6 +863,7 @@ const S = {
              glide:null, replanned:false, // erä 3: aikataulun ankkuri {d0,t0,k} + re-planointilippu (§6)
              profile:'moderate', // aikataulun profiili (linear/moderate/late) — moderate validoitu mockupissa
              snapshot:null, // erä 4/5: laukaisuhetkellä jäädytetyt lukemat {distM,sogKn,targetKn} (AT GUN / PERFECT START)
+             autoExitHeld:false, // v1.36: ‹ SETUP laukaisun jälkeen pysäyttää auto-paluun kompassiin
              forceSetup:false }, // erä 2: käyttäjä valitsi ‹ SETUP → pysy setup-näkymässä vaikka ehdot täyttyisivät
   wakeLock:null,
   demo:false, demoT:0,
@@ -1055,10 +1070,12 @@ function preStartExitToCompass(){
   S.preStart.gunTs=null; S.preStart.snapshot=null;
   S.preStart.glide=null; S.preStart.replanned=false;
   S.preStart.scaleRefM=null; S.preStart.forceSetup=false;
+  S.preStart.autoExitHeld=false;
 }
 // Tarkista onko aika palata kompassiin (kutsutaan loopista). Palauttaa true jos siirtymä tehtiin.
 function preStartCheckAutoExit(){
   if(S.preStart.gunTs==null) return false;
+  if(S.preStart.autoExitHeld) return false; // käyttäjä pysäytti paluun ‹ SETUP:lla laukaisun jälkeen
   const elapsed=(Date.now()-S.preStart.gunTs)/1000; // sekunteja laukaisusta (positiivinen kun ohi)
   if(elapsed>=PRESTART_AUTO_EXIT_S){ preStartExitToCompass(); return true; }
   return false;
@@ -3134,6 +3151,9 @@ function renderPreStartTactical(){
   const needle=$("ptNeedle"), st=$("ptState");
   const barL=$("ptBarLeft"), needleL=$("ptNeedleLeft");
 
+  // SYNC-nappi ja hint: näkyvissä ennen laukausta, piilossa laukaisun jälkeen (silloin laskuri).
+  const syncBtn=$("btnPtSync"), syncHint=$("ptSyncHint");
+
   // erä 4/5: laukaisun jälkeen — lopputulosnäyttö, palkit jäädytetty (ei päivitetä neuloja).
   if(snap){
     const over = snap.distM!=null && snap.distM<0;
@@ -3143,8 +3163,22 @@ function renderPreStartTactical(){
     if(over){ st.className='ptState st-urgent'; st.textContent='OCS AT GUN'; }
     else if(perfect){ st.className='ptState st-perfect'; st.textContent='PERFECT START'; }
     else { st.className='ptState st-good'; st.textContent='AT GUN'; }
+    // Sanoita tuleva siirtymä kompassiin. Näkyvä laskuri kertoo kuinka kauan tulos jää näkyviin;
+    // ‹ SETUP pysäyttää paluun (autoExitHeld) jos haluat lukea rauhassa (OCS vai metrejä linjasta).
+    if(syncBtn) syncBtn.classList.add("hidden");
+    if(syncHint){
+      syncHint.classList.add("exitCd");
+      if(ps.autoExitHeld){
+        syncHint.textContent='Auto-return paused · Done to race';
+      } else {
+        const left=Math.max(0, Math.ceil(PRESTART_AUTO_EXIT_S - (Date.now()-ps.gunTs)/1000));
+        syncHint.textContent='Back to compass in '+left+'s · ‹ SETUP to hold';
+      }
+    }
     return; // neulat jäävät viimeiseen (gun-hetken) asentoonsa
   }
+  if(syncBtn) syncBtn.classList.remove("hidden");
+  if(syncHint){ syncHint.classList.remove("exitCd"); syncHint.textContent='SYNC to snap the clock to a signal · ‹ SETUP to adjust'; }
 
   // oikea palkki (marginaali) + tilateksti
   const m=preStartComputeMargin(distM, tts);
@@ -3234,6 +3268,7 @@ $("btnPsStart").addEventListener("click", ()=>{
     S.preStart.glide={ d0:(d!=null?d:50), t0:S.preStart.durS, k:preStartProfileK() }; // ankkuroi aikataulu (valittu profiili)
     S.preStart.replanned=false;
     S.preStart.snapshot=null;
+    S.preStart.autoExitHeld=false; // uusi sekvenssi → salli auto-paluu taas
   }
   S.preStart.forceSetup=false; // salli taktinen näkymä (käynnistys tai jatko)
   renderPreStart(); preStartUpdateView(); // linja + kello → taktinen näkymä
@@ -3252,26 +3287,31 @@ document.querySelectorAll(".psProf").forEach(b=>{
     syncPsProfBtns();
   });
 });
-// Sync tapahtuu vain taktisessa näkymässä (napauta kelloa) — setup-Sync poistettu käytettävyyssyistä.
+// Sync tapahtuu vain taktisessa näkymässä (SYNC-nappi nurkassa) — setup-Sync poistettu käytettävyyssyistä.
 $("btnPsReset").addEventListener("click", ()=>{
   S.preStart.gunTs=null; S.preStart.scaleRefM=null;
   S.preStart.glide=null; S.preStart.replanned=false; // erä 3: nollaa aikataulu
   S.preStart.snapshot=null; // erä 4/5: nollaa laukaisusnapshot
+  S.preStart.autoExitHeld=false; // nollaa auto-paluun pysäytys
   renderPreStart(); preStartUpdateView();
 });
 // erä 2: taktisen näkymän napit
 $("btnPtExit").addEventListener("click", ()=>{
   // takaisin setup-sheetiin ilman että kello pysähtyy; forceSetup estää auto-palautuksen
   S.preStart.forceSetup=true;
+  // Laukaisun jälkeen ‹ SETUP pysäyttää myös auto-paluun kompassiin (käyttäjä ottaa ohjat).
+  if(S.preStart.snapshot) S.preStart.autoExitHeld=true;
   $("preStartTactical").classList.remove("show");
   $("preStartSheet").classList.remove("hidden");
   renderPreStart();
 });
-$("ptClockBox").addEventListener("click", ()=>{
-  // napauta kelloa = Sync (committee-merkillä). Laukaisun jälkeen (snapshot) ei tehdä mitään.
+$("btnPtSync").addEventListener("click", ()=>{
+  // Erillinen SYNC-nappi (nurkassa) — vähemmän virhealtis kuin keskellä olevan kellon napautus.
+  // Pyöristää kellon lähimpään tasominuuttiin (committee-merkki). Laukaisun jälkeen ei tehdä mitään.
   if(S.preStart.gunTs==null || S.preStart.snapshot) return;
   const remMs=S.preStart.gunTs-Date.now();
   S.preStart.gunTs=Date.now()+Math.round(remMs/60000)*60000;
+  const b=$("btnPtSync"); b.classList.add("flash"); setTimeout(()=>b.classList.remove("flash"),250); // vahvistus
 });
 
 
@@ -4011,7 +4051,7 @@ document.querySelectorAll(".stepper").forEach(st=>{
 });
 
 /* ---------- init ---------- */
-const APP_VERSION="🇫🇮 Tackcall v1.35";
+const APP_VERSION="🇫🇮 Tackcall v1.36";
 (function(){
   const e=$("verEnable"); if(e) e.textContent=APP_VERSION;
   const n=$("verNote"); if(n) n.textContent=APP_VERSION+" · shares engine with index.html";
