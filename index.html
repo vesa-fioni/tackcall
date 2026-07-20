@@ -1,5 +1,13 @@
 <!DOCTYPE html>
 <!-- Tackcall Meter — MIT License — Copyright (c) 2026 Vesa Lindqvist — Contributors: Joonas Sandholm -->
+<!-- v1.46 (Pre-start-pisteet pois analyysistä — data-integriteettikorjaus): collectPoint on aina
+     merkinnyt pre-start-pisteet pt.preStart=true "pois polaari-/suorituskykyanalyysistä", MUTTA lippua
+     ei koskaan luettu missään — pre-start-manööverit (ja kädessä pidettäessä suoraan roskaheading)
+     vuosivat polaariin, session summaryyn ja accel-oppijaan. Korjaus: suodatus 5 kuristuskohdassa —
+     _computePolar (live-PERF/polarCurve), sectorSpeeds (kaista-P90 + pre-start-tavoite), splitSessions
+     (session.points; katkonhaku säilyy kaikilla pisteillä O-SS-3), ssDrawPolar (koko-lokin varapolku),
+     preStartLearnAccel (koko-lokin polku). rawLog() itse pysyy suodattamattomana totuutena (export/
+     persistenssi); raakalokia ei kosketa. Ks. Pre-start white paper §7. -->
 <!-- v1.45 (Pre-start korjaus: suosiollisempi pää jäi tyhjäksi kun päät liian lähellä): kun linja ja
      meanit on asetettu mutta päät ovat <3m päässä (esim. kuivatesti samasta paikasta), preStartFavoredEnd
      palautti null → kohta jäi tyhjäksi ilman palautetta. Nyt näyttää "Line ends too close to compare —
@@ -1025,7 +1033,7 @@ function _preStartPointTWA(p){
 //   s = efektiivinen kiihtyvyysaika (konservatiivinen), n = näytemäärä, state = 'none'|'dim'|'bright'.
 // state 'none' ⇒ käytä fallback-vakiota. Puhdas lukija; kutsutaan avattaessa (cachetetaan).
 function preStartLearnAccel(rawlog){
-  const src = rawlog || (typeof Polar!=='undefined' && Polar.rawLog ? Polar.rawLog() : []);
+  const src = (rawlog || (typeof Polar!=='undefined' && Polar.rawLog ? Polar.rawLog() : [])).filter(p=>!p.preStart);
   const evs = tackEvents(src);
   const samples = [];
   for(let k=0;k<evs.length;k++){
@@ -1718,7 +1726,10 @@ const Polar = (function(){
 
   function _computePolar(rawlog){
     const pts=[];
-    for(const p of rawlog){ const t=_twa(p); if(t!=null) pts.push({twa:t,sog:p.sog,w:_sw(p.sog)}); }
+    // Pre-start-pisteet pois: manööveröinnin heading/tack ei ole edustavaa purjehdusta
+    // (kädessä pidettäessä suoraan roskaa). Raakaloki pysyy koskemattomana totuutena —
+    // suodatus vain analyysissä. Ks. collectPoint-kommentti + Pre-start white paper §7.
+    for(const p of rawlog){ if(p.preStart) continue; const t=_twa(p); if(t!=null) pts.push({twa:t,sog:p.sog,w:_sw(p.sog)}); }
     if(pts.length<5) return null;
     const qs=[]; for(let t=_TWA_MIN;t<=_TWA_MAX;t+=_STEP) qs.push(t);
     // Vaihe 1: sileytyspassi kiinteällä kernelillä
@@ -1834,7 +1845,8 @@ const Polar = (function(){
     // Palauttaa { upwind, reach, downwind, overall } jokainen {p90, n} tai
     // {p90:null, n} jos liian vähän dataa. Puhdas lukija, ei muuta tilaa.
     sectorSpeeds(rawlog){
-      const src = rawlog || log;
+      // Pre-start-pisteet pois analyysistä (ks. _computePolar). Raakaloki koskematon.
+      const src = (rawlog || log).filter(p => !p.preStart);
       const bands = {
         upwind:[15,50], reach:[50,140], downwind:[140,175], overall:[15,175],
       };
@@ -1878,7 +1890,11 @@ const Polar = (function(){
       for(const p of sorted){
         if(cur && (p.ts - cur.endTs) > GAP){ sessions.push(cur); cur=null; }
         if(!cur) cur = {points:[], startTs:p.ts, endTs:p.ts};
-        cur.points.push(p);
+        // Katkonhaku (endTs) käyttää KAIKKIA pisteitä (myös pre-start) O-SS-3:n mukaan,
+        // mutta analyysipisteisiin (points) ei oteta pre-startia — se ei ole edustavaa
+        // purjehdusta. Näin session.points on puhdas kaikille lukijoille (polaari, upwind-
+        // tilastot, tackEvents) ilman erillistä suodatusta joka kohdassa.
+        if(!p.preStart) cur.points.push(p);
         cur.endTs = p.ts;
       }
       if(cur) sessions.push(cur);
@@ -3668,7 +3684,7 @@ function ssStopAnim(){
 
 function ssDrawPolar(session, prevSession, pastSessions){
   const cv = $("ssCanvas"); if(!cv) return;
-  const raw = session ? session.points.slice().sort((a,b)=>a.ts-b.ts) : Polar.rawLog();
+  const raw = session ? session.points.slice().sort((a,b)=>a.ts-b.ts) : Polar.rawLog().filter(p=>!p.preStart);
   const pts = [];
   const t0 = raw.length ? raw[0].ts : 0;
   for(const p of raw){
@@ -4179,7 +4195,7 @@ document.querySelectorAll(".stepper").forEach(st=>{
 });
 
 /* ---------- init ---------- */
-const APP_VERSION="🇫🇮 Tackcall v1.45";
+const APP_VERSION="🇫🇮 Tackcall v1.46";
 (function(){
   const e=$("verEnable"); if(e) e.textContent=APP_VERSION;
   const n=$("verNote"); if(n) n.textContent=APP_VERSION+" · shares engine with index.html";
