@@ -1,8 +1,8 @@
 # Tackcall
 
-> Sailing tactics compass for racing: real-time lift/header detection, VMG, and performance tracking, without a separate wind instrument.
+> Sailing tactics compass for racing: real-time lift/header detection, VMG, performance tracking, a pre-start start-line timer, and after-sail analysis — without a separate wind instrument.
 
-Tackcall is a single-page web app (PWA) that reads the phone's compass and GPS to help racing sailors sail upwind more precisely. The user sets a "mean" heading for each tack based on today's wind; the app then continuously compares the current heading to that reference and reports whether the wind has lifted or headed, on which tack. It also computes VMG, tracks boat performance against the sailor's own learned polar, and provides a post-session summary with leg-by-leg and tack-by-tack analysis. All data stays on-device; there is no backend or account.
+Tackcall is a single-page web app (PWA) that reads the phone's compass and GPS to help racing sailors sail upwind more precisely. The user sets a "mean" heading for each tack based on today's wind; the app then continuously compares the current heading to that reference and reports whether the wind has lifted or headed, and on which tack. It also computes VMG and tracks boat performance against the sailor's own learned polar. Before the start, a pre-start assistant marks both ends of the start line and counts down to the gun, showing distance to the line and when to accelerate so the boat crosses on time — using the sailor's own boat speed as the target, so no wind instrument is needed. After sailing, a session summary gives a leg-by-leg and tack-by-tack analysis of speed and angles against the sailor's own history. All data stays on-device; there is no backend or account.
 
 ## Project
 
@@ -13,3 +13,4 @@ Tackcall is a single-page web app (PWA) that reads the phone's compass and GPS t
 
 - Single-file HTML/JS application, no build pipeline, no external dependencies
 - Requires phone compass (magnetometer) and GPS; iOS and Android via mobile browser
+- The pre-start and session-summary features are newer and in beta — their thresholds are still being calibrated on the water
