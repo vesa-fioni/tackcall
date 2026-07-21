@@ -1,5 +1,10 @@
 <!DOCTYPE html>
 <!-- Tackcall Meter — MIT License — Copyright (c) 2026 Vesa Lindqvist — Contributors: Joonas Sandholm -->
+<!-- v1.52 (SEO/social-metatiedot ajan tasalle: pre-start + session summary): meta description,
+     og:description, twitter:description ja JSON-LD description mainitsivat vain lift/header, VMG,
+     performance — päivitetty sisältämään pre-start-linja-ajastin ja after-sail session summary.
+     JSON-LD:hen lisätty featureList (7 kohtaa) jäsenneltynä hakukoneille. Ei muutettu titleä,
+     canonicalia, og-kuvaa eikä identiteettitageja. Vain <head>-metadata. -->
 <!-- v1.51 (Pre-start & Session summary BETA-merkintä, porrastettu): molemmat ominaisuudet ovat
      erityisen kesken kynnysten kalibroinnin osalta → merkitty betaksi. Vaimea amber .betaTag-pilleri
      Settings-panelilinkeissä JA sheet-otsikoissa (molemmat). Porrastettu riski .betaNote-rivillä:
@@ -194,14 +199,14 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="Tackcall Meter">
 <title>Tackcall — Sailing Tactics Compass for Racing</title>
-<meta name="description" content="Tackcall is a sailing tactics compass for racers: shows whether the wind has lifted or headed you, plus VMG and performance percentage — no separate wind instrument needed. All data stays on your phone.">
+<meta name="description" content="Tackcall is a sailing tactics compass for racers: real-time lift/header calls, VMG, performance %, a pre-start start-line timer, and after-sail speed analysis — no separate wind instrument needed. All data stays on your phone.">
 <link rel="canonical" href="https://tackcall.app/">
 
 <!-- Open Graph -->
 <meta property="og:type" content="website">
 <meta property="og:site_name" content="Tackcall">
 <meta property="og:title" content="Tackcall — Sailing Tactics Compass for Racing">
-<meta property="og:description" content="Sailing tactics compass for racers: lift/header detection, VMG, and performance tracking with no wind instrument required. Open source, all data stays on your phone.">
+<meta property="og:description" content="Sailing tactics compass for racers: real-time lift/header detection, VMG, performance %, a pre-start start-line timer, and after-sail speed analysis. No wind instrument required. Open source; all data stays on your phone.">
 <meta property="og:url" content="https://tackcall.app/">
 <meta property="og:image" content="https://tackcall.app/og-image.png">
 <meta property="og:image:width" content="1200">
@@ -211,7 +216,7 @@
 <!-- Twitter Card -->
 <meta name="twitter:card" content="summary_large_image">
 <meta name="twitter:title" content="Tackcall — Sailing Tactics Compass for Racing">
-<meta name="twitter:description" content="Sailing tactics compass for racers: lift/header detection, VMG, and performance tracking with no wind instrument required.">
+<meta name="twitter:description" content="Sailing tactics compass for racers: lift/header, VMG, performance %, a pre-start line timer and after-sail analysis — no wind instrument needed.">
 <meta name="twitter:image" content="https://tackcall.app/og-image.png">
 
 <!-- Icons / PWA -->
@@ -228,11 +233,20 @@
   "@type": "SoftwareApplication",
   "name": "Tackcall",
   "alternateName": "Tackcall Meter",
-  "description": "Sailing tactics compass for racing: real-time lift/header detection, VMG, and performance percentage — no separate wind instrument required.",
+  "description": "Sailing tactics compass for racing: real-time lift/header detection, VMG, performance percentage, a pre-start start-line timer, and after-sail speed analysis — no separate wind instrument required.",
   "url": "https://tackcall.app/",
   "applicationCategory": "SportsApplication",
   "operatingSystem": "Web",
   "browserRequirements": "Requires JavaScript. Requires HTML5.",
+  "featureList": [
+    "Real-time lift and header detection",
+    "VMG to windward",
+    "Performance percentage versus your own best speed",
+    "Pre-start start-line timer, distance and favoured-end readout",
+    "After-sail session summary with per-tack and per-leg analysis",
+    "Offshore mode using GPS course over ground",
+    "Offline progressive web app — all data stays on the device"
+  ],
   "author": [
     { "@type": "Person", "name": "Vesa Lindqvist" },
     { "@type": "Person", "name": "Joonas Sandholm" }
@@ -4233,7 +4247,7 @@ document.querySelectorAll(".stepper").forEach(st=>{
 });
 
 /* ---------- init ---------- */
-const APP_VERSION="🇫🇮 Tackcall v1.51";
+const APP_VERSION="🇫🇮 Tackcall v1.52";
 (function(){
   const e=$("verEnable"); if(e) e.textContent=APP_VERSION;
   const n=$("verNote"); if(n) n.textContent=APP_VERSION+" · shares engine with index.html";
