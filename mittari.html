@@ -1,5 +1,11 @@
 <!DOCTYPE html>
 <!-- Tackcall Meter — MIT License — Copyright (c) 2026 Vesa Lindqvist — Contributors: Joonas Sandholm -->
+<!-- v1.51 (Pre-start & Session summary BETA-merkintä, porrastettu): molemmat ominaisuudet ovat
+     erityisen kesken kynnysten kalibroinnin osalta → merkitty betaksi. Vaimea amber .betaTag-pilleri
+     Settings-panelilinkeissä JA sheet-otsikoissa (molemmat). Porrastettu riski .betaNote-rivillä:
+     pre-start = varoittavampi ("start timing still being calibrated — trust your eyes on the line,
+     don't sail the start on the gauge alone"), session summary = kevyt ("numbers still settling,
+     treat as indicative"). Intro jätettiin puhtaaksi (ei betaa). Vain UI-tekstit/CSS. -->
 <!-- v1.50 (Pre-start intro: session summaryn arvo mukaan): intro mainitsi shift-gaugen ja pre-startin
      mutta ei session summarya. Lisätty ilman uutta kappaletta laajentamalla toissijaista riviä:
      "...and shows your pace vs. your history after each sail." Kattaa nyt kaikki kolme ydinarvoa
@@ -395,6 +401,12 @@ border:none; font-weight:700; font-size:15px; cursor:pointer; background:#1a1a1a
 .panelLink .plTxt small{display:block; font-weight:400; color:#777; font-size:12px;
   margin-top:3px; letter-spacing:0; text-shadow:none;}
 .panelLink .plArrow{flex:0 0 auto; color:var(--cyan); font-size:18px; text-shadow:0 0 12px rgba(25,224,224,.4);}
+/* Beta-merkintä (v1.51): pre-start ja session summary ovat erityisen kesken kalibroinnin
+   osalta. Vaimea amber-pilleri sisäänkäynneissä + otsikoissa, ja lyhyt note sheetissä. */
+.betaTag{display:inline-block; font-family:var(--mono); font-size:9px; font-weight:700;
+  letter-spacing:.14em; color:#e0a23c; border:1px solid #5a4520; border-radius:4px;
+  padding:1px 5px; margin-left:8px; vertical-align:middle; text-shadow:none;}
+.betaNote{font-size:11px; color:#b8863a; text-align:center; margin:-4px 0 14px; line-height:1.5;}
 /* ---- käyttöohje ---- */
 .helpsteps{margin:0 0 6px; padding:0; list-style:none; counter-reset:hs;}
 .helpsteps li{position:relative; padding:0 0 14px 38px; color:#d6d6d6; font-size:14px; line-height:1.5;}
@@ -526,9 +538,9 @@ body.portrait #btnMean{top:22%; height:22%;}
 <h2>Settings</h2>
 <!-- v0.92: Session summary aina päällä; avaus suorana, visuaalisesti erotettuna linkkinä
      asetusten kärjessä (ks. Purjehdusyhteenveto §8). Vanha kytkin+piilonappi poistettu alempaa. -->
-<button class="panelLink" id="btnOpenSummary"><span class="plTxt">Session summary<small>After-sail recap — sector speeds vs. your history</small></span><span class="plArrow">→</span></button>
+<button class="panelLink" id="btnOpenSummary"><span class="plTxt">Session summary<span class="betaTag">BETA</span><small>After-sail recap — sector speeds vs. your history</small></span><span class="plArrow">→</span></button>
 <!-- Pre-start (erä 1): oma näkymä, avaus samalla kaavalla kuin Session summary -->
-<button class="panelLink" id="btnOpenPreStart"><span class="plTxt">Pre-start<small>Start-line assistant — set the line, see distance</small></span><span class="plArrow">→</span></button>
+<button class="panelLink" id="btnOpenPreStart"><span class="plTxt">Pre-start<span class="betaTag">BETA</span><small>Start-line assistant — set the line, see distance</small></span><span class="plArrow">→</span></button>
 <div class="row"><div class="lbl">GPS<small>Switch off to save battery. Powers SOG, VMG and polar learning.</small></div><div class="tog" data-key="gps"></div></div>
 <div class="row"><div class="lbl">Offshore (COG)<small>Replaces compass with GPS course over ground. Ignores leeway — best above ~3 kn. Turns GPS on automatically.</small></div><div class="tog" data-key="offshoreCog"></div></div>
 <div class="row"><div class="lbl">Auto mean refresh<small>Watches for wind shifts and asks you to confirm each one it spots. Manual Set Mean always works. Off by default.</small></div><div class="tog" data-key="autoMeanRefresh"></div></div>
@@ -667,7 +679,8 @@ body.portrait #btnMean{top:22%; height:22%;}
      Additiivinen kerros: ei kosketa Polar-moduuliin, raakalokiin eikä piirtosilmukkaan. -->
 <div class="sheet hidden" id="sessionSummary">
 <div class="panel">
-<h2>Session summary</h2>
+<h2>Session summary <span class="betaTag">BETA</span></h2>
+<div class="betaNote">Beta — numbers are still settling; treat them as indicative.</div>
 <div class="ssHint" id="ssLoading" style="display:none;">Loading…</div>
 <div class="ssSub">Your pace today</div>
 <div class="ssRow" id="ssSpeeds">
@@ -822,7 +835,8 @@ body.portrait #btnMean{top:22%; height:22%;}
 </style>
 <div class="sheet hidden" id="preStartSheet">
 <div class="panel">
-<h2>Pre-start</h2>
+<h2>Pre-start <span class="betaTag">BETA</span></h2>
+<div class="betaNote">Beta — start timing is still being calibrated on the water. Trust your eyes on the line; don't sail the start on the gauge alone.</div>
 <div class="ssHint">Drive to each end of the start line and tap to mark it. Order doesn't matter. The line is not saved between starts — set it again each time.</div>
 <div class="ssSub">Start line</div>
 <div class="ssRow" id="psLineRow">
@@ -4219,7 +4233,7 @@ document.querySelectorAll(".stepper").forEach(st=>{
 });
 
 /* ---------- init ---------- */
-const APP_VERSION="🇫🇮 Tackcall v1.50";
+const APP_VERSION="🇫🇮 Tackcall v1.51";
 (function(){
   const e=$("verEnable"); if(e) e.textContent=APP_VERSION;
   const n=$("verNote"); if(n) n.textContent=APP_VERSION+" · shares engine with index.html";
