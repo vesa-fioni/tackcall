@@ -6,15 +6,15 @@ plugins {
 android {
     namespace = "app.tackcall.repeater"
     compileSdk {
-        version = release(36) {
+        version = release(37) {
             minorApiLevel = 1
         }
     }
 
     defaultConfig {
         applicationId = "app.tackcall.repeater"
-        minSdk = 24
-        targetSdk = 36
+        minSdk = 31
+        targetSdk = 37
         versionCode = 1
         versionName = "1.0"
 
