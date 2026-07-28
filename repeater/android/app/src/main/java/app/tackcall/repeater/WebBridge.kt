@@ -51,18 +51,45 @@ class WebBridge(
          */
         internal fun parse(json: String): RepeaterPacket {
             val o = JSONObject(json)
+            val meansValid = o.getBoolean("meansValid")
 
             val stateStr = o.getString("state")
-            val state = RepeaterState.values().firstOrNull {
+            val matchedState = RepeaterState.values().firstOrNull {
                 it.name.equals(stateStr, ignoreCase = true)
-            } ?: error("Tuntematon state-arvo sovelluksesta: $stateStr")
+            }
+            val state = matchedState ?: run {
+                // Kentältä varmistettu: sovellus lähettää myös "nomean"-tilan
+                // kylmäkäynnistyksessä (meansValid=false), ennen kuin FLAGS-tavun
+                // 2-bittinen state-enum (§4.2, 4 arvoa) riittää kuvaamaan tilannetta.
+                // ESP32:n Renderer.cpp (tarkistettu) lukee d.state VAIN kun
+                // d.meansValid==true — kun means ei ole validi, gauge ja label
+                // piirtävät "--" state-arvosta riippumatta. GROOVE on siis
+                // vaikutukseton placeholder tässä haarassa.
+                if (meansValid) {
+                    // Tätä ei pitäisi tapahtua: jos means on validi, sovelluksen
+                    // pitäisi lähettää yksi neljästä tunnetusta tilasta. Lokitetaan
+                    // näkyvästi, mutta ei kaadeta pakettia — muu data on yhä käyttökelpoista.
+                    Log.w(
+                        TAG,
+                        "Tuntematon state '$stateStr' meansValid=true — pitäisi olla " +
+                            "groove/lift/header/tack. Käytetään GROOVE-placeholderia, " +
+                            "tarkista sovelluksen state-logiikka.",
+                    )
+                }
+                RepeaterState.GROOVE
+            }
 
             return RepeaterPacket(
-                meansValid = o.getBoolean("meansValid"),
+                meansValid = meansValid,
                 gpsValid = o.getBoolean("gpsValid"),
                 state = state,
                 heading = if (o.isNull("hdg")) null else o.getInt("hdg"),
-                shift = o.getInt("shift"),
+                // Kentältä varmistettu: sovellus lähettää shift:null kun meansValid=
+                // false (ei mielekästä shift-arvoa vielä). Protokollan SHIFT-kentällä
+                // (§4.2) ei ole "ei dataa" -sentinelliä — Renderer.cpp:n drawGauge()
+                // ei muutenkaan piirrä mitään kun meansValid=false, niin 0 on
+                // vaikutukseton placeholder tässäkin.
+                shift = if (o.isNull("shift")) 0 else o.getInt("shift"),
                 perf = if (o.isNull("perf")) null else o.getInt("perf"),
                 vmg = if (o.isNull("vmg")) null else o.getDouble("vmg"),
                 sog = if (o.isNull("sog")) null else o.getDouble("sog"),
