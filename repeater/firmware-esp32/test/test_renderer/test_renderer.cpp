@@ -7,6 +7,7 @@
 #include <unity.h>
 #include "Renderer.h"
 #include "ref_frames.h"
+#include <cstdio>
 
 using namespace tackcall;
 
