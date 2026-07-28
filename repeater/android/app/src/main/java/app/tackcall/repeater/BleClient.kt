@@ -101,7 +101,14 @@ class BleClient(
         }
         setState(ConnectionState.SCANNING)
         scanner = adapter.bluetoothLeScanner
-        val filters = listOf(ScanFilter.Builder().setDeviceName(DEVICE_NAME).build())
+        // Kaksi suodatinta = OR-ehto (osuma riittää kumpaan tahansa). Laitenimi
+        // toimii ESP32:n kanssa, mutta iOS:n CoreBluetooth ei mainosta
+        // laitenimeä luotettavasti — service UUID on siksi varmempi ehto
+        // testattaessa nRF Connectilla iOS-puolella.
+        val filters = listOf(
+            ScanFilter.Builder().setDeviceName(DEVICE_NAME).build(),
+            ScanFilter.Builder().setServiceUuid(android.os.ParcelUuid(SERVICE_UUID)).build(),
+        )
         val settings = ScanSettings.Builder()
             .setScanMode(ScanSettings.SCAN_MODE_LOW_LATENCY)
             .build()
