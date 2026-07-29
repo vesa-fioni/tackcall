@@ -10,6 +10,7 @@ import android.bluetooth.BluetoothGattCharacteristic
 import android.bluetooth.BluetoothManager
 import android.bluetooth.BluetoothProfile
 import android.bluetooth.BluetoothStatusCodes
+import android.bluetooth.le.BluetoothLeScanner
 import android.bluetooth.le.ScanCallback
 import android.bluetooth.le.ScanFilter
 import android.bluetooth.le.ScanResult
@@ -85,7 +86,7 @@ class BleClient(
 
     // ---- Skannaus ----
 
-    private var scanner: android.bluetooth.le.BluetoothLeScanner? = null
+    private var scanner: BluetoothLeScanner? = null
 
     @SuppressLint("MissingPermission")
     private fun startScan(): Unit {
@@ -115,7 +116,7 @@ class BleClient(
         scanner?.startScan(filters, settings, scanCallback)
     }
 
-    private val scanCallback = object : ScanCallback() {
+    private val scanCallback: ScanCallback = object : ScanCallback() {
         @SuppressLint("MissingPermission")
         override fun onScanResult(callbackType: Int, result: ScanResult) {
             // Lopeta skannaus heti kun löytyy — säästää virtaa (§5).
@@ -137,7 +138,7 @@ class BleClient(
         gatt = device.connectGatt(context, false, gattCallback)
     }
 
-    private val gattCallback = object : BluetoothGattCallback() {
+    private val gattCallback: BluetoothGattCallback = object : BluetoothGattCallback() {
         @SuppressLint("MissingPermission")
         override fun onConnectionStateChange(g: BluetoothGatt, status: Int, newState: Int) {
             when (newState) {
