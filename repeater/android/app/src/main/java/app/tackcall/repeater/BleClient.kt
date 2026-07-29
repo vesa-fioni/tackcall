@@ -55,14 +55,14 @@ class BleClient(
 
     /** Aloittaa skannauksen. Vaatii BLE-luvat myönnettynä (ks. luokkatason kommentti). */
     @SuppressLint("MissingPermission")
-    fun start() {
+    fun start(): Unit {
         stopped = false
         startScan()
     }
 
     /** Pysäyttää kaiken BLE-toiminnan siististi (§8, onDestroy). Ei auto-reconnectia enää. */
     @SuppressLint("MissingPermission")
-    fun stop() {
+    fun stop(): Unit {
         stopped = true
         mainHandler.removeCallbacksAndMessages(null)
         if (hasBlePermissions()) {
@@ -88,7 +88,7 @@ class BleClient(
     private var scanner: android.bluetooth.le.BluetoothLeScanner? = null
 
     @SuppressLint("MissingPermission")
-    private fun startScan() {
+    private fun startScan(): Unit {
         if (!hasBlePermissions()) {
             Log.w(TAG, "BLE-luvat puuttuvat, ei voida skannata")
             return
@@ -132,7 +132,7 @@ class BleClient(
     // ---- Yhdistys ----
 
     @SuppressLint("MissingPermission")
-    private fun connectTo(device: BluetoothDevice) {
+    private fun connectTo(device: BluetoothDevice): Unit {
         setState(ConnectionState.CONNECTING)
         gatt = device.connectGatt(context, false, gattCallback)
     }
@@ -173,7 +173,7 @@ class BleClient(
     }
 
     @SuppressLint("MissingPermission")
-    private fun disconnectAndRetry(g: BluetoothGatt) {
+    private fun disconnectAndRetry(g: BluetoothGatt): Unit {
         g.disconnect()
         g.close()
         gatt = null
@@ -181,7 +181,7 @@ class BleClient(
         scheduleReconnect()
     }
 
-    private fun scheduleReconnect() {
+    private fun scheduleReconnect(): Unit {
         if (stopped) return
         mainHandler.postDelayed({ if (!stopped) startScan() }, RECONNECT_DELAY_MS)
     }
@@ -189,7 +189,7 @@ class BleClient(
     // ---- Kirjoitus ----
 
     @SuppressLint("MissingPermission")
-    private fun trySendPending() {
+    private fun trySendPending(): Unit {
         val g = gatt ?: return
         val characteristic = txCharacteristic ?: return
         val packet = pendingPacket ?: return
@@ -249,7 +249,7 @@ class BleClient(
         return scanOk && connectOk
     }
 
-    private fun setState(newState: ConnectionState) {
+    private fun setState(newState: ConnectionState): Unit {
         mainHandler.post { onStateChanged(newState) }
     }
 
