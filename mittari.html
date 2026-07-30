@@ -1,5 +1,15 @@
 <!DOCTYPE html>
 <!-- Tackcall Meter — MIT License — Copyright (c) 2026 Vesa Lindqvist — Contributors: Joonas Sandholm -->
+<!-- v1.53 (Korjaus: Settings-paneelin ylin panelLink napautuskelvoton Safarilla/iPhonella):
+     html/body käytti height:100% ja .panel max-height:88vh — molemmat lasketaan Safarissa
+     "layout viewportin" (osoiterivin piilotettu koko) mukaan, ei todellisen näkyvän
+     ("visual") viewportin mukaan. Kun osoiterivi on auki (esim. tuore sivunlataus), .panel
+     laskettiin todellista näkyvää tilaa korkeammaksi, jolloin sen yläreuna — ja siis ensimmäinen
+     panelLink, Session summary — työntyi näkyvän alueen ylälaidan yli/taakse eikä ollut
+     napautettavissa. Korjattu lisäämällä dvh-fallback (100dvh / 88dvh), joka seuraa Safarin
+     dynaamista työkalupalkkia livenä; vh/%-arvot säilyvät fallbackina selaimille joissa dvh
+     ei tue. Lisätty myös -webkit-overflow-scrolling:touch paneelin sisäiseen scrollaukseen.
+     Ei muutoksia logiikkaan tai dataan. -->
 <!-- v1.52 (SEO/social-metatiedot ajan tasalle: pre-start + session summary): meta description,
      og:description, twitter:description ja JSON-LD description mainitsivat vain lift/header, VMG,
      performance — päivitetty sisältämään pre-start-linja-ajastin ja after-sail session summary.
@@ -265,7 +275,7 @@
 --sans:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
 }
 *{box-sizing:border-box; -webkit-tap-highlight-color:transparent; touch-action:manipulation;}
-html,body{margin:0; height:100%; background:var(--bg); color:#fff; font-family:var(--sans);
+html,body{margin:0; height:100%; height:100dvh; background:var(--bg); color:#fff; font-family:var(--sans);
 overflow:hidden; overscroll-behavior:none; user-select:none; -webkit-user-select:none;}
 #stage{position:fixed; inset:0;}
 /* ---- orientaatiolukitus (Portrait/Landscape/Automatic) ----
@@ -383,7 +393,7 @@ display:flex; align-items:flex-end; justify-content:center;}
 .sheet.hidden{display:none;}
 .panel{width:100%; max-width:460px; background:#0c0c0c; border:1px solid #1f1f1f;
 border-radius:18px 18px 0 0; padding:18px 18px calc(18px + env(safe-area-inset-bottom));
-max-height:88vh; overflow:auto;}
+max-height:88vh; max-height:88dvh; overflow:auto; -webkit-overflow-scrolling:touch;}
 .panel h2{font-size:15px; letter-spacing:.06em; text-transform:uppercase; color:#cfcfcf; margin:0 0 14px; text-align:center;}
 .row{display:flex; align-items:center; justify-content:space-between; padding:11px 0; border-bottom:1px solid #161616;}
 .row .lbl{font-size:14px; color:#e6e6e6;}
@@ -4247,7 +4257,7 @@ document.querySelectorAll(".stepper").forEach(st=>{
 });
 
 /* ---------- init ---------- */
-const APP_VERSION="🇫🇮 Tackcall v1.52";
+const APP_VERSION="🇫🇮 Tackcall v1.53";
 (function(){
   const e=$("verEnable"); if(e) e.textContent=APP_VERSION;
   const n=$("verNote"); if(n) n.textContent=APP_VERSION+" · shares engine with index.html";
